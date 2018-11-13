@@ -14,7 +14,7 @@
 
 import * as m from 'mithril';
 
-import {deleteQuery, executeQuery} from '../common/actions';
+import {Actions} from '../common/actions';
 import {QueryResponse} from '../common/queries';
 import {EngineConfig} from '../common/state';
 
@@ -28,7 +28,7 @@ let mode: 'search'|'command' = 'search';
 
 function clearOmniboxResults() {
   globals.queryResults.delete(QUERY_ID);
-  globals.dispatch(deleteQuery(QUERY_ID));
+  globals.dispatch(Actions.deleteQuery({queryId: QUERY_ID}));
 }
 
 function onKeyDown(e: Event) {
@@ -44,19 +44,19 @@ function onKeyDown(e: Event) {
   const txt = (e.target as HTMLInputElement);
   if (key === ':' && txt.value === '') {
     mode = 'command';
-    m.redraw();
+    globals.rafScheduler.scheduleFullRedraw();
     e.preventDefault();
     return;
   }
   if (key === 'Escape' && mode === 'command') {
     txt.value = '';
     mode = 'search';
-    m.redraw();
+    globals.rafScheduler.scheduleFullRedraw();
     return;
   }
   if (key === 'Backspace' && txt.value.length === 0 && mode === 'command') {
     mode = 'search';
-    m.redraw();
+    globals.rafScheduler.scheduleFullRedraw();
     return;
   }
 }
@@ -70,32 +70,35 @@ function onKeyUp(e: Event) {
     selResult = Math.max(selResult, 0);
     selResult = Math.min(selResult, numResults - 1);
     e.preventDefault();
-    m.redraw();
+    globals.rafScheduler.scheduleFullRedraw();
     return;
   }
   if (txt.value.length <= 0 || key === 'Escape') {
     clearOmniboxResults();
-    m.redraw();
+    globals.rafScheduler.scheduleFullRedraw();
     return;
   }
   if (mode === 'search') {
     const name = txt.value.replace(/'/g, '\\\'').replace(/[*]/g, '%');
     const query = `select str from strings where str like '%${name}%' limit 10`;
-    globals.dispatch(executeQuery('0', QUERY_ID, query));
+    globals.dispatch(
+        Actions.executeQuery({engineId: '0', queryId: QUERY_ID, query}));
   }
   if (mode === 'command' && key === 'Enter') {
-    globals.dispatch(executeQuery('0', 'command', txt.value));
+    globals.dispatch(Actions.executeQuery(
+        {engineId: '0', queryId: 'command', query: txt.value}));
   }
 }
 
 
-const Omnibox: m.Component = {
-  oncreate(vnode) {
+class Omnibox implements m.ClassComponent {
+  oncreate(vnode: m.VnodeDOM) {
     const txt = vnode.dom.querySelector('input') as HTMLInputElement;
     txt.addEventListener('blur', clearOmniboxResults);
     txt.addEventListener('keydown', onKeyDown);
     txt.addEventListener('keyup', onKeyUp);
-  },
+  }
+
   view() {
     const msgTTL = globals.state.status.timestamp + 3 - Date.now() / 1e3;
     let enginesAreBusy = false;
@@ -104,7 +107,8 @@ const Omnibox: m.Component = {
     }
 
     if (msgTTL > 0 || enginesAreBusy) {
-      setTimeout(() => m.redraw(), msgTTL * 1000);
+      setTimeout(
+          () => globals.rafScheduler.scheduleFullRedraw(), msgTTL * 1000);
       return m(
           `.omnibox.message-mode`,
           m(`input[placeholder=${globals.state.status.msg}][readonly]`));
@@ -130,10 +134,10 @@ const Omnibox: m.Component = {
         `.omnibox${commandMode ? '.command-mode' : ''}`,
         m(`input[placeholder=${placeholder[mode]}]`),
         m('.omnibox-results', results));
-  },
-};
+  }
+}
 
-export const Topbar: m.Component = {
+export class Topbar implements m.ClassComponent {
   view() {
     const progBar = [];
     const engine: EngineConfig = globals.state.engines['0'];
@@ -141,7 +145,6 @@ export const Topbar: m.Component = {
         (engine !== undefined && !engine.ready)) {
       progBar.push(m('.progress'));
     }
-
     return m('.topbar', m(Omnibox), ...progBar);
-  },
-};
+  }
+}
