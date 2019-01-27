@@ -72,6 +72,18 @@ class PERFETTO_EXPORT TracingService {
     virtual void RegisterDataSource(const DataSourceDescriptor&) = 0;
     virtual void UnregisterDataSource(const std::string& name) = 0;
 
+    // Associate the trace writer with the given |writer_id| with
+    // |target_buffer|. The service may use this information to retrieve and
+    // copy uncommitted chunks written by the trace writer into its associated
+    // buffer, e.g. when a producer process crashes or when a flush is
+    // necessary.
+    virtual void RegisterTraceWriter(uint32_t writer_id,
+                                     uint32_t target_buffer) = 0;
+
+    // Remove the association of the trace writer previously created via
+    // RegisterTraceWriter.
+    virtual void UnregisterTraceWriter(uint32_t writer_id) = 0;
+
     // Called by the Producer to signal that some pages in the shared memory
     // buffer (shared between Service and Producer) have changed.
     using CommitDataCallback = std::function<void()>;
@@ -147,6 +159,12 @@ class PERFETTO_EXPORT TracingService {
     virtual void ReadBuffers() = 0;
 
     virtual void FreeBuffers() = 0;
+
+    // Will call OnDetach().
+    virtual void Detach(const std::string& key) = 0;
+
+    // Will call OnAttach().
+    virtual void Attach(const std::string& key) = 0;
   };  // class ConsumerEndpoint.
 
   // Implemented in src/core/tracing_service_impl.cc .
@@ -181,7 +199,8 @@ class PERFETTO_EXPORT TracingService {
   // as the returned ConsumerEndpoint is alive.
   // To disconnect just destroy the returned ConsumerEndpoint object. It is safe
   // to destroy the Consumer once the Consumer::OnDisconnect() has been invoked.
-  virtual std::unique_ptr<ConsumerEndpoint> ConnectConsumer(Consumer*) = 0;
+  virtual std::unique_ptr<ConsumerEndpoint> ConnectConsumer(Consumer*,
+                                                            uid_t) = 0;
 };
 
 }  // namespace perfetto

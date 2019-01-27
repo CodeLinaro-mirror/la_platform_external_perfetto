@@ -20,11 +20,16 @@
 #include <map>
 
 #include "perfetto/base/task_runner.h"
+
 #include "perfetto/tracing/core/basic_types.h"
 #include "perfetto/tracing/core/producer.h"
 #include "perfetto/tracing/core/tracing_service.h"
+
 #include "src/profiling/memory/bounded_queue.h"
+#include "src/profiling/memory/proc_utils.h"
+#include "src/profiling/memory/process_matcher.h"
 #include "src/profiling/memory/socket_listener.h"
+#include "src/profiling/memory/system_property.h"
 
 namespace perfetto {
 namespace profiling {
@@ -47,6 +52,7 @@ class HeapprofdProducer : public Producer {
 
   // TODO(fmayer): Delete once we have generic reconnect logic.
   void ConnectWithRetries(const char* socket_name);
+  void DumpAll();
 
  private:
   // TODO(fmayer): Delete once we have generic reconnect logic.
@@ -78,13 +84,13 @@ class HeapprofdProducer : public Producer {
   void DoContinuousDump(DataSourceInstanceID id, uint32_t dump_interval);
 
   struct DataSource {
-    std::vector<pid_t> pids;
     // This is a shared ptr so we can lend a weak_ptr to the bookkeeping
     // thread for unwinding.
     std::shared_ptr<TraceWriter> trace_writer;
     // These are opaque handles that shut down the sockets in SocketListener
     // once they go away.
-    std::vector<SocketListener::ProfilingSession> sessions;
+    ProcessMatcher::ProcessSetSpecHandle processes;
+    std::vector<SystemProperties::Handle> properties;
   };
 
   std::map<DataSourceInstanceID, DataSource> data_sources_;
@@ -101,6 +107,7 @@ class HeapprofdProducer : public Producer {
   std::vector<std::thread> unwinding_threads_;
   SocketListener socket_listener_;
   std::unique_ptr<base::UnixSocket> socket_;
+  SystemProperties properties_;
 
   base::WeakPtrFactory<HeapprofdProducer> weak_factory_;
 };

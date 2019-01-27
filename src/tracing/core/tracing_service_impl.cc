@@ -60,7 +60,7 @@ constexpr size_t kDefaultShmPageSize = base::kPageSize;
 constexpr int kMaxBuffersPerConsumer = 128;
 constexpr base::TimeMillis kSnapshotsInterval(10 * 1000);
 constexpr int kDefaultWriteIntoFilePeriodMs = 5000;
-constexpr int kFlushTimeoutMs = 1000;
+constexpr int kFlushTimeoutMs = 5000;
 constexpr int kMaxConcurrentTracingSessions = 5;
 
 constexpr uint64_t kMillisPerHour = 3600000;
@@ -187,11 +187,11 @@ TracingServiceImpl::ProducerEndpointImpl* TracingServiceImpl::GetProducer(
 }
 
 std::unique_ptr<TracingService::ConsumerEndpoint>
-TracingServiceImpl::ConnectConsumer(Consumer* consumer) {
+TracingServiceImpl::ConnectConsumer(Consumer* consumer, uid_t uid) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
   PERFETTO_DLOG("Consumer %p connected", reinterpret_cast<void*>(consumer));
   std::unique_ptr<ConsumerEndpointImpl> endpoint(
-      new ConsumerEndpointImpl(this, task_runner_, consumer));
+      new ConsumerEndpointImpl(this, task_runner_, consumer, uid));
   auto it_and_inserted = consumers_.emplace(endpoint.get());
   PERFETTO_DCHECK(it_and_inserted.second);
   task_runner_->PostTask(std::bind(&Consumer::OnConnect, endpoint->consumer_));
@@ -214,9 +214,62 @@ void TracingServiceImpl::DisconnectConsumer(ConsumerEndpointImpl* consumer) {
   PERFETTO_DCHECK(!std::any_of(
       tracing_sessions_.begin(), tracing_sessions_.end(),
       [consumer](const std::pair<const TracingSessionID, TracingSession>& kv) {
-        return kv.second.consumer == consumer;
+        return kv.second.consumer_maybe_null == consumer;
       }));
 #endif
+}
+
+bool TracingServiceImpl::DetachConsumer(ConsumerEndpointImpl* consumer,
+                                        const std::string& key) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  PERFETTO_DLOG("Consumer %p detached", reinterpret_cast<void*>(consumer));
+  PERFETTO_DCHECK(consumers_.count(consumer));
+
+  TracingSessionID tsid = consumer->tracing_session_id_;
+  TracingSession* tracing_session;
+  if (!tsid || !(tracing_session = GetTracingSession(tsid)))
+    return false;
+
+  if (GetDetachedSession(consumer->uid_, key)) {
+    PERFETTO_ELOG("Another session has been detached with the same key \"%s\"",
+                  key.c_str());
+    return false;
+  }
+
+  PERFETTO_DCHECK(tracing_session->consumer_maybe_null == consumer);
+  tracing_session->consumer_maybe_null = nullptr;
+  tracing_session->detach_key = key;
+  consumer->tracing_session_id_ = 0;
+  return true;
+}
+
+bool TracingServiceImpl::AttachConsumer(ConsumerEndpointImpl* consumer,
+                                        const std::string& key) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  PERFETTO_DLOG("Consumer %p attaching to session %s",
+                reinterpret_cast<void*>(consumer), key.c_str());
+  PERFETTO_DCHECK(consumers_.count(consumer));
+
+  if (consumer->tracing_session_id_) {
+    PERFETTO_ELOG(
+        "Cannot reattach consumer to session %s"
+        " while it already attached tracing session ID %" PRIu64,
+        key.c_str(), consumer->tracing_session_id_);
+    return false;
+  }
+
+  auto* tracing_session = GetDetachedSession(consumer->uid_, key);
+  if (!tracing_session) {
+    PERFETTO_ELOG(
+        "Failed to attach consumer, session '%s' not found for uid %d",
+        key.c_str(), static_cast<int>(consumer->uid_));
+    return false;
+  }
+
+  consumer->tracing_session_id_ = tracing_session->id;
+  tracing_session->consumer_maybe_null = consumer;
+  tracing_session->detach_key.clear();
+  return true;
 }
 
 bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
@@ -285,6 +338,7 @@ bool TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
     if (!fd) {
       PERFETTO_ELOG(
           "The TraceConfig had write_into_file==true but no fd was passed");
+      tracing_sessions_.erase(tsid);
       return false;
     }
     tracing_session->write_into_file = std::move(fd);
@@ -402,7 +456,9 @@ bool TracingServiceImpl::StartTracing(TracingSessionID tsid) {
     auto weak_this = weak_ptr_factory_.GetWeakPtr();
     task_runner_->PostDelayedTask(
         [weak_this, tsid] {
-          if (weak_this)
+          // Skip entirely the flush if the trace session doesn't exist anymore.
+          // This is to prevent misleading error messages to be logged.
+          if (weak_this && weak_this->GetTracingSession(tsid))
             weak_this->FlushAndDisableTracing(tsid);
         },
         trace_duration_ms);
@@ -418,6 +474,10 @@ bool TracingServiceImpl::StartTracing(TracingSessionID tsid) {
         },
         tracing_session->delay_to_next_write_period_ms());
   }
+
+  // Start the periodic flush tasks if the config specified a flush period.
+  if (tracing_session->config.flush_period_ms())
+    PeriodicFlushTask(tsid, /*post_next_only=*/true);
 
   for (const auto& kv : tracing_session->data_source_instances) {
     ProducerID producer_id = kv.first;
@@ -566,7 +626,8 @@ void TracingServiceImpl::DisableTracingNotifyConsumerAndFlushFile(
     ReadBuffers(tracing_session->id, nullptr);
   }
 
-  tracing_session->consumer->NotifyOnTracingDisabled();
+  if (tracing_session->consumer_maybe_null)
+    tracing_session->consumer_maybe_null->NotifyOnTracingDisabled();
 }
 
 void TracingServiceImpl::Flush(TracingSessionID tsid,
@@ -660,8 +721,45 @@ void TracingServiceImpl::FlushAndDisableTracing(TracingSessionID tsid) {
   Flush(tsid, kFlushTimeoutMs, [weak_this, tsid](bool success) {
     PERFETTO_DLOG("Flush done (success: %d), disabling trace session %" PRIu64,
                   success, tsid);
-    if (weak_this)
+    if (!weak_this)
+      return;
+    TracingSession* session = weak_this->GetTracingSession(tsid);
+    if (session->consumer_maybe_null) {
+      // If the consumer is still attached, just disable the session but give it
+      // a chance to read the contents.
       weak_this->DisableTracing(tsid);
+    } else {
+      // If the consumer detached, destroy the session. If the consumer did
+      // start the session in long-tracing mode, the service will have saved
+      // the contents to the passed file. If not, the contents will be
+      // destroyed.
+      weak_this->FreeBuffers(tsid);
+    }
+  });
+}
+
+void TracingServiceImpl::PeriodicFlushTask(TracingSessionID tsid,
+                                           bool post_next_only) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  TracingSession* tracing_session = GetTracingSession(tsid);
+  if (!tracing_session || tracing_session->state != TracingSession::STARTED)
+    return;
+
+  uint32_t flush_period_ms = tracing_session->config.flush_period_ms();
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
+  task_runner_->PostDelayedTask(
+      [weak_this, tsid] {
+        if (weak_this)
+          weak_this->PeriodicFlushTask(tsid, /*post_next_only=*/false);
+      },
+      flush_period_ms - (base::GetWallTimeMs().count() % flush_period_ms));
+
+  if (post_next_only)
+    return;
+
+  Flush(tsid, kFlushTimeoutMs, [](bool success) {
+    if (!success)
+      PERFETTO_ELOG("Periodic flush timed out");
   });
 }
 
@@ -845,6 +943,8 @@ void TracingServiceImpl::ReadBuffers(TracingSessionID tsid,
     PERFETTO_DLOG("Draining into file, written: %" PRIu64 " KB, stop: %d",
                   (total_wr_size + 1023) / 1024, stop_writing_into_file);
     if (stop_writing_into_file) {
+      // Ensure all data was written to the file before we close it.
+      base::FlushFile(fd);
       tracing_session->write_into_file.reset();
       tracing_session->write_period_ms = 0;
       if (tracing_session->state == TracingSession::STARTED)
@@ -886,6 +986,11 @@ void TracingServiceImpl::FreeBuffers(TracingSessionID tsid) {
     return;  // TODO(primiano): signal failure?
   }
   DisableTracing(tsid, /*disable_immediately=*/true);
+
+  for (auto& producer_entry : producers_) {
+    ProducerEndpointImpl* producer = producer_entry.second;
+    producer->OnFreeBuffers(tracing_session->buffers_index);
+  }
 
   for (BufferID buffer_id : tracing_session->buffers_index) {
     buffer_ids_.Free(buffer_id);
@@ -1025,11 +1130,12 @@ TracingServiceImpl::DataSourceInstance* TracingServiceImpl::SetupDataSource(
 
   DataSourceInstanceID inst_id = ++last_data_source_instance_id_;
   auto insert_iter = tracing_session->data_source_instances.emplace(
-      producer->id_,
-      DataSourceInstance{inst_id,
-                         cfg_data_source.config(),  //  Deliberate copy.
-                         data_source.descriptor.name(),
-                         data_source.descriptor.will_notify_on_stop()});
+      std::piecewise_construct,  //
+      std::forward_as_tuple(producer->id_),
+      std::forward_as_tuple(inst_id,
+                            cfg_data_source.config(),  //  Deliberate copy.
+                            data_source.descriptor.name(),
+                            data_source.descriptor.will_notify_on_stop()));
   DataSourceInstance* ds_instance = &insert_iter->second;
   DataSourceConfig& ds_config = ds_instance->config;
   ds_config.set_trace_duration_ms(tracing_session->config.duration_ms());
@@ -1083,9 +1189,17 @@ void TracingServiceImpl::CopyProducerPageIntoLogBuffer(
     BufferID buffer_id,
     uint16_t num_fragments,
     uint8_t chunk_flags,
+    bool chunk_complete,
     const uint8_t* src,
     size_t size) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
+
+  ProducerEndpointImpl* producer = GetProducer(producer_id_trusted);
+  if (!producer) {
+    PERFETTO_DFATAL("Producer not found.");
+    return;
+  }
+
   TraceBuffer* buf = GetBufferByID(buffer_id);
   if (!buf) {
     PERFETTO_DLOG("Could not find target buffer %" PRIu16
@@ -1094,14 +1208,35 @@ void TracingServiceImpl::CopyProducerPageIntoLogBuffer(
     return;
   }
 
-  // TODO(primiano): we should have a set<BufferID> |allowed_target_buffers| in
-  // ProducerEndpointImpl to perform ACL checks and prevent that the Producer
-  // passes a |target_buffer| which is valid, but that we never asked it to use.
-  // Essentially we want to prevent a malicious producer to inject data into a
-  // log buffer that has nothing to do with it.
+  // Verify that the producer is actually allowed to write into the target
+  // buffer specified in the request. This prevents a malicious producer from
+  // injecting data into a log buffer that belongs to a tracing session the
+  // producer is not part of.
+  if (!producer->is_allowed_target_buffer(buffer_id)) {
+    PERFETTO_ELOG("Producer %" PRIu16
+                  " tried to write into forbidden target buffer %" PRIu16,
+                  producer_id_trusted, buffer_id);
+    PERFETTO_DFATAL("Forbidden target buffer");
+    return;
+  }
+
+  // If the writer was registered by the producer, it should only write into the
+  // buffer it was registered with.
+  base::Optional<BufferID> associated_buffer =
+      producer->buffer_id_for_writer(writer_id);
+  if (associated_buffer && *associated_buffer != buffer_id) {
+    PERFETTO_ELOG("Writer %" PRIu16 " of producer %" PRIu16
+                  " was registered to write into target buffer %" PRIu16
+                  ", but tried to write into buffer %" PRIu16,
+                  writer_id, producer_id_trusted, *associated_buffer,
+                  buffer_id);
+    PERFETTO_DCHECK(false);
+    return;
+  }
 
   buf->CopyChunkUntrusted(producer_id_trusted, producer_uid_trusted, writer_id,
-                          chunk_id, num_fragments, chunk_flags, src, size);
+                          chunk_id, num_fragments, chunk_flags, chunk_complete,
+                          src, size);
 }
 
 void TracingServiceImpl::ApplyChunkPatches(
@@ -1148,6 +1283,20 @@ void TracingServiceImpl::ApplyChunkPatches(
     buf->TryPatchChunkContents(producer_id_trusted, writer_id, chunk_id,
                                &patches[0], i, chunk.has_more_patches());
   }
+}
+
+TracingServiceImpl::TracingSession* TracingServiceImpl::GetDetachedSession(
+    uid_t uid,
+    const std::string& key) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  for (auto& kv : tracing_sessions_) {
+    TracingSession* session = &kv.second;
+    if (session->consumer_uid == uid && session->detach_key == key) {
+      PERFETTO_DCHECK(session->consumer_maybe_null == nullptr);
+      return session;
+    }
+  }
+  return nullptr;
 }
 
 TracingServiceImpl::TracingSession* TracingServiceImpl::GetTracingSession(
@@ -1340,10 +1489,12 @@ void TracingServiceImpl::MaybeEmitTraceConfig(
 TracingServiceImpl::ConsumerEndpointImpl::ConsumerEndpointImpl(
     TracingServiceImpl* service,
     base::TaskRunner* task_runner,
-    Consumer* consumer)
+    Consumer* consumer,
+    uid_t uid)
     : task_runner_(task_runner),
       service_(service),
       consumer_(consumer),
+      uid_(uid),
       weak_ptr_factory_(this) {}
 
 TracingServiceImpl::ConsumerEndpointImpl::~ConsumerEndpointImpl() {
@@ -1415,6 +1566,34 @@ void TracingServiceImpl::ConsumerEndpointImpl::Flush(uint32_t timeout_ms,
   service_->Flush(tracing_session_id_, timeout_ms, callback);
 }
 
+void TracingServiceImpl::ConsumerEndpointImpl::Detach(const std::string& key) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  bool success = service_->DetachConsumer(this, key);
+  auto weak_this = GetWeakPtr();
+  task_runner_->PostTask([weak_this, success] {
+    if (weak_this)
+      weak_this->consumer_->OnDetach(success);
+  });
+}
+
+void TracingServiceImpl::ConsumerEndpointImpl::Attach(const std::string& key) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  bool success = service_->AttachConsumer(this, key);
+  auto weak_this = GetWeakPtr();
+  task_runner_->PostTask([weak_this, success] {
+    if (!weak_this)
+      return;
+    Consumer* consumer = weak_this->consumer_;
+    TracingSession* session =
+        weak_this->service_->GetTracingSession(weak_this->tracing_session_id_);
+    if (!session) {
+      consumer->OnAttach(false, TraceConfig());
+      return;
+    }
+    consumer->OnAttach(success, session->config);
+  });
+}
+
 base::WeakPtr<TracingServiceImpl::ConsumerEndpointImpl>
 TracingServiceImpl::ConsumerEndpointImpl::GetWeakPtr() {
   PERFETTO_DCHECK_THREAD(thread_checker_);
@@ -1462,6 +1641,22 @@ void TracingServiceImpl::ProducerEndpointImpl::UnregisterDataSource(
   service_->UnregisterDataSource(id_, name);
 }
 
+void TracingServiceImpl::ProducerEndpointImpl::RegisterTraceWriter(
+    uint32_t writer_id,
+    uint32_t target_buffer) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  PERFETTO_DCHECK(!buffer_id_for_writer(static_cast<WriterID>(writer_id)));
+  writers_[static_cast<WriterID>(writer_id)] =
+      static_cast<BufferID>(target_buffer);
+}
+
+void TracingServiceImpl::ProducerEndpointImpl::UnregisterTraceWriter(
+    uint32_t writer_id) {
+  PERFETTO_DCHECK_THREAD(thread_checker_);
+  PERFETTO_DCHECK(buffer_id_for_writer(static_cast<WriterID>(writer_id)));
+  writers_.erase(static_cast<WriterID>(writer_id));
+}
+
 void TracingServiceImpl::ProducerEndpointImpl::CommitData(
     const CommitDataRequest& req_untrusted,
     CommitDataCallback callback) {
@@ -1501,7 +1696,7 @@ void TracingServiceImpl::ProducerEndpointImpl::CommitData(
 
     service_->CopyProducerPageIntoLogBuffer(
         id_, uid_, writer_id, chunk_id, buffer_id, num_fragments, chunk_flags,
-        chunk.payload_begin(), chunk.payload_size());
+        /*chunk_complete=*/true, chunk.payload_begin(), chunk.payload_size());
 
     // This one has release-store semantics.
     shmem_abi_.ReleaseChunkAsFree(std::move(chunk));
@@ -1594,6 +1789,7 @@ void TracingServiceImpl::ProducerEndpointImpl::SetupDataSource(
     DataSourceInstanceID ds_id,
     const DataSourceConfig& config) {
   PERFETTO_DCHECK_THREAD(thread_checker_);
+  allowed_target_buffers_.insert(static_cast<BufferID>(config.target_buffer()));
   auto weak_this = weak_ptr_factory_.GetWeakPtr();
   task_runner_->PostTask([weak_this, ds_id, config] {
     if (weak_this)
@@ -1624,14 +1820,25 @@ void TracingServiceImpl::ProducerEndpointImpl::NotifyDataSourceStopped(
   service_->NotifyDataSourceStopped(id_, data_source_id);
 }
 
+void TracingServiceImpl::ProducerEndpointImpl::OnFreeBuffers(
+    const std::vector<BufferID>& target_buffers) {
+  if (allowed_target_buffers_.empty())
+    return;
+  for (BufferID buffer : target_buffers)
+    allowed_target_buffers_.erase(buffer);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // TracingServiceImpl::TracingSession implementation
 ////////////////////////////////////////////////////////////////////////////////
 
 TracingServiceImpl::TracingSession::TracingSession(
     TracingSessionID session_id,
-    ConsumerEndpointImpl* consumer_ptr,
+    ConsumerEndpointImpl* consumer,
     const TraceConfig& new_config)
-    : id(session_id), consumer(consumer_ptr), config(new_config) {}
+    : id(session_id),
+      consumer_maybe_null(consumer),
+      consumer_uid(consumer->uid_),
+      config(new_config) {}
 
 }  // namespace perfetto

@@ -41,7 +41,7 @@ class EventTrackerTest : public ::testing::Test {
 
 TEST_F(EventTrackerTest, InsertSecondSched) {
   uint32_t cpu = 3;
-  uint64_t timestamp = 100;
+  int64_t timestamp = 100;
   uint32_t pid_1 = 2;
   uint32_t prev_state = 32;
   static const char kCommProc1[] = "process1";
@@ -67,7 +67,7 @@ TEST_F(EventTrackerTest, InsertSecondSched) {
 
 TEST_F(EventTrackerTest, InsertThirdSched_SameThread) {
   uint32_t cpu = 3;
-  uint64_t timestamp = 100;
+  int64_t timestamp = 100;
   uint32_t prev_state = 32;
   static const char kCommProc1[] = "process1";
   static const char kCommProc2[] = "process2";
@@ -99,16 +99,16 @@ TEST_F(EventTrackerTest, InsertThirdSched_SameThread) {
 
 TEST_F(EventTrackerTest, CounterDuration) {
   uint32_t cpu = 3;
-  uint64_t timestamp = 100;
+  int64_t timestamp = 100;
   StringId name_id = 0;
   context.event_tracker->PushCounter(timestamp, 1000, name_id, cpu,
-                                     RefType::kCpuId);
+                                     RefType::kRefCpuId);
   context.event_tracker->PushCounter(timestamp + 1, 4000, name_id, cpu,
-                                     RefType::kCpuId);
+                                     RefType::kRefCpuId);
   context.event_tracker->PushCounter(timestamp + 3, 5000, name_id, cpu,
-                                     RefType::kCpuId);
+                                     RefType::kRefCpuId);
   context.event_tracker->PushCounter(timestamp + 9, 1000, name_id, cpu,
-                                     RefType::kCpuId);
+                                     RefType::kRefCpuId);
 
   ASSERT_EQ(context.storage->counters().counter_count(), 4ul);
   ASSERT_EQ(context.storage->counters().timestamps().at(0), timestamp);

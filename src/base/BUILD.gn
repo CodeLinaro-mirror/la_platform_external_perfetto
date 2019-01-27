@@ -38,13 +38,14 @@ source_set("base") {
   if (!is_win) {
     sources += [
       "event.cc",
+      "pipe.cc",
       "temp_file.cc",
       "unix_task_runner.cc",
     ]
   }
 
   if ((perfetto_build_standalone || perfetto_build_with_android) &&
-      (is_linux || is_android)) {
+      (is_linux || is_android) && !is_wasm) {
     sources += [ "watchdog_posix.cc" ]
   }
   if (is_debug && perfetto_build_standalone && !is_wasm) {
@@ -137,6 +138,7 @@ source_set("unittests") {
     deps += [ ":android_task_runner" ]
   }
   sources = [
+    "optional_unittest.cc",
     "paged_memory_unittest.cc",
     "scoped_file_unittest.cc",
     "string_splitter_unittest.cc",

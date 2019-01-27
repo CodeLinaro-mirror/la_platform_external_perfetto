@@ -24,6 +24,7 @@
 
 #include "perfetto/base/gtest_prod_util.h"
 #include "perfetto/base/logging.h"
+#include "perfetto/base/optional.h"
 #include "perfetto/base/time.h"
 #include "perfetto/base/weak_ptr.h"
 #include "perfetto/tracing/core/basic_types.h"
@@ -73,6 +74,9 @@ class TracingServiceImpl : public TracingService {
     // TracingService::ProducerEndpoint implementation.
     void RegisterDataSource(const DataSourceDescriptor&) override;
     void UnregisterDataSource(const std::string& name) override;
+    void RegisterTraceWriter(uint32_t writer_id,
+                             uint32_t target_buffer) override;
+    void UnregisterTraceWriter(uint32_t writer_id) override;
     void CommitData(const CommitDataRequest&, CommitDataCallback) override;
     void SetSharedMemory(std::unique_ptr<SharedMemory>);
     std::unique_ptr<TraceWriter> CreateTraceWriter(BufferID) override;
@@ -86,6 +90,18 @@ class TracingServiceImpl : public TracingService {
     void StartDataSource(DataSourceInstanceID, const DataSourceConfig&);
     void StopDataSource(DataSourceInstanceID);
     void Flush(FlushRequestID, const std::vector<DataSourceInstanceID>&);
+    void OnFreeBuffers(const std::vector<BufferID>& target_buffers);
+
+    bool is_allowed_target_buffer(BufferID buffer_id) const {
+      return allowed_target_buffers_.count(buffer_id);
+    }
+
+    base::Optional<BufferID> buffer_id_for_writer(WriterID writer_id) const {
+      const auto it = writers_.find(writer_id);
+      if (it != writers_.end())
+        return it->second;
+      return base::nullopt;
+    }
 
    private:
     friend class TracingServiceImpl;
@@ -105,6 +121,20 @@ class TracingServiceImpl : public TracingService {
     size_t shmem_size_hint_bytes_ = 0;
     const std::string name_;
 
+    // Set of the global target_buffer IDs that the producer is configured to
+    // write into in any active tracing session.
+    std::set<BufferID> allowed_target_buffers_;
+
+    // Maps registered TraceWriter IDs to their target buffers as registered by
+    // the producer. Note that producers aren't required to register their
+    // writers, so we may see commits of chunks with WriterIDs that aren't
+    // contained in this map. However, if a producer does register a writer, the
+    // service will prevent the writer from writing into any other buffer than
+    // the one associated with it here. The BufferIDs stored in this map are
+    // untrusted, so need to be verified against |allowed_target_buffers_|
+    // before use.
+    std::map<WriterID, BufferID> writers_;
+
     // This is used only in in-process configurations (mostly tests).
     std::unique_ptr<SharedMemoryArbiterImpl> inproc_shmem_arbiter_;
     PERFETTO_THREAD_CHECKER(thread_checker_)
@@ -114,7 +144,10 @@ class TracingServiceImpl : public TracingService {
   // The implementation behind the service endpoint exposed to each consumer.
   class ConsumerEndpointImpl : public TracingService::ConsumerEndpoint {
    public:
-    ConsumerEndpointImpl(TracingServiceImpl*, base::TaskRunner*, Consumer*);
+    ConsumerEndpointImpl(TracingServiceImpl*,
+                         base::TaskRunner*,
+                         Consumer*,
+                         uid_t uid);
     ~ConsumerEndpointImpl() override;
 
     void NotifyOnTracingDisabled();
@@ -127,6 +160,8 @@ class TracingServiceImpl : public TracingService {
     void ReadBuffers() override;
     void FreeBuffers() override;
     void Flush(uint32_t timeout_ms, FlushCallback) override;
+    void Detach(const std::string& key) override;
+    void Attach(const std::string& key) override;
 
    private:
     friend class TracingServiceImpl;
@@ -136,6 +171,7 @@ class TracingServiceImpl : public TracingService {
     base::TaskRunner* const task_runner_;
     TracingServiceImpl* const service_;
     Consumer* const consumer_;
+    uid_t const uid_;
     TracingSessionID tracing_session_id_ = 0;
     PERFETTO_THREAD_CHECKER(thread_checker_)
     base::WeakPtrFactory<ConsumerEndpointImpl> weak_ptr_factory_;  // Keep last.
@@ -156,6 +192,7 @@ class TracingServiceImpl : public TracingService {
                                      BufferID,
                                      uint16_t num_fragments,
                                      uint8_t chunk_flags,
+                                     bool chunk_complete,
                                      const uint8_t* src,
                                      size_t size);
   void ApplyChunkPatches(ProducerID,
@@ -164,6 +201,8 @@ class TracingServiceImpl : public TracingService {
   void NotifyDataSourceStopped(ProducerID, const DataSourceInstanceID);
 
   // Called by ConsumerEndpointImpl.
+  bool DetachConsumer(ConsumerEndpointImpl*, const std::string& key);
+  bool AttachConsumer(ConsumerEndpointImpl*, const std::string& key);
   void DisconnectConsumer(ConsumerEndpointImpl*);
   bool EnableTracing(ConsumerEndpointImpl*,
                      const TraceConfig&,
@@ -185,7 +224,8 @@ class TracingServiceImpl : public TracingService {
       size_t shared_memory_size_hint_bytes = 0) override;
 
   std::unique_ptr<TracingService::ConsumerEndpoint> ConnectConsumer(
-      Consumer*) override;
+      Consumer*,
+      uid_t) override;
 
   // Exposed mainly for testing.
   size_t num_producers() const { return producers_.size(); }
@@ -203,9 +243,16 @@ class TracingServiceImpl : public TracingService {
 
   // Represents an active data source for a tracing session.
   struct DataSourceInstance {
+    DataSourceInstance(DataSourceInstanceID id,
+                       const DataSourceConfig& cfg,
+                       const std::string& ds_name,
+                       bool notify)
+        : instance_id(id),
+          config(cfg),
+          data_source_name(ds_name),
+          will_notify_on_stop(notify) {}
     DataSourceInstance(const DataSourceInstance&) = delete;
     DataSourceInstance& operator=(const DataSourceInstance&) = delete;
-    DataSourceInstance(DataSourceInstance&&) noexcept = default;
 
     DataSourceInstanceID instance_id;
     DataSourceConfig config;
@@ -242,7 +289,13 @@ class TracingServiceImpl : public TracingService {
     const TracingSessionID id;
 
     // The consumer that started the session.
-    ConsumerEndpointImpl* const consumer;
+    // Can be nullptr if the consumer detached from the session.
+    ConsumerEndpointImpl* consumer_maybe_null;
+
+    // Unix uid of the consumer. This is valid even after the consumer detaches
+    // and does not change for the entire duration of the session. It is used to
+    // prevent that a consumer re-attaches to a session from a different uid.
+    uid_t const consumer_uid;
 
     // The original trace config provided by the Consumer when calling
     // EnableTracing().
@@ -275,6 +328,10 @@ class TracingServiceImpl : public TracingService {
 
     State state = DISABLED;
 
+    // If the consumer detached the session, this variable defines the key used
+    // for identifying the session later when reattaching.
+    std::string detach_key;
+
     // This is set when the Consumer calls sets |write_into_file| == true in the
     // TraceConfig. In this case this represents the file we should stream the
     // trace packets into, rather than returning it to the consumer via
@@ -300,6 +357,10 @@ class TracingServiceImpl : public TracingService {
   // session doesn't exists.
   TracingSession* GetTracingSession(TracingSessionID);
 
+  // Returns a pointer to the |tracing_sessions_| entry, matching the given
+  // uid and detach key, or nullptr if no such session exists.
+  TracingSession* GetDetachedSession(uid_t, const std::string& key);
+
   // Update the memory guard rail by using the latest information from the
   // shared memory and trace buffers.
   void UpdateMemoryGuardrail();
@@ -311,6 +372,7 @@ class TracingServiceImpl : public TracingService {
   void OnFlushTimeout(TracingSessionID, FlushRequestID);
   void OnDisableTracingTimeout(TracingSessionID);
   void DisableTracingNotifyConsumerAndFlushFile(TracingSession*);
+  void PeriodicFlushTask(TracingSessionID, bool post_next_only);
   TraceBuffer* GetBufferByID(BufferID);
 
   base::TaskRunner* const task_runner_;
