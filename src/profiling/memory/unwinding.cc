@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <cxxabi.h>
+
 #include <unwindstack/MachineArm.h>
 #include <unwindstack/MachineArm64.h>
 #include <unwindstack/MachineMips.h>
@@ -42,6 +44,7 @@
 #include "perfetto/base/file_utils.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/scoped_file.h"
+#include "perfetto/base/string_utils.h"
 #include "src/profiling/memory/unwinding.h"
 #include "src/profiling/memory/wire_protocol.h"
 
@@ -50,6 +53,13 @@ namespace profiling {
 namespace {
 
 size_t kMaxFrames = 1000;
+
+#pragma GCC diagnostic push
+// We do not care about deterministic destructor order.
+#pragma GCC diagnostic ignored "-Wglobal-constructors"
+#pragma GCC diagnostic ignored "-Wexit-time-destructors"
+static std::vector<std::string> kSkipMaps{"heapprofd_client.so"};
+#pragma GCC diagnostic pop
 
 std::unique_ptr<unwindstack::Regs> CreateFromRawData(unwindstack::ArchEnum arch,
                                                      void* raw_data) {
@@ -79,6 +89,15 @@ std::unique_ptr<unwindstack::Regs> CreateFromRawData(unwindstack::ArchEnum arch,
       break;
   }
   return ret;
+}
+
+void MaybeDemangle(std::string* name) {
+  int ignored;
+  char* data = abi::__cxa_demangle(name->c_str(), nullptr, nullptr, &ignored);
+  if (data) {
+    *name = data;
+    free(data);
+  }
 }
 
 }  // namespace
@@ -157,16 +176,26 @@ bool DoUnwind(WireMessage* msg, UnwindingMetadata* metadata, AllocRecord* out) {
       metadata->maps.Reset();
       metadata->maps.Parse();
     }
-    unwinder.Unwind();
+    unwinder.Unwind(&kSkipMaps, nullptr);
     error_code = unwinder.LastErrorCode();
     if (error_code != unwindstack::ERROR_INVALID_MAP)
       break;
   }
-  if (error_code == 0)
-    out->frames = unwinder.frames();
-  else
+  out->frames = unwinder.frames();
+  if (error_code != 0) {
+    unwindstack::FrameData frame_data{};
+    frame_data.function_name = "ERROR " + std::to_string(error_code);
+    frame_data.map_name = "ERROR";
+
+    out->frames.emplace_back(frame_data);
     PERFETTO_DLOG("unwinding failed %" PRIu8, error_code);
-  return error_code == 0;
+  }
+
+  for (unwindstack::FrameData& fd : out->frames) {
+    if (base::EndsWith(fd.map_name, ".so"))
+      MaybeDemangle(&fd.function_name);
+  }
+  return true;
 }
 
 bool HandleUnwindingRecord(UnwindingRecord* rec, BookkeepingRecord* out) {
@@ -183,10 +212,7 @@ bool HandleUnwindingRecord(UnwindingRecord* rec, BookkeepingRecord* out) {
 
     out->pid = rec->pid;
     out->record_type = BookkeepingRecord::Type::Malloc;
-    if (!DoUnwind(&msg, metadata.get(), &out->alloc_record)) {
-      return false;
-    }
-    return true;
+    return DoUnwind(&msg, metadata.get(), &out->alloc_record);
   } else if (msg.record_type == RecordType::Free) {
     out->record_type = BookkeepingRecord::Type::Free;
     out->pid = rec->pid;
