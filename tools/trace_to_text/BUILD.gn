@@ -32,8 +32,6 @@ source_set("common") {
   sources = [
     "ftrace_event_formatter.cc",
     "ftrace_event_formatter.h",
-    "ftrace_inode_handler.cc",
-    "ftrace_inode_handler.h",
     "main.cc",
     "process_formatter.h",
     "trace_to_profile.cc",
@@ -77,6 +75,15 @@ if (current_toolchain == host_toolchain) {
     testonly = true
     deps = [
       ":full",
+      "../../gn:default_deps",
+    ]
+  }
+
+  # WASM is too permissive, build a normal version of the binary to test for
+  # missing symbols.
+  executable("trace_to_text_lite_host") {
+    deps = [
+      ":lite",
       "../../gn:default_deps",
     ]
   }

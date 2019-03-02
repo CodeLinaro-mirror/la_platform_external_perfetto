@@ -17,28 +17,52 @@
 #ifndef SRC_TRACE_PROCESSOR_COUNTERS_TABLE_H_
 #define SRC_TRACE_PROCESSOR_COUNTERS_TABLE_H_
 
-#include "src/trace_processor/storage_schema.h"
-#include "src/trace_processor/table.h"
-#include "src/trace_processor/trace_storage.h"
+#include "src/trace_processor/storage_table.h"
+
+#include <deque>
+#include <memory>
+#include <string>
 
 namespace perfetto {
 namespace trace_processor {
 
-class CountersTable : public Table {
+class CountersTable : public StorageTable {
  public:
   static void RegisterTable(sqlite3* db, const TraceStorage* storage);
 
   CountersTable(sqlite3*, const TraceStorage*);
 
-  // Table implementation.
-  Table::Schema CreateSchema(int argc, const char* const* argv) override;
-  std::unique_ptr<Table::Cursor> CreateCursor(const QueryConstraints&,
-                                              sqlite3_value**) override;
+  // StorageTable implementation.
+  StorageSchema CreateStorageSchema() override;
+  uint32_t RowCount() override;
   int BestIndex(const QueryConstraints&, BestIndexInfo*) override;
 
  private:
+  class RefColumn final : public StorageColumn {
+   public:
+    RefColumn(std::string col_name, const TraceStorage* storage);
+
+    void ReportResult(sqlite3_context* ctx, uint32_t row) const override;
+
+    Bounds BoundFilter(int op, sqlite3_value* sqlite_val) const override;
+
+    void Filter(int op, sqlite3_value* value, FilteredRowIndex*) const override;
+
+    Comparator Sort(const QueryConstraints::OrderBy& ob) const override;
+
+    bool IsNaturallyOrdered() const override { return false; }
+
+    Table::ColumnType GetType() const override {
+      return Table::ColumnType::kLong;
+    }
+
+   private:
+    int CompareRefsAsc(uint32_t f, uint32_t s) const;
+
+    const TraceStorage* storage_ = nullptr;
+  };
+
   std::deque<std::string> ref_types_;
-  StorageSchema schema_;
   const TraceStorage* const storage_;
 };
 }  // namespace trace_processor

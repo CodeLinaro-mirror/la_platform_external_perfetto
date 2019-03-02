@@ -46,11 +46,10 @@ class CpuSliceTrackController extends TrackController<Config, Data> {
     this.busy = true;
     if (this.setup === false) {
       await this.query(
-          `create virtual table window_${this.trackState.id} using window;`);
-      await this.query(
-          `create virtual table span_${this.trackState.id}
+          `create virtual table ${this.tableName('window')} using window;`);
+      await this.query(`create virtual table ${this.tableName('span')}
               using span_join(sched PARTITIONED cpu,
-                              window_${this.trackState.id} PARTITIONED cpu);`);
+                              ${this.tableName('window')} PARTITIONED cpu);`);
       this.setup = true;
     }
 
@@ -91,7 +90,7 @@ class CpuSliceTrackController extends TrackController<Config, Data> {
     const query = `select
         quantum_ts as bucket,
         sum(dur)/cast(${bucketSizeNs} as float) as utilization
-        from span_${this.trackState.id}
+        from ${this.tableName('span')}
         where cpu = ${this.config.cpu}
         and utid != 0
         group by quantum_ts`;
@@ -120,7 +119,7 @@ class CpuSliceTrackController extends TrackController<Config, Data> {
     // TODO(hjd): Remove LIMIT
     const LIMIT = 10000;
 
-    const query = `select ts,dur,utid from span_${this.trackState.id}
+    const query = `select ts,dur,utid,row_id from span_${this.trackState.id}
         where cpu = ${this.config.cpu}
         and utid != 0
         limit ${LIMIT};`;
@@ -132,6 +131,7 @@ class CpuSliceTrackController extends TrackController<Config, Data> {
       start,
       end,
       resolution,
+      ids: new Float64Array(numRows),
       starts: new Float64Array(numRows),
       ends: new Float64Array(numRows),
       utids: new Uint32Array(numRows),
@@ -143,6 +143,7 @@ class CpuSliceTrackController extends TrackController<Config, Data> {
       slices.starts[row] = startSec;
       slices.ends[row] = startSec + fromNs(+cols[1].longValues![row]);
       slices.utids[row] = +cols[2].longValues![row];
+      slices.ids[row] = +cols[3].longValues![row];
     }
     if (numRows === LIMIT) {
       slices.end = slices.ends[slices.ends.length - 1];
@@ -161,8 +162,8 @@ class CpuSliceTrackController extends TrackController<Config, Data> {
 
   onDestroy(): void {
     if (this.setup) {
-      this.query(`drop table window_${this.trackState.id}`);
-      this.query(`drop table span_${this.trackState.id}`);
+      this.query(`drop table ${this.tableName('window')}`);
+      this.query(`drop table ${this.tableName('span')}`);
       this.setup = false;
     }
   }
