@@ -20,7 +20,6 @@ import {TimeSpan} from '../common/time';
 import {copyToClipboard} from './clipboard';
 import {DragGestureHandler} from './drag_gesture_handler';
 import {globals} from './globals';
-import {HeaderPanel} from './header_panel';
 import {NotesEditorPanel, NotesPanel} from './notes_panel';
 import {SliceDetailsPanel} from './slice_panel';
 import {OverviewTimelinePanel} from './overview_timeline_panel';
@@ -30,13 +29,14 @@ import {Panel} from './panel';
 import {AnyAttrsVnode, PanelContainer} from './panel_container';
 import {TimeAxisPanel} from './time_axis_panel';
 import {computeZoom} from './time_scale';
+import {TimeSelectionPanel} from './time_selection_panel';
 import {TRACK_SHELL_WIDTH} from './track_constants';
 import {TrackGroupPanel} from './track_group_panel';
 import {TrackPanel} from './track_panel';
 import {Actions} from '../common/actions';
 
 const DRAG_HANDLE_HEIGHT_PX = 12;
-const DEFAULT_DETAILS_HEIGHT_PX = 250 + DRAG_HANDLE_HEIGHT_PX;
+const DEFAULT_DETAILS_HEIGHT_PX = 230 + DRAG_HANDLE_HEIGHT_PX;
 
 class QueryTable extends Panel {
   view() {
@@ -152,8 +152,8 @@ class TraceViewer implements m.ClassComponent {
   private detailsHeight = DRAG_HANDLE_HEIGHT_PX;
   // Used to set details panel to default height on selection.
   private showDetailsPanel = false;
-  // Used to prevent global deselection if a pan occurred.
-  private panOccurred = false;
+  // Used to prevent global deselection if a pan/drag select occurred.
+  private keepCurrentSelection = false;
 
   oncreate(vnode: m.CVnodeDOM) {
     const frontendLocalState = globals.frontendLocalState;
@@ -181,7 +181,7 @@ class TraceViewer implements m.ClassComponent {
       element: panZoomEl,
       contentOffsetX: TRACK_SHELL_WIDTH,
       onPanned: (pannedPx: number) => {
-        this.panOccurred = true;
+        this.keepCurrentSelection = true;
         const traceTime = globals.state.traceTime;
         const vizTime = globals.frontendLocalState.visibleWindowTime;
         const origDelta = vizTime.duration;
@@ -207,6 +207,21 @@ class TraceViewer implements m.ClassComponent {
         const newSpan = computeZoom(scale, span, 1 - zoomRatio, zoomPx);
         frontendLocalState.updateVisibleTime(newSpan);
         globals.rafScheduler.scheduleRedraw();
+      },
+      onDragSelect: (selectStartPx: number|null, selectEndPx: number) => {
+        if (!selectStartPx) return;
+        this.keepCurrentSelection = true;
+        globals.frontendLocalState.setShowTimeSelectPreview(false);
+        const traceTime = globals.state.traceTime;
+        const scale = frontendLocalState.timeScale;
+        const startPx = Math.min(selectStartPx, selectEndPx);
+        const endPx = Math.max(selectStartPx, selectEndPx);
+        const startTs = Math.max(traceTime.startSec,
+                               scale.pxToTime(startPx - TRACK_SHELL_WIDTH));
+        const endTs = Math.min(traceTime.endSec,
+                               scale.pxToTime(endPx - TRACK_SHELL_WIDTH));
+        globals.dispatch(Actions.selectTimeSpan({startTs, endTs}));
+        globals.rafScheduler.scheduleRedraw();
       }
     });
   }
@@ -218,13 +233,7 @@ class TraceViewer implements m.ClassComponent {
 
   view() {
     const scrollingPanels: AnyAttrsVnode[] =
-        globals.state.scrollingTracks.length > 0 ?
-        [
-          m(HeaderPanel, {title: 'Tracks', key: 'tracksheader'}),
-          ...globals.state.scrollingTracks.map(
-              id => m(TrackPanel, {key: id, id})),
-        ] :
-        [];
+        globals.state.scrollingTracks.map(id => m(TrackPanel, {key: id, id}));
 
     for (const group of Object.values(globals.state.trackGroups)) {
       scrollingPanels.push(m(TrackGroupPanel, {
@@ -243,7 +252,8 @@ class TraceViewer implements m.ClassComponent {
 
     const detailsPanels: AnyAttrsVnode[] = [];
     if (globals.state.currentSelection) {
-      if (!this.showDetailsPanel) {
+      if (!this.showDetailsPanel &&
+          globals.state.currentSelection.kind !== 'TIMESPAN') {
         this.detailsHeight = DEFAULT_DETAILS_HEIGHT_PX;
         this.showDetailsPanel = true;
       }
@@ -276,9 +286,9 @@ class TraceViewer implements m.ClassComponent {
         m('.pan-and-zoom-content', {
           onclick: () =>
           {
-            // We don't want to deselect when panning.
-            if (this.panOccurred) {
-              this.panOccurred = false;
+            // We don't want to deselect when panning/drag selecting.
+            if (this.keepCurrentSelection) {
+              this.keepCurrentSelection = false;
               return;
             }
             globals.dispatch(Actions.deselect({}));
@@ -288,6 +298,7 @@ class TraceViewer implements m.ClassComponent {
               panels: [
                 m(OverviewTimelinePanel, {key: 'overview'}),
                 m(TimeAxisPanel, {key: 'timeaxis'}),
+                m(TimeSelectionPanel, {key: 'timeselection'}),
                 m(NotesPanel, {key: 'notes'}),
                 ...globals.state.pinnedTracks.map(
                     id => m(TrackPanel, {key: id, id})),
