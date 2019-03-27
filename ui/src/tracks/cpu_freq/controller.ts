@@ -56,7 +56,7 @@ class CpuFreqTrackController extends TrackController<Config, Data> {
       await this.query(`create view ${this.tableName('freq')}
           as select
             ts,
-            dur,
+            lead(ts) over (order by ts) - ts as dur,
             ref as cpu,
             name as freq_name,
             value as freq_value
@@ -69,7 +69,7 @@ class CpuFreqTrackController extends TrackController<Config, Data> {
       await this.query(`create view ${this.tableName('idle')}
         as select
           ts,
-          dur,
+          lead(ts) over (order by ts) - ts as dur,
           ref as cpu,
           name as idle_name,
           value as idle_value
@@ -85,7 +85,7 @@ class CpuFreqTrackController extends TrackController<Config, Data> {
 
       await this.query(`create virtual table ${this.tableName('span_activity')}
       using span_join(${this.tableName('freq_idle')} PARTITIONED cpu,
-                      ${this.tableName('window')} PARTITIONED cpu);`);
+                      ${this.tableName('window')});`);
 
       // TODO(taylori): Move the idle value processing to the TP.
       await this.query(`create view ${this.tableName('activity')}
