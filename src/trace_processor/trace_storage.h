@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "perfetto/base/hash.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/optional.h"
 #include "perfetto/base/string_view.h"
@@ -51,7 +52,7 @@ using StringId = uint32_t;
 enum TableId : uint8_t {
   // Intentionally don't have TableId == 0 so that RowId == 0 can refer to an
   // invalid row id.
-  kCounters = 1,
+  kCounterValues = 1,
   kRawEvents = 2,
   kInstants = 3,
   kSched = 4,
@@ -90,7 +91,6 @@ class TraceStorage {
   struct Process {
     explicit Process(uint32_t p) : pid(p) {}
     int64_t start_ns = 0;
-    int64_t end_ns = 0;
     StringId name_id = 0;
     uint32_t pid = 0;
     base::Optional<UniquePid> pupid;
@@ -100,7 +100,6 @@ class TraceStorage {
   struct Thread {
     explicit Thread(uint32_t t) : tid(t) {}
     int64_t start_ns = 0;
-    int64_t end_ns = 0;
     StringId name_id = 0;
     base::Optional<UniquePid> upid;
     uint32_t tid = 0;
@@ -153,23 +152,21 @@ class TraceStorage {
 
     struct ArgHasher {
       uint64_t operator()(const Arg& arg) const noexcept {
-        uint64_t hash = kFnv1a64OffsetBasis;
-        hash ^= static_cast<decltype(hash)>(arg.key);
-        hash *= 1099511628211;  // FNV-1a-64 prime.
+        base::Hash hash;
+        hash.Update(arg.key);
         // We don't hash arg.flat_key because it's a subsequence of arg.key.
         switch (arg.value.type) {
           case Variadic::Type::kInt:
-            hash ^= static_cast<uint64_t>(arg.value.int_value);
+            hash.Update(arg.value.int_value);
             break;
           case Variadic::Type::kString:
-            hash ^= static_cast<uint64_t>(arg.value.string_value);
+            hash.Update(arg.value.string_value);
             break;
           case Variadic::Type::kReal:
-            hash ^= static_cast<uint64_t>(arg.value.real_value);
+            hash.Update(arg.value.real_value);
             break;
         }
-        hash *= kFnv1a64Prime;
-        return hash;
+        return hash.digest();
       }
     };
 
@@ -184,20 +181,20 @@ class TraceStorage {
     ArgSetId AddArgSet(const std::vector<Arg>& args,
                        uint32_t begin,
                        uint32_t end) {
-      ArgSetHash hash = kFnv1a64OffsetBasis;
+      base::Hash hash;
       for (uint32_t i = begin; i < end; i++) {
-        hash ^= ArgHasher()(args[i]);
-        hash *= kFnv1a64Prime;
+        hash.Update(ArgHasher()(args[i]));
       }
 
-      auto it = arg_row_for_hash_.find(hash);
+      ArgSetHash digest = hash.digest();
+      auto it = arg_row_for_hash_.find(digest);
       if (it != arg_row_for_hash_.end()) {
         return set_ids_[it->second];
       }
 
       // The +1 ensures that nothing has an id == kInvalidArgSetId == 0.
       ArgSetId id = static_cast<uint32_t>(arg_row_for_hash_.size()) + 1;
-      arg_row_for_hash_.emplace(hash, args_count());
+      arg_row_for_hash_.emplace(digest, args_count());
       for (uint32_t i = begin; i < end; i++) {
         const auto& arg = args[i];
         set_ids_.emplace_back(id);
@@ -210,9 +207,6 @@ class TraceStorage {
 
    private:
     using ArgSetHash = uint64_t;
-
-    static constexpr uint64_t kFnv1a64OffsetBasis = 0xcbf29ce484222325;
-    static constexpr uint64_t kFnv1a64Prime = 0xcbf29ce484222325;
 
     std::deque<ArgSetId> set_ids_;
     std::deque<StringId> flat_keys_;
@@ -337,44 +331,78 @@ class TraceStorage {
     std::deque<int64_t> parent_stack_ids_;
   };
 
-  class Counters {
+  class CounterDefinitions {
    public:
-    inline size_t AddCounter(int64_t timestamp,
-                             StringId name_id,
-                             double value,
-                             int64_t ref,
-                             RefType type) {
-      timestamps_.emplace_back(timestamp);
+    using Id = uint32_t;
+
+    inline Id AddCounterDefinition(StringId name_id,
+                                   int64_t ref,
+                                   RefType type) {
+      base::Hash hash;
+      hash.Update(name_id);
+      hash.Update(ref);
+      hash.Update(type);
+
+      // TODO(lalitm): this is a perf bottleneck and likely we can do something
+      // quite a bit better here.
+      uint64_t digest = hash.digest();
+      auto it = hash_to_row_idx_.find(digest);
+      if (it != hash_to_row_idx_.end())
+        return it->second;
+
       name_ids_.emplace_back(name_id);
-      values_.emplace_back(value);
       refs_.emplace_back(ref);
       types_.emplace_back(type);
-      arg_set_ids_.emplace_back(kInvalidArgSetId);
-      return counter_count() - 1;
+      hash_to_row_idx_.emplace(digest, size() - 1);
+      return size() - 1;
     }
 
-    void set_arg_set_id(uint32_t row, ArgSetId id) { arg_set_ids_[row] = id; }
-
-    size_t counter_count() const { return timestamps_.size(); }
-
-    const std::deque<int64_t>& timestamps() const { return timestamps_; }
+    uint32_t size() const { return static_cast<uint32_t>(name_ids_.size()); }
 
     const std::deque<StringId>& name_ids() const { return name_ids_; }
-
-    const std::deque<double>& values() const { return values_; }
 
     const std::deque<int64_t>& refs() const { return refs_; }
 
     const std::deque<RefType>& types() const { return types_; }
 
+   private:
+    std::deque<StringId> name_ids_;
+    std::deque<int64_t> refs_;
+    std::deque<RefType> types_;
+
+    std::unordered_map<uint64_t, uint32_t> hash_to_row_idx_;
+  };
+
+  class CounterValues {
+   public:
+    inline uint32_t AddCounterValue(CounterDefinitions::Id counter_id,
+                                    int64_t timestamp,
+                                    double value) {
+      counter_ids_.emplace_back(counter_id);
+      timestamps_.emplace_back(timestamp);
+      values_.emplace_back(value);
+      arg_set_ids_.emplace_back(kInvalidArgSetId);
+      return size() - 1;
+    }
+
+    void set_arg_set_id(uint32_t row, ArgSetId id) { arg_set_ids_[row] = id; }
+
+    uint32_t size() const { return static_cast<uint32_t>(counter_ids_.size()); }
+
+    const std::deque<CounterDefinitions::Id>& counter_ids() const {
+      return counter_ids_;
+    }
+
+    const std::deque<int64_t>& timestamps() const { return timestamps_; }
+
+    const std::deque<double>& values() const { return values_; }
+
     const std::deque<ArgSetId>& arg_set_ids() const { return arg_set_ids_; }
 
    private:
+    std::deque<CounterDefinitions::Id> counter_ids_;
     std::deque<int64_t> timestamps_;
-    std::deque<StringId> name_ids_;
     std::deque<double> values_;
-    std::deque<int64_t> refs_;
-    std::deque<RefType> types_;
     std::deque<ArgSetId> arg_set_ids_;
   };
 
@@ -596,8 +624,15 @@ class TraceStorage {
   const NestableSlices& nestable_slices() const { return nestable_slices_; }
   NestableSlices* mutable_nestable_slices() { return &nestable_slices_; }
 
-  const Counters& counters() const { return counters_; }
-  Counters* mutable_counters() { return &counters_; }
+  const CounterDefinitions& counter_definitions() const {
+    return counter_definitions_;
+  }
+  CounterDefinitions* mutable_counter_definitions() {
+    return &counter_definitions_;
+  }
+
+  const CounterValues& counter_values() const { return counter_values_; }
+  CounterValues* mutable_counter_values() { return &counter_values_; }
 
   const SqlStats& sql_stats() const { return sql_stats_; }
   SqlStats* mutable_sql_stats() { return &sql_stats_; }
@@ -616,7 +651,7 @@ class TraceStorage {
   const RawEvents& raw_events() const { return raw_events_; }
   RawEvents* mutable_raw_events() { return &raw_events_; }
 
-  const std::deque<std::string>& string_pool() const { return string_pool_; }
+  const std::vector<std::string>& string_pool() const { return string_pool_; }
 
   // |unique_processes_| always contains at least 1 element becuase the 0th ID
   // is reserved to indicate an invalid process.
@@ -650,13 +685,15 @@ class TraceStorage {
   Args args_;
 
   // One entry for each unique string in the trace.
-  std::deque<std::string> string_pool_;
+  std::vector<std::string> string_pool_;
 
   // One entry for each unique string in the trace.
   std::unordered_map<StringHash, StringId> string_index_;
 
   // One entry for each UniquePid, with UniquePid as the index.
-  std::deque<Process> unique_processes_;
+  // Never hold on to pointers to Process, as vector resize will
+  // invalidate them.
+  std::vector<Process> unique_processes_;
 
   // One entry for each UniqueTid, with UniqueTid as the index.
   std::deque<Thread> unique_threads_;
@@ -664,9 +701,12 @@ class TraceStorage {
   // Slices coming from userspace events (e.g. Chromium TRACE_EVENT macros).
   NestableSlices nestable_slices_;
 
-  // Counter events from the trace. This includes CPU frequency events as well
-  // systrace trace_marker counter events.
-  Counters counters_;
+  // The type of counters in the trace. Can be thought of the the "metadata".
+  CounterDefinitions counter_definitions_;
+
+  // The values from the Counter events from the trace. This includes CPU
+  // frequency events as well systrace trace_marker counter events.
+  CounterValues counter_values_;
 
   SqlStats sql_stats_;
 
