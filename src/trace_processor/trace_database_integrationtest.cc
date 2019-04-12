@@ -73,7 +73,7 @@ TEST_F(TraceProcessorIntegrationTest, AndroidSchedAndPs) {
       "where dur != 0 and utid != 0",
       &res);
   ASSERT_EQ(res.num_records(), 1);
-  ASSERT_EQ(res.columns(0).long_values(0), 139789);
+  ASSERT_EQ(res.columns(0).long_values(0), 139783);
   ASSERT_EQ(res.columns(1).long_values(0), 19684308497);
 }
 
@@ -86,13 +86,24 @@ TEST_F(TraceProcessorIntegrationTest, Sfgate) {
   ASSERT_EQ(res.columns(1).long_values(0), 40532506000);
 }
 
+TEST_F(TraceProcessorIntegrationTest, UnsortedTrace) {
+  ASSERT_TRUE(LoadTrace("unsorted_trace.json", strlen("{\"traceEvents\":[")));
+  protos::RawQueryResult res;
+  Query("select ts, depth from slices order by ts", &res);
+  ASSERT_EQ(res.num_records(), 2);
+  ASSERT_EQ(res.columns(0).long_values(0), 50000);
+  ASSERT_EQ(res.columns(1).long_values(0), 0);
+  ASSERT_EQ(res.columns(0).long_values(1), 100000);
+  ASSERT_EQ(res.columns(1).long_values(1), 1);
+}
+
 TEST_F(TraceProcessorIntegrationTest, TraceBounds) {
   ASSERT_TRUE(LoadTrace("android_sched_and_ps.pb"));
   protos::RawQueryResult res;
   Query("select start_ts, end_ts from trace_bounds", &res);
   ASSERT_EQ(res.num_records(), 1);
-  ASSERT_EQ(res.columns(0).long_values(0), 81473010031230);
-  ASSERT_EQ(res.columns(1).long_values(0), 81492694724571);
+  ASSERT_EQ(res.columns(0).long_values(0), 81473009948313);
+  ASSERT_EQ(res.columns(1).long_values(0), 81492700784311);
 }
 
 // TODO(hjd): Add trace to test_data.

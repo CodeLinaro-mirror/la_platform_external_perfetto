@@ -13,6 +13,9 @@
 // limitations under the License.
 
 import * as m from 'mithril';
+
+import {translateState} from '../common/thread_state';
+import {timeToCode} from '../common/time';
 import {globals} from './globals';
 import {Panel, PanelSize} from './panel';
 
@@ -26,44 +29,32 @@ export class SliceDetailsPanel extends Panel<SliceDetailsPanelAttrs> {
     const sliceInfo = globals.sliceDetails;
     if (threadInfo && sliceInfo.ts && sliceInfo.dur) {
       return m(
-          '.slice-details-panel',
-          m('.slice-details-panel-heading',
-            `Slice Details:`),
-          m('.slice-details-table', [
-            m('table', [
+          '.details-panel',
+          m('.details-panel-heading', `Slice Details:`),
+          m('.details-table', [m('table', [
+              m('tr', m('td', `PID`), m('td', `${threadInfo.pid}`)),
               m('tr',
-                m('td',`PID`),
-                m('td',`${threadInfo.pid}`)),
+                m('td', `Process name`),
+                m('td', `${threadInfo.procName}`)),
+              m('tr', m('td', `TID`), m('td', `${threadInfo.tid}`)),
               m('tr',
-                m('td',`Process name`),
-                m('td',`${threadInfo.procName}`)),
+                m('td', `Thread name`),
+                m('td', `${threadInfo.threadName}`)),
               m('tr',
-                m('td',`TID`),
-                m('td',`${threadInfo.tid}`)),
+                m('td', `Start time`),
+                m('td', `${timeToCode(sliceInfo.ts)}`)),
               m('tr',
-                m('td',`Thread name`),
-                m('td',`${threadInfo.threadName}`)),
+                m('td', `Duration`),
+                m('td', `${timeToCode(sliceInfo.dur)}`)),
+              m('tr', m('td', `Prio`), m('td', `${sliceInfo.priority}`)),
               m('tr',
-                m('td',`Start time`),
-                m('td',`${sliceInfo.ts} s`)),
-              m('tr',
-                m('td',`Duration`),
-                m('td',`${sliceInfo.dur} s`)),
-              m('tr',
-                m('td',`Prio`),
-                m('td',`${sliceInfo.priority}`)),
-              m('tr',
-                m('td',`End State`),
-                m('td',`${sliceInfo.endState}`))
-            ])],
-          ));
+                m('td', `End State`),
+                m('td', `${translateState(sliceInfo.endState)}`))
+            ])], ));
     }
   else {
-    return m(
-      '.slice-details-panel',
-      m('.slice-details-panel-heading',
-        `Slice Details:`,
-      ));
+      return m(
+          '.details-panel', m('.details-panel-heading', `Slice Details:`, ));
   }
 }
   renderCanvas(_ctx: CanvasRenderingContext2D, _size: PanelSize) {}

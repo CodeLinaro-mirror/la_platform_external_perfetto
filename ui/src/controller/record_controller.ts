@@ -92,8 +92,8 @@ export function genConfigProto(uiCfg: RecordConfig): Uint8Array {
 
   if (procThreadAssociationFtrace) {
     ftraceEvents.add('sched/sched_process_exit');
-    ftraceEvents.add('sched/sched_process_fork');
     ftraceEvents.add('sched/sched_process_free');
+    ftraceEvents.add('task/task_newtask');
     ftraceEvents.add('task/task_rename');
   }
 
@@ -108,6 +108,7 @@ export function genConfigProto(uiCfg: RecordConfig): Uint8Array {
       AndroidPowerConfig.BatteryCounters.BATTERY_COUNTER_CHARGE,
       AndroidPowerConfig.BatteryCounters.BATTERY_COUNTER_CURRENT,
     ];
+    ds.config.androidPowerConfig.collectPowerRails = true;
     protoCfg.dataSources.push(ds);
   }
 
