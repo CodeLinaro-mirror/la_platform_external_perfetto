@@ -14,29 +14,39 @@
 
 import * as m from 'mithril';
 
+import {Actions} from '../common/actions';
+import {LogExists, LogExistsKey} from '../common/logs';
 import {QueryResponse} from '../common/queries';
 import {TimeSpan} from '../common/time';
 
 import {copyToClipboard} from './clipboard';
 import {DragGestureHandler} from './drag_gesture_handler';
 import {globals} from './globals';
+import {LogPanel} from './logs_panel';
 import {NotesEditorPanel, NotesPanel} from './notes_panel';
-import {SliceDetailsPanel} from './slice_panel';
 import {OverviewTimelinePanel} from './overview_timeline_panel';
 import {createPage} from './pages';
 import {PanAndZoomHandler} from './pan_and_zoom_handler';
 import {Panel} from './panel';
 import {AnyAttrsVnode, PanelContainer} from './panel_container';
+import {SliceDetailsPanel} from './slice_panel';
+import {ThreadStatePanel} from './thread_state_panel';
 import {TimeAxisPanel} from './time_axis_panel';
 import {computeZoom} from './time_scale';
 import {TimeSelectionPanel} from './time_selection_panel';
 import {TRACK_SHELL_WIDTH} from './track_constants';
 import {TrackGroupPanel} from './track_group_panel';
 import {TrackPanel} from './track_panel';
-import {Actions} from '../common/actions';
 
-const DRAG_HANDLE_HEIGHT_PX = 12;
+const DRAG_HANDLE_HEIGHT_PX = 28;
 const DEFAULT_DETAILS_HEIGHT_PX = 230 + DRAG_HANDLE_HEIGHT_PX;
+const UP_ICON = 'keyboard_arrow_up';
+const DOWN_ICON = 'keyboard_arrow_down';
+
+function hasLogs(): boolean {
+  const data = globals.trackDataStore.get(LogExistsKey) as LogExists;
+  return data && data.exists;
+}
 
 class QueryTable extends Panel {
   view() {
@@ -105,7 +115,8 @@ interface DragHandleAttrs {
 class DragHandle implements m.ClassComponent<DragHandleAttrs> {
   private dragStartHeight = 0;
   private height = 0;
-  private resize: undefined|((height: number) => void);
+  private resize: (height: number) => void = () => {};
+  private isClosed = this.height <= DRAG_HANDLE_HEIGHT_PX;
 
   oncreate({dom, attrs}: m.CVnodeDOM<DragHandleAttrs>) {
     this.resize = attrs.resize;
@@ -124,10 +135,9 @@ class DragHandle implements m.ClassComponent<DragHandleAttrs> {
   }
 
   onDrag(_x: number, y: number) {
-    if (this.resize) {
-      const newHeight = this.dragStartHeight + (DRAG_HANDLE_HEIGHT_PX / 2) - y;
-      this.resize(Math.floor(newHeight));
-    }
+    const newHeight = this.dragStartHeight + (DRAG_HANDLE_HEIGHT_PX / 2) - y;
+    this.isClosed = Math.floor(newHeight) <= DRAG_HANDLE_HEIGHT_PX;
+    this.resize(Math.floor(newHeight));
     globals.rafScheduler.scheduleFullRedraw();
   }
 
@@ -138,7 +148,26 @@ class DragHandle implements m.ClassComponent<DragHandleAttrs> {
   onDragEnd() {}
 
   view() {
-    return m('.handle');
+    const icon = this.isClosed ? UP_ICON : DOWN_ICON;
+    const title = this.isClosed ? 'Show panel' : 'Hide panel';
+    return m(
+        '.handle',
+        m('.handle-title', 'Current Selection'),
+        m('i.material-icons',
+          {
+            onclick: () => {
+              if (this.height === DRAG_HANDLE_HEIGHT_PX) {
+                this.isClosed = false;
+                this.resize(DEFAULT_DETAILS_HEIGHT_PX);
+              } else {
+                this.isClosed = true;
+                this.resize(DRAG_HANDLE_HEIGHT_PX);
+              }
+              globals.rafScheduler.scheduleFullRedraw();
+            },
+            title
+          },
+          icon));
   }
 }
 
@@ -151,7 +180,7 @@ class TraceViewer implements m.ClassComponent {
   private zoomContent?: PanAndZoomHandler;
   private detailsHeight = DRAG_HANDLE_HEIGHT_PX;
   // Used to set details panel to default height on selection.
-  private showDetailsPanel = false;
+  private showDetailsPanel = true;
   // Used to prevent global deselection if a pan/drag select occurred.
   private keepCurrentSelection = false;
 
@@ -251,48 +280,52 @@ class TraceViewer implements m.ClassComponent {
     scrollingPanels.unshift(m(QueryTable));
 
     const detailsPanels: AnyAttrsVnode[] = [];
-    if (globals.state.currentSelection) {
-      if (!this.showDetailsPanel &&
-          globals.state.currentSelection.kind !== 'TIMESPAN') {
-        this.detailsHeight = DEFAULT_DETAILS_HEIGHT_PX;
-        this.showDetailsPanel = true;
-      }
-      switch (globals.state.currentSelection.kind) {
+    const curSelection = globals.state.currentSelection;
+    if (curSelection) {
+      switch (curSelection.kind) {
         case 'NOTE':
           detailsPanels.push(m(NotesEditorPanel, {
             key: 'notes',
-            id: globals.state.currentSelection.id,
+            id: curSelection.id,
           }));
           break;
         case 'SLICE':
           detailsPanels.push(m(SliceDetailsPanel, {
             key: 'slice',
-            utid: globals.state.currentSelection.utid,
+            utid: curSelection.utid,
+          }));
+          break;
+        case 'THREAD_STATE':
+          detailsPanels.push(m(ThreadStatePanel, {
+            key: 'thread_state',
+            ts: curSelection.ts,
+            dur: curSelection.dur,
+            utid: curSelection.utid,
+            state: curSelection.state
           }));
           break;
         default:
           break;
       }
-    } else {
-      // No current selection so hide the details panel.
-      if (this.showDetailsPanel) {
-        this.showDetailsPanel = false;
-        this.detailsHeight = DRAG_HANDLE_HEIGHT_PX;
-      }
+    } else if (hasLogs()) {
+      detailsPanels.push(m(LogPanel, {}));
     }
+
+    this.showDetailsPanel = detailsPanels.length > 0;
 
     return m(
         '.page',
-        m('.pan-and-zoom-content', {
-          onclick: () =>
+        m('.pan-and-zoom-content',
           {
-            // We don't want to deselect when panning/drag selecting.
-            if (this.keepCurrentSelection) {
-              this.keepCurrentSelection = false;
-              return;
+            onclick: () => {
+              // We don't want to deselect when panning/drag selecting.
+              if (this.keepCurrentSelection) {
+                this.keepCurrentSelection = false;
+                return;
+              }
+              globals.dispatch(Actions.deselect({}));
             }
-            globals.dispatch(Actions.deselect({}));
-          }},
+          },
           m('.pinned-panel-container', m(PanelContainer, {
               doesScroll: false,
               panels: [
@@ -309,15 +342,20 @@ class TraceViewer implements m.ClassComponent {
               panels: scrollingPanels,
             }))),
         m('.details-content',
-          {style: {height: `${this.detailsHeight}px`}},
+          {
+            style: {
+              height: `${this.detailsHeight}px`,
+              display: this.showDetailsPanel ? null : 'none'
+            }
+          },
           m(DragHandle, {
             resize: (height: number) => {
               this.detailsHeight = Math.max(height, DRAG_HANDLE_HEIGHT_PX);
             },
             height: this.detailsHeight,
           }),
-          m('.details-panel-container', m(PanelContainer,
-            {doesScroll: true, panels: detailsPanels}))));
+          m('.details-panel-container',
+            m(PanelContainer, {doesScroll: true, panels: detailsPanels}))));
   }
 }
 

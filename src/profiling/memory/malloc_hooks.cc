@@ -77,6 +77,7 @@ void* HEAPPROFD_ADD_PREFIX(_realloc)(void* pointer, size_t bytes);
 void* HEAPPROFD_ADD_PREFIX(_calloc)(size_t nmemb, size_t bytes);
 struct mallinfo HEAPPROFD_ADD_PREFIX(_mallinfo)();
 int HEAPPROFD_ADD_PREFIX(_mallopt)(int param, int value);
+int HEAPPROFD_ADD_PREFIX(_malloc_info)(int options, FILE* fp);
 int HEAPPROFD_ADD_PREFIX(_posix_memalign)(void** memptr,
                                           size_t alignment,
                                           size_t size);
@@ -123,7 +124,6 @@ std::shared_ptr<perfetto::profiling::Client> g_client;
 // is tied together).
 std::atomic<bool> g_client_lock{false};
 
-constexpr size_t kNumConnections = 2;
 constexpr char kHeapprofdBinPath[] = "/system/bin/heapprofd";
 
 const MallocDispatch* GetDispatch() {
@@ -182,9 +182,13 @@ bool ShouldForkPrivateDaemon() {
 
 std::shared_ptr<perfetto::profiling::Client> CreateClientForCentralDaemon() {
   PERFETTO_DLOG("Constructing client for central daemon.");
+  using perfetto::profiling::Client;
 
-  return std::make_shared<perfetto::profiling::Client>(
-      perfetto::profiling::kHeapprofdSocketFile, kNumConnections);
+  perfetto::base::Optional<perfetto::base::UnixSocketRaw> sock =
+      Client::ConnectToHeapprofd(perfetto::profiling::kHeapprofdSocketFile);
+  if (!sock)
+    return nullptr;
+  return Client::CreateAndHandshake(std::move(sock.value()));
 }
 
 std::shared_ptr<perfetto::profiling::Client> CreateClientAndPrivateDaemon() {
@@ -256,10 +260,8 @@ std::shared_ptr<perfetto::profiling::Client> CreateClientAndPrivateDaemon() {
     return nullptr;
   }
 
-  std::vector<perfetto::base::UnixSocketRaw> client_sockets;
-  client_sockets.emplace_back(std::move(parent_sock));
-  return std::make_shared<perfetto::profiling::Client>(
-      std::move(client_sockets));
+  return perfetto::profiling::Client::CreateAndHandshake(
+      std::move(parent_sock));
 }
 
 }  // namespace
@@ -291,10 +293,11 @@ bool HEAPPROFD_ADD_PREFIX(_initialize)(const MallocDispatch* malloc_dispatch,
       ShouldForkPrivateDaemon() ? CreateClientAndPrivateDaemon()
                                 : CreateClientForCentralDaemon();
 
-  if (!client || !client->inited()) {
+  if (!client) {
     PERFETTO_LOG("Client not initialized, not installing hooks.");
     return false;
   }
+  PERFETTO_DLOG("Client initialized.");
 
   g_client = std::move(client);
   return true;
@@ -462,6 +465,11 @@ struct mallinfo HEAPPROFD_ADD_PREFIX(_mallinfo)() {
 int HEAPPROFD_ADD_PREFIX(_mallopt)(int param, int value) {
   const MallocDispatch* dispatch = GetDispatch();
   return dispatch->mallopt(param, value);
+}
+
+int HEAPPROFD_ADD_PREFIX(_malloc_info)(int options, FILE* fp) {
+  const MallocDispatch* dispatch = GetDispatch();
+  return dispatch->malloc_info(options, fp);
 }
 
 int HEAPPROFD_ADD_PREFIX(_iterate)(uintptr_t,

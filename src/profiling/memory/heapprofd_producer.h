@@ -20,29 +20,70 @@
 #include <functional>
 #include <map>
 
+#include "perfetto/base/optional.h"
 #include "perfetto/base/task_runner.h"
+#include "perfetto/base/unix_socket.h"
+#include "perfetto/base/unix_task_runner.h"
 
 #include "perfetto/tracing/core/basic_types.h"
 #include "perfetto/tracing/core/data_source_config.h"
 #include "perfetto/tracing/core/producer.h"
+#include "perfetto/tracing/core/trace_writer.h"
 #include "perfetto/tracing/core/tracing_service.h"
 
-#include "src/profiling/memory/bounded_queue.h"
+#include "src/profiling/memory/bookkeeping.h"
 #include "src/profiling/memory/proc_utils.h"
-#include "src/profiling/memory/process_matcher.h"
-#include "src/profiling/memory/socket_listener.h"
 #include "src/profiling/memory/system_property.h"
+#include "src/profiling/memory/unwinding.h"
 
 namespace perfetto {
 namespace profiling {
+
+struct Process {
+  pid_t pid;
+  std::string cmdline;
+};
+
+class LogHistogram {
+ public:
+  static const uint64_t kMaxBucket;
+  static constexpr size_t kBuckets = 20;
+
+  void Add(uint64_t value) { values_[GetBucket(value)]++; }
+  std::vector<std::pair<uint64_t, uint64_t>> GetData();
+
+ private:
+  size_t GetBucket(uint64_t value);
+
+  std::array<uint64_t, kBuckets> values_ = {};
+};
 
 // TODO(rsavitski): central daemon can do less work if it knows that the global
 // operating mode is fork-based, as it then will not be interacting with the
 // clients. This can be implemented as an additional mode here.
 enum class HeapprofdMode { kCentral, kChild };
 
-class HeapprofdProducer : public Producer {
+class HeapprofdProducer : public Producer, public UnwindingWorker::Delegate {
  public:
+  friend class SocketDelegate;
+
+  // TODO(fmayer): Split into two delegates for the listening socket in kCentral
+  // and for the per-client sockets to make this easier to understand?
+  // Alternatively, find a better name for this.
+  class SocketDelegate : public base::UnixSocket::EventListener {
+   public:
+    SocketDelegate(HeapprofdProducer* producer) : producer_(producer) {}
+
+    void OnDisconnect(base::UnixSocket* self) override;
+    void OnNewIncomingConnection(
+        base::UnixSocket* self,
+        std::unique_ptr<base::UnixSocket> new_connection) override;
+    void OnDataAvailable(base::UnixSocket* self) override;
+
+   private:
+    HeapprofdProducer* producer_;
+  };
+
   HeapprofdProducer(HeapprofdMode mode, base::TaskRunner* task_runner);
   ~HeapprofdProducer() override;
 
@@ -61,14 +102,24 @@ class HeapprofdProducer : public Producer {
   void ConnectWithRetries(const char* socket_name);
   void DumpAll();
 
-  // Valid only if mode_ == kChild. Adopts the (connected) sockets inherited
-  // from the target process, invoking the on-connection callback.
-  void AdoptConnectedSockets(std::vector<base::ScopedFile> inherited_sockets);
+  // UnwindingWorker::Delegate impl:
+  void PostAllocRecord(AllocRecord) override;
+  void PostFreeRecord(FreeRecord) override;
+  void PostSocketDisconnected(DataSourceInstanceID, pid_t) override;
+
+  void HandleAllocRecord(AllocRecord);
+  void HandleFreeRecord(FreeRecord);
+  void HandleSocketDisconnected(DataSourceInstanceID, pid_t);
 
   // Valid only if mode_ == kChild.
-  void SetTargetProcess(pid_t target_pid, std::string target_cmdline);
+  void SetTargetProcess(pid_t target_pid,
+                        std::string target_cmdline,
+                        base::ScopedFile inherited_socket);
 
  private:
+  void HandleClientConnection(std::unique_ptr<base::UnixSocket> new_connection,
+                              Process process);
+
   // TODO(fmayer): Delete once we have generic reconnect logic.
   enum State {
     kNotStarted = 0,
@@ -88,32 +139,58 @@ class HeapprofdProducer : public Producer {
 
   const HeapprofdMode mode_;
 
-  std::function<void(UnwindingRecord)> MakeSocketListenerCallback();
-  std::vector<BoundedQueue<UnwindingRecord>> MakeUnwinderQueues(size_t n);
-  std::vector<std::thread> MakeUnwindingThreads(size_t n);
-
   void FinishDataSourceFlush(FlushRequestID flush_id);
   bool Dump(DataSourceInstanceID id,
             FlushRequestID flush_id,
             bool has_flush_id);
   void DoContinuousDump(DataSourceInstanceID id, uint32_t dump_interval);
+  UnwindingWorker& UnwinderForPID(pid_t);
 
   // functionality specific to mode_ == kCentral
   std::unique_ptr<base::UnixSocket> MakeListeningSocket();
 
   // functionality specific to mode_ == kChild
   void TerminateProcess(int exit_status);
-  bool SourceMatchesTarget(const HeapprofdConfig& cfg);
+
+  // Valid only if mode_ == kChild. Adopts the (connected) sockets inherited
+  // from the target process, invoking the on-connection callback.
+  void AdoptTargetProcessSocket();
+
+  struct ProcessState {
+    ProcessState(GlobalCallstackTrie* callsites) : heap_tracker(callsites) {}
+    bool disconnected = false;
+    uint64_t heap_samples = 0;
+    uint64_t map_reparses = 0;
+    uint64_t unwinding_errors = 0;
+
+    LogHistogram unwinding_time_us;
+    HeapTracker heap_tracker;
+  };
 
   struct DataSource {
-    // This is a shared ptr so we can lend a weak_ptr to the bookkeeping
-    // thread for unwinding.
-    std::shared_ptr<TraceWriter> trace_writer;
-    // These are opaque handles that shut down the sockets in SocketListener
-    // once they go away.
-    ProcessMatcher::ProcessSetSpecHandle processes;
+    DataSourceInstanceID id;
+    std::unique_ptr<TraceWriter> trace_writer;
+    HeapprofdConfig config;
+    ClientConfiguration client_configuration;
     std::vector<SystemProperties::Handle> properties;
+    std::set<pid_t> signaled_pids;
+    std::set<pid_t> rejected_pids;
+    std::map<pid_t, ProcessState> process_states;
+    uint64_t next_index_ = 0;
   };
+
+  struct PendingProcess {
+    std::unique_ptr<base::UnixSocket> sock;
+    DataSourceInstanceID data_source_instance_id;
+    SharedRingBuffer shmem;
+  };
+
+  std::map<pid_t, PendingProcess> pending_processes_;
+
+  bool IsPidProfiled(pid_t);
+  DataSource* GetDataSourceForProcess(const Process& proc);
+  bool ConfigTargetsProcess(const HeapprofdConfig& cfg, const Process& proc);
+  void RecordOtherSourcesAsRejected(DataSource* active_ds, const Process& proc);
 
   std::map<DataSourceInstanceID, DataSource> data_sources_;
   std::map<FlushRequestID, size_t> flushes_in_progress_;
@@ -122,22 +199,22 @@ class HeapprofdProducer : public Producer {
   base::TaskRunner* const task_runner_;
   std::unique_ptr<TracingService::ProducerEndpoint> endpoint_;
 
-  BoundedQueue<BookkeepingRecord> bookkeeping_queue_;
-  BookkeepingThread bookkeeping_thread_;
-  std::thread bookkeeping_th_;
-  std::vector<BoundedQueue<UnwindingRecord>> unwinder_queues_;
-  std::vector<std::thread> unwinding_threads_;
-  SocketListener socket_listener_;
+  GlobalCallstackTrie callsites_;
+  std::vector<UnwindingWorker> unwinding_workers_;
 
   // state specific to mode_ == kCentral
   std::unique_ptr<base::UnixSocket> listening_socket_;
   SystemProperties properties_;
 
   // state specific to mode_ == kChild
-  pid_t target_pid_ = base::kInvalidPid;
-  std::string target_cmdline_;
+  Process target_process_{base::kInvalidPid, ""};
+  // This is a valid FD between SetTargetProcess and AdoptTargetProcessSocket
+  // only.
+  base::ScopedFile inherited_fd_;
 
-  base::WeakPtrFactory<HeapprofdProducer> weak_factory_;
+  SocketDelegate socket_delegate_;
+
+  base::WeakPtrFactory<HeapprofdProducer> weak_factory_;  // Keep last.
 };
 
 }  // namespace profiling
