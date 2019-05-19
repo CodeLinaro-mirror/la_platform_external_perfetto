@@ -73,8 +73,9 @@ void SliceTracker::StartSlice(int64_t timestamp,
     return;
   }
   int64_t parent_stack_id = depth == 0 ? 0 : slices->stack_ids()[stack->back()];
-  size_t slice_idx = slices->AddSlice(timestamp, duration, utid, cat, name,
-                                      depth, 0, parent_stack_id);
+  size_t slice_idx =
+      slices->AddSlice(timestamp, duration, utid, RefType::kRefUtid, cat, name,
+                       depth, 0, parent_stack_id);
   stack->emplace_back(slice_idx);
 
   slices->set_stack_id(slice_idx, GetStackHash(*stack));
@@ -115,8 +116,12 @@ void SliceTracker::End(int64_t timestamp,
   auto* slices = context_->storage->mutable_nestable_slices();
   size_t slice_idx = stack.back();
 
-  PERFETTO_CHECK(cat == 0 || slices->cats()[slice_idx] == cat);
-  PERFETTO_CHECK(name == 0 || slices->names()[slice_idx] == name);
+  // If we are trying to close mismatching slices (e.g., slices that began
+  // before tracing started), bail out.
+  if (cat && slices->cats()[slice_idx] != cat)
+    return;
+  if (name && slices->names()[slice_idx] != name)
+    return;
 
   slices->set_duration(slice_idx, timestamp - slices->start_ns()[slice_idx]);
 
@@ -142,8 +147,8 @@ void SliceTracker::MaybeCloseStack(int64_t ts, SlicesStack* stack) {
     }
 
     if (check_only) {
-      PERFETTO_DCHECK(ts >= start_ts);
-      PERFETTO_DCHECK(dur == 0 || ts <= end_ts);
+      PERFETTO_CHECK(ts >= start_ts);
+      PERFETTO_CHECK(dur == 0 || ts <= end_ts);
       continue;
     }
 
