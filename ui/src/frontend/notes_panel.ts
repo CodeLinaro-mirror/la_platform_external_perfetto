@@ -24,7 +24,7 @@ import {TRACK_SHELL_WIDTH} from './track_constants';
 import {hsl} from 'color-convert';
 
 const FLAG_WIDTH = 16;
-const MOUSE_OFFSET = 4;
+const MOUSE_OFFSET = 6;
 const FLAG = `\uE153`;
 
 function toSummary(s: string) {
@@ -70,6 +70,7 @@ export class NotesPanel extends Panel {
     let aNoteIsHovered = false;
 
     ctx.fillStyle = '#999';
+    ctx.fillRect(TRACK_SHELL_WIDTH - 1, 0, 2, size.height);
     for (const xAndTime of gridlines(size.width, range, timeScale)) {
       ctx.fillRect(xAndTime[0], 0, 1, size.height);
     }
