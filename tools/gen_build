@@ -62,6 +62,8 @@ default_targets = [
   '//src/trace_processor:trace_processor',
   '//src/trace_processor:trace_processor_shell_host(//gn/standalone/toolchain:gcc_like_host)',
   '//tools/trace_to_text:trace_to_text_host(//gn/standalone/toolchain:gcc_like_host)',
+  '//protos/perfetto/config:merged_config_gen',
+  '//protos/perfetto/trace:merged_trace_gen',
 ]
 
 # Aliases to add to the BUILD file
@@ -179,17 +181,6 @@ def label_to_target_name_with_path(label):
   """
   name = re.sub(r'^//:?', '', label)
   name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
-  return name
-
-
-def label_to_target_name_with_parent(label):
-  """
-  Turn a GN label into a target name involving the parent dir.
-  e.g., //src/perfetto:tests -> perfetto_tests
-  """
-  name = re.sub(r'^//:?', '', label)
-  parts = name.split('/')
-  name = re.sub(r'[^a-zA-Z0-9_]', '_', parts[-1])
   return name
 
 
@@ -499,8 +490,8 @@ class BuildGenerator(object):
 
     is_pbzero = any("pbzero" in arg for arg in args)
     gn_target_name_no_toolchain = label_without_toolchain(gn_target_name)
-    pretty_target_name = label_to_target_name_with_parent(
-        gn_target_name_no_toolchain)
+    stripped_path = gn_target_name_no_toolchain.replace("protos/perfetto/", "")
+    pretty_target_name = label_to_target_name_with_path(stripped_path)
     pretty_target_name = pretty_target_name.replace("_lite_gen", "")
     pretty_target_name = pretty_target_name.replace("_zero_gen", "_zero")
 

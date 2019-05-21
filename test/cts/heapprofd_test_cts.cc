@@ -227,39 +227,42 @@ void StopApp(std::string app_name) {
   system(stop_cmd.c_str());
 }
 
-// TODO(b/118428762, b/125385428): stop pretending the tests pass on cuttlefish
-bool IsCuttlefish() {
-  char buf[PROP_VALUE_MAX + 1] = {};
-  int ret = __system_property_get("ro.build.product", buf);
-  PERFETTO_CHECK(ret >= 0);
-  std::string debuggable(buf);
-  return debuggable.find("vsoc_x86") == 0;  // also matches vsoc_x86_64
-}
+// TODO(b/118428762): look into unwinding issues on x86.
+#if defined(__i386__) || defined(__x86_64__)
+#define MAYBE_SKIP(x) DISABLED_##x
+#else
+#define MAYBE_SKIP(x) x
+#endif
 
-TEST(HeapprofdCtsTest, DebuggableAppRuntime) {
-  if (IsCuttlefish())
-    return;
-
+TEST(HeapprofdCtsTest, MAYBE_SKIP(DebuggableAppRuntime)) {
   std::string app_name = "android.perfetto.cts.app.debuggable";
   const auto& packets = ProfileRuntime(app_name);
   AssertExpectedAllocationsPresent(packets);
   StopApp(app_name);
 }
 
-TEST(HeapprofdCtsTest, DebuggableAppStartup) {
-  if (IsCuttlefish())
-    return;
-
+TEST(HeapprofdCtsTest, MAYBE_SKIP(DebuggableAppStartup)) {
   std::string app_name = "android.perfetto.cts.app.debuggable";
   const auto& packets = ProfileStartup(app_name);
   AssertExpectedAllocationsPresent(packets);
   StopApp(app_name);
 }
 
-TEST(HeapprofdCtsTest, ReleaseAppRuntime) {
-  if (IsCuttlefish())
-    return;
+TEST(HeapprofdCtsTest, MAYBE_SKIP(ProfileableAppRuntime)) {
+  std::string app_name = "android.perfetto.cts.app.profileable";
+  const auto& packets = ProfileRuntime(app_name);
+  AssertExpectedAllocationsPresent(packets);
+  StopApp(app_name);
+}
 
+TEST(HeapprofdCtsTest, MAYBE_SKIP(ProfileableAppStartup)) {
+  std::string app_name = "android.perfetto.cts.app.profileable";
+  const auto& packets = ProfileStartup(app_name);
+  AssertExpectedAllocationsPresent(packets);
+  StopApp(app_name);
+}
+
+TEST(HeapprofdCtsTest, MAYBE_SKIP(ReleaseAppRuntime)) {
   std::string app_name = "android.perfetto.cts.app.release";
   const auto& packets = ProfileRuntime(app_name);
 
@@ -271,10 +274,7 @@ TEST(HeapprofdCtsTest, ReleaseAppRuntime) {
   StopApp(app_name);
 }
 
-TEST(HeapprofdCtsTest, ReleaseAppStartup) {
-  if (IsCuttlefish())
-    return;
-
+TEST(HeapprofdCtsTest, MAYBE_SKIP(ReleaseAppStartup)) {
   std::string app_name = "android.perfetto.cts.app.release";
   const auto& packets = ProfileStartup(app_name);
 

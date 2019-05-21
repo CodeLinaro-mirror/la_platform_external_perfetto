@@ -20,7 +20,13 @@
 #include <algorithm>
 #include <limits>
 
+#include "perfetto/base/no_destructor.h"
+
+namespace perfetto {
+namespace trace_processor {
+
 namespace {
+
 template <typename T>
 void MaybeUpdateMinMax(T begin_it,
                        T end_it,
@@ -33,39 +39,34 @@ void MaybeUpdateMinMax(T begin_it,
   *min_value = std::min(*min_value, *minmax.first);
   *max_value = std::max(*max_value, *minmax.second);
 }
+
+std::vector<const char*> CreateRefTypeStringMap() {
+  std::vector<const char*> map(RefType::kRefMax);
+  map[RefType::kRefNoRef] = nullptr;
+  map[RefType::kRefUtid] = "utid";
+  map[RefType::kRefCpuId] = "cpu";
+  map[RefType::kRefIrq] = "irq";
+  map[RefType::kRefSoftIrq] = "softirq";
+  map[RefType::kRefUpid] = "upid";
+  map[RefType::kRefUtidLookupUpid] = "upid";
+  return map;
+}
+
 }  // namespace
 
-namespace perfetto {
-namespace trace_processor {
+const std::vector<const char*>& GetRefTypeStringMap() {
+  static const base::NoDestructor<std::vector<const char*>> map(
+      CreateRefTypeStringMap());
+  return map.ref();
+}
 
 TraceStorage::TraceStorage() {
   // Upid/utid 0 is reserved for idle processes/threads.
   unique_processes_.emplace_back(0);
   unique_threads_.emplace_back(0);
-
-  // Reserve string ID 0 for the empty string.
-  InternString("");
 }
 
 TraceStorage::~TraceStorage() {}
-
-StringId TraceStorage::InternString(base::StringView str) {
-  // Temporarily return the empty string's id as the null string.
-  // TODO(lalitm): remove this as part of the usage of StringPool.
-  if (str.data() == nullptr)
-    return 0;
-
-  auto hash = str.Hash();
-  auto id_it = string_index_.find(hash);
-  if (id_it != string_index_.end()) {
-    PERFETTO_DCHECK(base::StringView(string_pool_[id_it->second]) == str);
-    return id_it->second;
-  }
-  string_pool_.emplace_back(str.ToStdString());
-  StringId string_id = static_cast<uint32_t>(string_pool_.size() - 1);
-  string_index_.emplace(hash, string_id);
-  return string_id;
-}
 
 void TraceStorage::ResetStorage() {
   *this = TraceStorage();
