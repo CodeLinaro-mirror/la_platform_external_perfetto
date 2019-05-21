@@ -32,6 +32,7 @@
 #include "perfetto/base/utils.h"
 #include "src/trace_processor/ftrace_utils.h"
 #include "src/trace_processor/stats.h"
+#include "src/trace_processor/string_pool.h"
 
 namespace perfetto {
 namespace trace_processor {
@@ -46,7 +47,7 @@ using UniquePid = uint32_t;
 using UniqueTid = uint32_t;
 
 // StringId is an offset into |string_pool_|.
-using StringId = uint32_t;
+using StringId = StringPool::Id;
 
 // Identifiers for all the tables in the database.
 enum TableId : uint8_t {
@@ -77,13 +78,14 @@ enum RefType {
   kRefMax
 };
 
+const std::vector<const char*>& GetRefTypeStringMap();
+
 // Stores a data inside a trace file in a columnar form. This makes it efficient
 // to read or search across a single field of the trace (e.g. all the thread
 // names for a given CPU).
 class TraceStorage {
  public:
   TraceStorage();
-  TraceStorage(const TraceStorage&) = delete;
 
   virtual ~TraceStorage();
 
@@ -283,7 +285,8 @@ class TraceStorage {
    public:
     inline size_t AddSlice(int64_t start_ns,
                            int64_t duration_ns,
-                           UniqueTid utid,
+                           int64_t ref,
+                           RefType type,
                            StringId cat,
                            StringId name,
                            uint8_t depth,
@@ -291,7 +294,8 @@ class TraceStorage {
                            int64_t parent_stack_id) {
       start_ns_.emplace_back(start_ns);
       durations_.emplace_back(duration_ns);
-      utids_.emplace_back(utid);
+      refs_.emplace_back(ref);
+      types_.emplace_back(type);
       cats_.emplace_back(cat);
       names_.emplace_back(name);
       depths_.emplace_back(depth);
@@ -311,7 +315,8 @@ class TraceStorage {
     size_t slice_count() const { return start_ns_.size(); }
     const std::deque<int64_t>& start_ns() const { return start_ns_; }
     const std::deque<int64_t>& durations() const { return durations_; }
-    const std::deque<UniqueTid>& utids() const { return utids_; }
+    const std::deque<int64_t>& refs() const { return refs_; }
+    const std::deque<RefType>& types() const { return types_; }
     const std::deque<StringId>& cats() const { return cats_; }
     const std::deque<StringId>& names() const { return names_; }
     const std::deque<uint8_t>& depths() const { return depths_; }
@@ -323,7 +328,8 @@ class TraceStorage {
    private:
     std::deque<int64_t> start_ns_;
     std::deque<int64_t> durations_;
-    std::deque<UniqueTid> utids_;
+    std::deque<int64_t> refs_;
+    std::deque<RefType> types_;
     std::deque<StringId> cats_;
     std::deque<StringId> names_;
     std::deque<uint8_t> depths_;
@@ -557,7 +563,9 @@ class TraceStorage {
   // Return an unqiue identifier for the contents of each string.
   // The string is copied internally and can be destroyed after this called.
   // Virtual for testing.
-  virtual StringId InternString(base::StringView);
+  virtual StringId InternString(base::StringView str) {
+    return string_pool_.InternString(str);
+  }
 
   Process* GetMutableProcess(UniquePid upid) {
     PERFETTO_DCHECK(upid < unique_processes_.size());
@@ -591,9 +599,8 @@ class TraceStorage {
   }
 
   // Reading methods.
-  const std::string& GetString(StringId id) const {
-    PERFETTO_DCHECK(id < string_pool_.size());
-    return string_pool_[id];
+  NullTermStringView GetString(StringId id) const {
+    return string_pool_.Get(id);
   }
 
   const Process& GetProcess(UniquePid upid) const {
@@ -651,7 +658,7 @@ class TraceStorage {
   const RawEvents& raw_events() const { return raw_events_; }
   RawEvents* mutable_raw_events() { return &raw_events_; }
 
-  const std::vector<std::string>& string_pool() const { return string_pool_; }
+  const StringPool& string_pool() const { return string_pool_; }
 
   // |unique_processes_| always contains at least 1 element becuase the 0th ID
   // is reserved to indicate an invalid process.
@@ -673,7 +680,11 @@ class TraceStorage {
 
   using StringHash = uint64_t;
 
-  TraceStorage& operator=(const TraceStorage&) = default;
+  TraceStorage(const TraceStorage&) = delete;
+  TraceStorage& operator=(const TraceStorage&) = delete;
+
+  TraceStorage(TraceStorage&&) = default;
+  TraceStorage& operator=(TraceStorage&&) = default;
 
   // Stats about parsing the trace.
   StatsMap stats_{};
@@ -685,10 +696,7 @@ class TraceStorage {
   Args args_;
 
   // One entry for each unique string in the trace.
-  std::vector<std::string> string_pool_;
-
-  // One entry for each unique string in the trace.
-  std::unordered_map<StringHash, StringId> string_index_;
+  StringPool string_pool_;
 
   // One entry for each UniquePid, with UniquePid as the index.
   // Never hold on to pointers to Process, as vector resize will
