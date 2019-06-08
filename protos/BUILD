@@ -29,6 +29,7 @@ proto_library(
     srcs = [
         "perfetto/common/android_log_constants.proto",
         "perfetto/common/commit_data_request.proto",
+        "perfetto/common/descriptor.proto",
         "perfetto/common/observable_events.proto",
         "perfetto/common/sys_stats_counters.proto",
         "perfetto/common/trace_stats.proto",
@@ -58,6 +59,7 @@ proto_library(
     srcs = [
         "perfetto/common/android_log_constants.proto",
         "perfetto/common/commit_data_request.proto",
+        "perfetto/common/descriptor.proto",
         "perfetto/common/observable_events.proto",
         "perfetto/common/sys_stats_counters.proto",
         "perfetto/common/trace_stats.proto",
@@ -164,6 +166,45 @@ proto_library(
 pbzero_cc_proto_library(
     name = "config_zero_cc_proto",
     src_proto_library = "//third_party/perfetto/protos:config_zero",
+    deps = [
+        "//third_party/perfetto:libprotozero",
+        "//third_party/perfetto/google:gtest_prod",
+    ],
+)
+
+# GN target: //protos/perfetto/metrics/android:zero_gen
+proto_library(
+    name = "metrics_android_zero",
+    srcs = [
+        "perfetto/metrics/android/mem_metric.proto",
+    ],
+)
+
+# GN target: //protos/perfetto/metrics/android:zero_gen
+pbzero_cc_proto_library(
+    name = "metrics_android_zero_cc_proto",
+    src_proto_library = "//third_party/perfetto/protos:metrics_android_zero",
+    deps = [
+        "//third_party/perfetto:libprotozero",
+        "//third_party/perfetto/google:gtest_prod",
+    ],
+)
+
+# GN target: //protos/perfetto/metrics:zero_gen
+proto_library(
+    name = "metrics_zero",
+    srcs = [
+        "perfetto/metrics/metrics.proto",
+    ],
+    deps = [
+        "//third_party/perfetto/protos:metrics_android_zero",
+    ],
+)
+
+# GN target: //protos/perfetto/metrics:zero_gen
+pbzero_cc_proto_library(
+    name = "metrics_zero_cc_proto",
+    src_proto_library = "//third_party/perfetto/protos:metrics_zero",
     deps = [
         "//third_party/perfetto:libprotozero",
         "//third_party/perfetto/google:gtest_prod",

@@ -658,10 +658,10 @@ TEST_F(PerfettoCmdlineTest, NoSanitizers(StartTracingTrigger)) {
   // time.
   trigger->set_stop_delay_ms(500);
 
-  // We have 5 normal preample packets (trace config, clock, system info, sync
-  // marker, stats) and then since this is a trace with a trigger config we have
-  // an additional ReceivedTriggers packet.
-  constexpr size_t kPreamblePackets = 6;
+  // We have 6 normal preamble packets (start clock, trace config, clock,
+  // system info, sync marker, stats) and then since this is a trace with a
+  // trigger config we have an additional ReceivedTriggers packet.
+  constexpr size_t kPreamblePackets = 7;
 
   base::TestTaskRunner task_runner;
 
@@ -735,10 +735,10 @@ TEST_F(PerfettoCmdlineTest, NoSanitizers(StopTracingTrigger)) {
   trigger->set_name("trigger_name_3");
   trigger->set_stop_delay_ms(60000);
 
-  // We have 5 normal preample packets (trace config, clock, system info, sync
-  // marker, stats) and then since this is a trace with a trigger config we have
-  // an additional ReceivedTriggers packet.
-  constexpr size_t kPreamblePackets = 7;
+  // We have 6 normal preamble packets (start clock, trace config, clock,
+  // system info, sync marker, stats) and then since this is a trace with a
+  // trigger config we have an additional ReceivedTriggers packet.
+  constexpr size_t kPreamblePackets = 8;
 
   base::TestTaskRunner task_runner;
 
@@ -809,6 +809,7 @@ TEST_F(PerfettoCmdlineTest, DISABLED_NoDataNoFileWithoutTrigger) {
   constexpr size_t kMessageSize = 32;
   protos::TraceConfig trace_config;
   trace_config.add_buffers()->set_size_kb(1024);
+  trace_config.set_allow_user_build_tracing(true);
   auto* ds_config = trace_config.add_data_sources()->mutable_config();
   ds_config->set_name("android.perfetto.FakeProducer");
   ds_config->mutable_for_testing()->set_message_count(kMessageCount);
