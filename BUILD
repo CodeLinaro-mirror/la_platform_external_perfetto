@@ -20,6 +20,22 @@ licenses(["notice"])  # Apache 2.0
 
 exports_files(["LICENSE"])
 
+# GN target: //src/trace_processor/metrics:gen_merged_sql_metrics
+genrule(
+    name = "gen_merged_sql_metrics",
+    srcs = [
+        "src/trace_processor/metrics/android/android_mem.sql",
+        "src/trace_processor/metrics/android/android_mem_lmk.sql",
+    ],
+    outs = [
+        "src/trace_processor/metrics/sql_metrics.h",
+    ],
+    cmd = "$(location gen_merged_sql_metrics_py) --cpp_out=$@ $(SRCS)",
+    tools = [
+        "gen_merged_sql_metrics_py",
+    ],
+)
+
 # GN target: //src/protozero:libprotozero
 cc_library(
     name = "libprotozero",
@@ -57,6 +73,7 @@ cc_library(
         "include/perfetto/base/hash.h",
         "include/perfetto/base/logging.h",
         "include/perfetto/base/metatrace.h",
+        "include/perfetto/base/no_destructor.h",
         "include/perfetto/base/optional.h",
         "include/perfetto/base/paged_memory.h",
         "include/perfetto/base/pipe.h",
@@ -68,6 +85,7 @@ cc_library(
         "include/perfetto/base/string_writer.h",
         "include/perfetto/base/task_runner.h",
         "include/perfetto/base/temp_file.h",
+        "include/perfetto/base/thread_annotations.h",
         "include/perfetto/base/thread_checker.h",
         "include/perfetto/base/thread_task_runner.h",
         "include/perfetto/base/thread_utils.h",
@@ -154,6 +172,16 @@ cc_library(
         "src/trace_processor/ftrace_descriptors.h",
         "src/trace_processor/ftrace_utils.cc",
         "src/trace_processor/ftrace_utils.h",
+        "src/trace_processor/fuchsia_provider_view.cc",
+        "src/trace_processor/fuchsia_provider_view.h",
+        "src/trace_processor/fuchsia_trace_parser.cc",
+        "src/trace_processor/fuchsia_trace_parser.h",
+        "src/trace_processor/fuchsia_trace_tokenizer.cc",
+        "src/trace_processor/fuchsia_trace_tokenizer.h",
+        "src/trace_processor/fuchsia_trace_utils.cc",
+        "src/trace_processor/fuchsia_trace_utils.h",
+        "src/trace_processor/heap_profile_tracker.cc",
+        "src/trace_processor/heap_profile_tracker.h",
         "src/trace_processor/instants_table.cc",
         "src/trace_processor/instants_table.h",
         "src/trace_processor/json_trace_parser.cc",
@@ -162,11 +190,15 @@ cc_library(
         "src/trace_processor/json_trace_tokenizer.h",
         "src/trace_processor/json_trace_utils.cc",
         "src/trace_processor/json_trace_utils.h",
+        "src/trace_processor/metrics/metrics.cc",
+        "src/trace_processor/metrics/metrics.h",
+        "src/trace_processor/metrics/sql_metrics.h",
         "src/trace_processor/null_term_string_view.h",
         "src/trace_processor/process_table.cc",
         "src/trace_processor/process_table.h",
         "src/trace_processor/process_tracker.cc",
         "src/trace_processor/process_tracker.h",
+        "src/trace_processor/proto_incremental_state.h",
         "src/trace_processor/proto_trace_parser.cc",
         "src/trace_processor/proto_trace_parser.h",
         "src/trace_processor/proto_trace_tokenizer.cc",
@@ -240,6 +272,7 @@ cc_library(
         "include/perfetto/base/hash.h",
         "include/perfetto/base/logging.h",
         "include/perfetto/base/metatrace.h",
+        "include/perfetto/base/no_destructor.h",
         "include/perfetto/base/optional.h",
         "include/perfetto/base/paged_memory.h",
         "include/perfetto/base/pipe.h",
@@ -251,6 +284,7 @@ cc_library(
         "include/perfetto/base/string_writer.h",
         "include/perfetto/base/task_runner.h",
         "include/perfetto/base/temp_file.h",
+        "include/perfetto/base/thread_annotations.h",
         "include/perfetto/base/thread_checker.h",
         "include/perfetto/base/thread_task_runner.h",
         "include/perfetto/base/thread_utils.h",
@@ -276,10 +310,13 @@ cc_library(
         "include/perfetto/traced/sys_stats_counters.h",
     ],
     deps = [
+        "//third_party/perfetto:gen_merged_sql_metrics",
         "//third_party/perfetto/google:gtest_prod",
         "//third_party/perfetto/google:jsoncpp",
         "//third_party/perfetto/protos:common_zero_cc_proto",
         "//third_party/perfetto/protos:config_zero_cc_proto",
+        "//third_party/perfetto/protos:metrics_android_zero_cc_proto",
+        "//third_party/perfetto/protos:metrics_zero_cc_proto",
         "//third_party/perfetto/protos:trace_android_zero_cc_proto",
         "//third_party/perfetto/protos:trace_chrome_zero_cc_proto",
         "//third_party/perfetto/protos:trace_filesystem_zero_cc_proto",
@@ -310,6 +347,7 @@ cc_binary(
         "include/perfetto/base/hash.h",
         "include/perfetto/base/logging.h",
         "include/perfetto/base/metatrace.h",
+        "include/perfetto/base/no_destructor.h",
         "include/perfetto/base/optional.h",
         "include/perfetto/base/paged_memory.h",
         "include/perfetto/base/pipe.h",
@@ -321,6 +359,7 @@ cc_binary(
         "include/perfetto/base/string_writer.h",
         "include/perfetto/base/task_runner.h",
         "include/perfetto/base/temp_file.h",
+        "include/perfetto/base/thread_annotations.h",
         "include/perfetto/base/thread_checker.h",
         "include/perfetto/base/thread_task_runner.h",
         "include/perfetto/base/thread_utils.h",
@@ -386,6 +425,16 @@ cc_binary(
         "src/trace_processor/ftrace_descriptors.h",
         "src/trace_processor/ftrace_utils.cc",
         "src/trace_processor/ftrace_utils.h",
+        "src/trace_processor/fuchsia_provider_view.cc",
+        "src/trace_processor/fuchsia_provider_view.h",
+        "src/trace_processor/fuchsia_trace_parser.cc",
+        "src/trace_processor/fuchsia_trace_parser.h",
+        "src/trace_processor/fuchsia_trace_tokenizer.cc",
+        "src/trace_processor/fuchsia_trace_tokenizer.h",
+        "src/trace_processor/fuchsia_trace_utils.cc",
+        "src/trace_processor/fuchsia_trace_utils.h",
+        "src/trace_processor/heap_profile_tracker.cc",
+        "src/trace_processor/heap_profile_tracker.h",
         "src/trace_processor/instants_table.cc",
         "src/trace_processor/instants_table.h",
         "src/trace_processor/json_trace_parser.cc",
@@ -394,11 +443,15 @@ cc_binary(
         "src/trace_processor/json_trace_tokenizer.h",
         "src/trace_processor/json_trace_utils.cc",
         "src/trace_processor/json_trace_utils.h",
+        "src/trace_processor/metrics/metrics.cc",
+        "src/trace_processor/metrics/metrics.h",
+        "src/trace_processor/metrics/sql_metrics.h",
         "src/trace_processor/null_term_string_view.h",
         "src/trace_processor/process_table.cc",
         "src/trace_processor/process_table.h",
         "src/trace_processor/process_tracker.cc",
         "src/trace_processor/process_tracker.h",
+        "src/trace_processor/proto_incremental_state.h",
         "src/trace_processor/proto_trace_parser.cc",
         "src/trace_processor/proto_trace_parser.h",
         "src/trace_processor/proto_trace_tokenizer.cc",
@@ -463,12 +516,15 @@ cc_binary(
         "src/trace_processor/window_operator_table.h",
     ],
     deps = [
+        "//third_party/perfetto:gen_merged_sql_metrics",
         "//third_party/perfetto/google:gtest_prod",
         "//third_party/perfetto/google:jsoncpp",
         "//third_party/perfetto/google:linenoise",
         "//third_party/perfetto/google:perfetto_version",
         "//third_party/perfetto/protos:common_zero_cc_proto",
         "//third_party/perfetto/protos:config_zero_cc_proto",
+        "//third_party/perfetto/protos:metrics_android_zero_cc_proto",
+        "//third_party/perfetto/protos:metrics_zero_cc_proto",
         "//third_party/perfetto/protos:trace_android_zero_cc_proto",
         "//third_party/perfetto/protos:trace_chrome_zero_cc_proto",
         "//third_party/perfetto/protos:trace_filesystem_zero_cc_proto",
@@ -499,6 +555,7 @@ cc_binary(
         "include/perfetto/base/hash.h",
         "include/perfetto/base/logging.h",
         "include/perfetto/base/metatrace.h",
+        "include/perfetto/base/no_destructor.h",
         "include/perfetto/base/optional.h",
         "include/perfetto/base/paged_memory.h",
         "include/perfetto/base/pipe.h",
@@ -510,6 +567,7 @@ cc_binary(
         "include/perfetto/base/string_writer.h",
         "include/perfetto/base/task_runner.h",
         "include/perfetto/base/temp_file.h",
+        "include/perfetto/base/thread_annotations.h",
         "include/perfetto/base/thread_checker.h",
         "include/perfetto/base/thread_task_runner.h",
         "include/perfetto/base/thread_utils.h",
@@ -575,6 +633,16 @@ cc_binary(
         "src/trace_processor/ftrace_descriptors.h",
         "src/trace_processor/ftrace_utils.cc",
         "src/trace_processor/ftrace_utils.h",
+        "src/trace_processor/fuchsia_provider_view.cc",
+        "src/trace_processor/fuchsia_provider_view.h",
+        "src/trace_processor/fuchsia_trace_parser.cc",
+        "src/trace_processor/fuchsia_trace_parser.h",
+        "src/trace_processor/fuchsia_trace_tokenizer.cc",
+        "src/trace_processor/fuchsia_trace_tokenizer.h",
+        "src/trace_processor/fuchsia_trace_utils.cc",
+        "src/trace_processor/fuchsia_trace_utils.h",
+        "src/trace_processor/heap_profile_tracker.cc",
+        "src/trace_processor/heap_profile_tracker.h",
         "src/trace_processor/instants_table.cc",
         "src/trace_processor/instants_table.h",
         "src/trace_processor/json_trace_parser.cc",
@@ -583,11 +651,15 @@ cc_binary(
         "src/trace_processor/json_trace_tokenizer.h",
         "src/trace_processor/json_trace_utils.cc",
         "src/trace_processor/json_trace_utils.h",
+        "src/trace_processor/metrics/metrics.cc",
+        "src/trace_processor/metrics/metrics.h",
+        "src/trace_processor/metrics/sql_metrics.h",
         "src/trace_processor/null_term_string_view.h",
         "src/trace_processor/process_table.cc",
         "src/trace_processor/process_table.h",
         "src/trace_processor/process_tracker.cc",
         "src/trace_processor/process_tracker.h",
+        "src/trace_processor/proto_incremental_state.h",
         "src/trace_processor/proto_trace_parser.cc",
         "src/trace_processor/proto_trace_parser.h",
         "src/trace_processor/proto_trace_tokenizer.cc",
@@ -662,6 +734,7 @@ cc_binary(
         "tools/trace_to_text/utils.h",
     ],
     deps = [
+        "//third_party/perfetto:gen_merged_sql_metrics",
         "//third_party/perfetto/google:gtest_prod",
         "//third_party/perfetto/google:jsoncpp",
         "//third_party/perfetto/google:perfetto_version",
@@ -669,6 +742,8 @@ cc_binary(
         "//third_party/perfetto/protos:common_zero_cc_proto",
         "//third_party/perfetto/protos:config_cc_proto",
         "//third_party/perfetto/protos:config_zero_cc_proto",
+        "//third_party/perfetto/protos:metrics_android_zero_cc_proto",
+        "//third_party/perfetto/protos:metrics_zero_cc_proto",
         "//third_party/perfetto/protos:protos_third_party_pprof_cc_proto",
         "//third_party/perfetto/protos:trace_android_cc_proto",
         "//third_party/perfetto/protos:trace_android_zero_cc_proto",
@@ -701,15 +776,42 @@ cc_binary(
 )
 
 gensignature(
-    name = "trace_processor_shell_sig",
+    name = "trace_processor_sig",
     srcs = [
         ":trace_processor_shell",
+        ":trace_to_text",
+    ],
+    tags = [
+        "__TRACE_PROCESSOR_SIG_TAG1",
+        "__TRACE_PROCESSOR_SIG_TAG2",
     ],
 )
 
-gensignature(
-    name = "trace_to_text_sig",
+py_binary(
+    name = "gen_merged_sql_metrics_py",
     srcs = [
-        ":trace_to_text",
+        "tools/gen_merged_sql_metrics.py",
+    ],
+    main = "tools/gen_merged_sql_metrics.py",
+)
+
+load("//security/fuzzing/blaze:cc_fuzz_target.bzl", "cc_fuzz_target")
+
+cc_fuzz_target(
+    name = "trace_parsing_fuzzer",
+    srcs = ["src/trace_processor/trace_parsing_fuzzer.cc"],
+    componentid = 323270,
+    deps = [
+        ":trace_processor",
+        "//third_party/perfetto/protos:trace_processor_cc_proto",
+    ],
+)
+
+cc_fuzz_target(
+    name = "proto_decoder_fuzzer",
+    srcs = ["src/protozero/proto_decoder_fuzzer.cc"],
+    componentid = 323270,
+    deps = [
+        ":trace_processor",
     ],
 )
