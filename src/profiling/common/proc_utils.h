@@ -21,6 +21,7 @@
 #include <set>
 #include <vector>
 
+#include "perfetto/ext/base/optional.h"
 #include "perfetto/ext/base/scoped_file.h"
 
 namespace perfetto {
@@ -43,13 +44,21 @@ void ForEachPid(Fn callback) {
   }
 }
 
-std::vector<std::string> NormalizeCmdlines(
+base::Optional<std::vector<std::string>> NormalizeCmdlines(
     const std::vector<std::string>& cmdlines);
 
 void FindAllProfilablePids(std::set<pid_t>* pids);
 void FindPidsForCmdlines(const std::vector<std::string>& cmdlines,
                          std::set<pid_t>* pids);
 bool GetCmdlineForPID(pid_t pid, std::string* name);
+
+base::Optional<uint32_t> GetRssAnonAndSwap(pid_t pid);
+// Filters the list of pids (in-place), keeping only the
+// entries satisfying the minimum size criteria for anonymous memory.
+void RemoveUnderAnonThreshold(uint32_t min_size_kb, std::set<pid_t>* pids);
+bool IsUnderAnonRssAndSwapThreshold(pid_t pid,
+                                    uint32_t min_size_kb,
+                                    const std::string& status);
 
 }  // namespace profiling
 }  // namespace perfetto

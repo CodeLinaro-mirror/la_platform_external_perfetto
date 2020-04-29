@@ -3088,6 +3088,14 @@ message HeapGraphRoot {
   optional Type root_type = 2;
 }
 
+message HeapGraphType {
+  // TODO(fmayer): Consider removing this and using the index in the repeaed
+  // field to save space.
+  optional uint64 id = 1;
+  optional uint64 location_id = 2;
+  optional string class_name = 3;
+}
+
 message HeapGraphObject {
   optional uint64 id = 1;
 
@@ -3121,11 +3129,21 @@ message HeapGraph {
   // garbage.
   repeated HeapGraphRoot roots = 7;
 
-  // Type names used in managed heap graph.
+  // Types used in HeapGraphObjects.
+  repeated HeapGraphType types = 9;
+
+  // Legacy way to encode types. Names here are emitted by old perfetto_hprof,
+  // which do not include the class_name. Handle like a HeapGraphType with
+  // no location_id.
+  // TODO(fmayer): Remove this. This was was not used in any publicly available
+  // release.
   repeated InternedString type_names = 3;
 
   // Field names for references in managed heap graph.
   repeated InternedString field_names = 4;
+
+  // Paths of files used in managed heap graph.
+  repeated InternedString location_names = 8;
 
   optional bool continued = 5;
   optional uint64 index = 6;
@@ -3342,6 +3360,10 @@ message ProfilePacket {
     // MEMORY CORRUPTION.
     optional bool buffer_corrupted = 8;
 
+    // If disconnected, this disconnect was caused by heapprofd exceeding
+    // guardrails during this profiling session.
+    optional bool hit_guardrail = 10;
+
     // Timestamp of the state of the target process that this dump represents.
     // This can be different to the timestamp of the TracePackets for various
     // reasons:
@@ -3457,7 +3479,24 @@ message PerfSample {
     SampleSkipReason sample_skipped_reason = 18;
   };
 }
+
 // End of protos/perfetto/trace/profiling/profile_packet.proto
+
+// Begin of protos/perfetto/trace/profiling/smaps.proto
+
+message SmapsEntry {
+  optional string path = 1;
+  optional uint64 size_kb = 2;
+  optional uint64 private_dirty_kb = 3;
+  optional uint64 swap_kb = 4;
+};
+
+message SmapsPacket {
+  optional uint32 pid = 1;
+  repeated SmapsEntry entries = 2;
+};
+
+// End of protos/perfetto/trace/profiling/smaps.proto
 
 // Begin of protos/perfetto/trace/ps/process_stats.proto
 
@@ -3629,6 +3668,28 @@ message SystemInfo {
 
 // End of protos/perfetto/trace/system_info.proto
 
+// Begin of protos/perfetto/trace/system_info/cpu_info.proto
+
+// Information about CPUs from procfs and sysfs.
+message CpuInfo {
+  // Information about a single CPU.
+  message Cpu {
+    // Value of "Processor" field from /proc/cpuinfo for this CPU.
+    // Example: "AArch64 Processor rev 12 (aarch64)"
+    optional string processor = 1;
+
+    // Frequencies from
+    // /sys/devices/system/cpu/cpuX/cpufreq/scaling_available_frequencies
+    // where X is the index of this CPU.
+    repeated uint32 frequencies = 2;
+  }
+
+  // Describes available CPUs, one entry per CPU.
+  repeated Cpu cpus = 1;
+}
+
+// End of protos/perfetto/trace/system_info/cpu_info.proto
+
 // Begin of protos/perfetto/trace/trace.proto
 
 message Trace {
@@ -3649,7 +3710,7 @@ message Trace {
 // TracePacket(s).
 //
 // Next reserved id: 13 (up to 15).
-// Next id: 67.
+// Next id: 69.
 message TracePacket {
   // The timestamp of the TracePacket.
   // By default this timestamps refers to the trace clock (CLOCK_BOOTTIME on
@@ -3701,6 +3762,8 @@ message TracePacket {
     GpuLog gpu_log = 63;
     VulkanApiEvent vulkan_api_event = 65;
     PerfSample perf_sample = 66;
+    CpuInfo cpu_info = 67;
+    SmapsPacket smaps_packet = 68;
 
     // Only used in profile packets.
     ProfiledFrameSymbols profiled_frame_symbols = 55;
@@ -4205,8 +4268,8 @@ message ChromeLatencyInfo {
   message ComponentInfo {
     optional LatencyComponentType component_type = 1;
 
-    // Nanosecond timestamp in CLOCK_MONOTONIC domain
-    optional uint64 time_ns = 2;
+    // Microsecond timestamp in CLOCK_MONOTONIC domain
+    optional uint64 time_us = 2;
   };
 
   repeated ComponentInfo component_info = 4;
@@ -5488,14 +5551,16 @@ message TraceConfig {
     optional protos.DataSourceConfig config = 1;
 
     // Optional. If multiple producers (~processes) expose the same data source
-    // and |producer_name_filter| != "", the data source is enabled only for
-    // producers whose names match any of the producer_name_filter below.
-    // The |producer_name_filter| has to be an exact match. (TODO(primiano):
-    // support wildcards or regex).
+    // and either |producer_name_filter| or |producer_name_regex_filter| is set,
+    // the data source is enabled only for producers whose names match any of
+    // the filters.
+    // |producer_name_filter| has to be an exact match, while
+    // |producer_name_regex_filter| is a regular expression.
     // This allows to enable a data source only for specific processes.
-    // The "repeated" field has OR sematics: specifying a filter ["foo", "bar"]
-    // will enable data source on both "foo" and "bar" (if existent).
+    // The "repeated" fields have OR semantics: specifying a filter ["foo",
+    // "bar"] will enable data sources on both "foo" and "bar" (if they exist).
     repeated string producer_name_filter = 2;
+    repeated string producer_name_regex_filter = 3;
   }
   repeated DataSource data_sources = 2;
 
@@ -5791,6 +5856,7 @@ message TrackEventConfig {
 // Begin of protos/perfetto/config/profiling/heapprofd_config.proto
 
 // Configuration for go/heapprofd.
+// Next id: 17
 message HeapprofdConfig {
   message ContinuousDumpConfig {
     // ms to wait before first dump.
@@ -5829,6 +5895,12 @@ message HeapprofdConfig {
   // heapprofd will likely be overloaded by the amount of data for low
   // sampling intervals.
   optional bool all = 5;
+
+  // Do not profile processes whose anon RSS + swap < given value.
+  optional uint32 min_anonymous_memory_kb = 15;
+
+  // Stop profile if heapprofd memory usage goes beyond the given value.
+  optional uint32 max_heapprofd_memory_kb = 16;
 
   // Do not emit function names for mappings starting with this prefix.
   // E.g. /system to not emit symbols for any system libraries.
@@ -5914,15 +5986,27 @@ message JavaHprofConfig {
 
   // Dump at a predefined interval.
   optional ContinuousDumpConfig continuous_dump_config = 3;
+
+  // Do not profile processes whose anon RSS + swap < given value.
+  optional uint32 min_anonymous_memory_kb = 4;
+
+  // Include the process' /proc/self/smaps.
+  // This only shows maps that:
+  // * start with /system
+  // * start with /vendor
+  // * start with /data/app
+  // * contain "extracted in memory from Y", where Y matches any of the above
+  optional bool dump_smaps = 5;
 }
 
 // End of protos/perfetto/config/profiling/java_hprof_config.proto
 
 // Begin of protos/perfetto/config/profiling/perf_event_config.proto
 
-// TODO(b/144281346): unstable, do not use. Will change in incompatible ways.
+// Configuration for the traced_perf profiler.
+//
 // At the time of writing, the config options are restricted to the periodic
-// system-wide stack sampling use-case.
+// system-wide stack sampling use-case (|all_cpus| must be true).
 message PerfEventConfig {
   // If true, sample events on all CPUs.
   optional bool all_cpus = 1;
@@ -5932,10 +6016,24 @@ message PerfEventConfig {
   // If unset, an implementation-defined default is used.
   optional uint32 sampling_frequency = 2;
 
+  // How often the per-cpu ring buffers are read by the producer.
+  // If unset, an implementation-defined default is used.
+  optional uint32 ring_buffer_read_period_ms = 8;
+
   // Size (in 4k pages) of each per-cpu ring buffer that is filled by the
   // kernel. If set, must be a power of two.
   // If unset, an implementation-defined default is used.
   optional uint32 ring_buffer_pages = 3;
+
+  // Timeout for the remote /proc/<pid>/{maps,mem} file descriptors for a
+  // sampled process. This is primarily for Android, where this lookup is
+  // asynchronous. As long as the producer is waiting, the associated samples
+  // will be kept enqueued (putting pressure on the capacity of the shared
+  // unwinding queue). Once a lookup for a process expires, all associated
+  // samples are discarded. However, if the lookup still succeeds after the
+  // timeout, future samples will be handled normally.
+  // If unset, an implementation-defined default is used.
+  optional uint32 remote_descriptor_timeout_ms = 9;
 
   // Process ID (TGID) whitelist. If this list is not empty, only matching
   // samples will be retained. If multiple whitelists and blacklists are
