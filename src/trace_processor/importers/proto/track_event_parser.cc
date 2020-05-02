@@ -18,16 +18,12 @@
 
 #include <string>
 
-#if PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
-#include <json/reader.h>
-#include <json/value.h>
-#endif  // PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
-
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_writer.h"
 #include "perfetto/trace_processor/status.h"
 #include "src/trace_processor/args_tracker.h"
 #include "src/trace_processor/event_tracker.h"
+#include "src/trace_processor/importers/json/json_utils.h"
 #include "src/trace_processor/importers/proto/args_table_utils.h"
 #include "src/trace_processor/importers/proto/packet_sequence_state.h"
 #include "src/trace_processor/importers/proto/track_event.descriptor.h"
@@ -151,9 +147,13 @@ class TrackEventParser::EventImporter {
       return util::OkStatus();
     }
 
+    // If we have legacy thread time / instruction count fields, also parse them
+    // into the counters tables.
+    ParseLegacyThreadTimeAndInstructionsAsCounters();
+
     // Parse extra counter values before parsing the actual event. This way, we
     // can update the slice's thread time / instruction count fields based on
-    // these counter values.
+    // these counter values and also parse them as slice attributes / arguments.
     ParseExtraCounterValues();
 
     // TODO(eseckler): Replace phase with type and remove handling of
@@ -459,6 +459,42 @@ class TrackEventParser::EventImporter {
 
     context_->event_tracker->PushCounter(ts_, event_data_->counter_value,
                                          track_id_);
+  }
+
+  void ParseLegacyThreadTimeAndInstructionsAsCounters() {
+    if (!utid_)
+      return;
+    // When these fields are set, we don't expect TrackDescriptor-based counters
+    // for thread time or instruction count for this thread in the trace, so we
+    // intern separate counter tracks based on name + utid.
+    if (event_data_->thread_timestamp) {
+      TrackId track_id = context_->track_tracker->InternThreadCounterTrack(
+          parser_->counter_name_thread_time_id_, *utid_);
+      context_->event_tracker->PushCounter(ts_, event_data_->thread_timestamp,
+                                           track_id);
+      if (legacy_event_.duration_us() &&
+          legacy_event_.has_thread_duration_us()) {
+        context_->event_tracker->PushCounter(
+            ts_ + (legacy_event_.duration_us() * 1000),
+            event_data_->thread_timestamp +
+                (legacy_event_.thread_duration_us() * 1000),
+            track_id);
+      }
+    }
+    if (event_data_->thread_instruction_count) {
+      TrackId track_id = context_->track_tracker->InternThreadCounterTrack(
+          parser_->counter_name_thread_instruction_count_id_, *utid_);
+      context_->event_tracker->PushCounter(
+          ts_, event_data_->thread_instruction_count, track_id);
+      if (legacy_event_.duration_us() &&
+          legacy_event_.has_thread_instruction_delta()) {
+        context_->event_tracker->PushCounter(
+            ts_ + (legacy_event_.duration_us() * 1000),
+            event_data_->thread_instruction_count +
+                legacy_event_.thread_instruction_delta(),
+            track_id);
+      }
+    }
   }
 
   void ParseExtraCounterValues() {
@@ -888,16 +924,12 @@ class TrackEventParser::EventImporter {
     } else if (annotation.has_pointer_value()) {
       inserter->AddArg(name_id, Variadic::Pointer(annotation.pointer_value()));
     } else if (annotation.has_legacy_json_value()) {
-#if PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
+      if (!json::IsJsonSupported())
+        return util::ErrStatus("Ignoring legacy_json_value (no json support)");
+
+      auto value = json::ParseJsonString(annotation.legacy_json_value());
       auto name = storage_->GetString(name_id);
-      Json::Reader reader;
-      Json::Value value;
-      const char* begin = annotation.legacy_json_value().data;
-      reader.parse(begin, begin + annotation.legacy_json_value().size, value);
-      ParseJsonValueArgs(value, name, name, inserter);
-#else   // PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
-      return util::ErrStatus("Ignoring legacy_json_value (no json support)");
-#endif  // PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
+      json::AddJsonValueToArgs(*value, name, name, storage_, inserter);
     } else if (annotation.has_nested_value()) {
       auto name = storage_->GetString(name_id);
       ParseNestedValueArgs(annotation.nested_value(), name, name, inserter);
@@ -905,78 +937,6 @@ class TrackEventParser::EventImporter {
 
     return util::OkStatus();
   }
-
-#if PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
-  bool ParseJsonValueArgs(const Json::Value& value,
-                          base::StringView flat_key,
-                          base::StringView key,
-                          BoundInserter* inserter) {
-    if (value.isObject()) {
-      auto it = value.begin();
-      bool inserted = false;
-      for (; it != value.end(); ++it) {
-        std::string child_name = it.memberName();
-        std::string child_flat_key = flat_key.ToStdString() + "." + child_name;
-        std::string child_key = key.ToStdString() + "." + child_name;
-        inserted |= ParseJsonValueArgs(*it, base::StringView(child_flat_key),
-                                       base::StringView(child_key), inserter);
-      }
-      return inserted;
-    }
-
-    if (value.isArray()) {
-      auto it = value.begin();
-      bool inserted_any = false;
-      std::string array_key = key.ToStdString();
-      StringId array_key_id = storage_->InternString(key);
-      for (; it != value.end(); ++it) {
-        size_t array_index = inserter->GetNextArrayEntryIndex(array_key_id);
-        std::string child_key =
-            array_key + "[" + std::to_string(array_index) + "]";
-        bool inserted = ParseJsonValueArgs(
-            *it, flat_key, base::StringView(child_key), inserter);
-        if (inserted)
-          inserter->IncrementArrayEntryIndex(array_key_id);
-        inserted_any |= inserted;
-      }
-      return inserted_any;
-    }
-
-    // Leaf value.
-    auto flat_key_id = storage_->InternString(flat_key);
-    auto key_id = storage_->InternString(key);
-
-    switch (value.type()) {
-      case Json::ValueType::nullValue:
-        break;
-      case Json::ValueType::intValue:
-        inserter->AddArg(flat_key_id, key_id,
-                         Variadic::Integer(value.asInt64()));
-        return true;
-      case Json::ValueType::uintValue:
-        inserter->AddArg(flat_key_id, key_id,
-                         Variadic::UnsignedInteger(value.asUInt64()));
-        return true;
-      case Json::ValueType::realValue:
-        inserter->AddArg(flat_key_id, key_id, Variadic::Real(value.asDouble()));
-        return true;
-      case Json::ValueType::stringValue:
-        inserter->AddArg(flat_key_id, key_id,
-                         Variadic::String(storage_->InternString(
-                             base::StringView(value.asString()))));
-        return true;
-      case Json::ValueType::booleanValue:
-        inserter->AddArg(flat_key_id, key_id,
-                         Variadic::Boolean(value.asBool()));
-        return true;
-      case Json::ValueType::objectValue:
-      case Json::ValueType::arrayValue:
-        PERFETTO_FATAL("Non-leaf types handled above");
-        break;
-    }
-    return false;
-  }
-#endif  // PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
 
   bool ParseNestedValueArgs(ConstBytes nested_value,
                             base::StringView flat_key,
