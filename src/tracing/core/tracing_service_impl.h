@@ -101,6 +101,7 @@ class TracingServiceImpl : public TracingService {
     SharedMemory* shared_memory() const override;
     size_t shared_buffer_page_size_kb() const override;
     void ActivateTriggers(const std::vector<std::string>&) override;
+    void Sync(std::function<void()> callback) override;
 
     void OnTracingSetup();
     void SetupDataSource(DataSourceInstanceID, const DataSourceConfig&);
@@ -490,6 +491,8 @@ class TracingServiceImpl : public TracingService {
 
     // Set to true on the first call to OnAllDataSourcesStarted().
     bool did_notify_all_data_source_started = false;
+    bool did_emit_all_data_source_started = false;
+    base::TimeNanos time_all_data_source_started = {};
 
     // Initial clock snapshot, captured at trace start time (when state goes
     // to TracingSession::STARTED). Emitted into the trace when the consumer
@@ -546,6 +549,7 @@ class TracingServiceImpl : public TracingService {
   void SnapshotClocks(std::vector<TracePacket>*, bool set_root_timestamp);
   void SnapshotStats(TracingSession*, std::vector<TracePacket>*);
   TraceStats GetTraceStats(TracingSession* tracing_session);
+  void MaybeEmitServiceEvents(TracingSession*, std::vector<TracePacket>*);
   void MaybeEmitTraceConfig(TracingSession*, std::vector<TracePacket>*);
   void MaybeEmitSystemInfo(TracingSession*, std::vector<TracePacket>*);
   void MaybeEmitReceivedTriggers(TracingSession*, std::vector<TracePacket>*);

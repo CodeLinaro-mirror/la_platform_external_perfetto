@@ -19,21 +19,21 @@
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_view.h"
 #include "perfetto/protozero/scattered_heap_buffer.h"
-#include "src/trace_processor/additional_modules.h"
-#include "src/trace_processor/args_tracker.h"
-#include "src/trace_processor/clock_tracker.h"
-#include "src/trace_processor/default_modules.h"
-#include "src/trace_processor/event_tracker.h"
+#include "src/trace_processor/importers/additional_modules.h"
+#include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/clock_tracker.h"
+#include "src/trace_processor/importers/common/event_tracker.h"
+#include "src/trace_processor/importers/common/process_tracker.h"
+#include "src/trace_processor/importers/common/slice_tracker.h"
+#include "src/trace_processor/importers/common/track_tracker.h"
+#include "src/trace_processor/importers/default_modules.h"
 #include "src/trace_processor/importers/ftrace/sched_event_tracker.h"
+#include "src/trace_processor/importers/proto/metadata_tracker.h"
 #include "src/trace_processor/importers/proto/proto_trace_parser.h"
-#include "src/trace_processor/metadata_tracker.h"
-#include "src/trace_processor/process_tracker.h"
-#include "src/trace_processor/slice_tracker.h"
-#include "src/trace_processor/stack_profile_tracker.h"
+#include "src/trace_processor/importers/proto/stack_profile_tracker.h"
 #include "src/trace_processor/storage/metadata.h"
 #include "src/trace_processor/storage/trace_storage.h"
 #include "src/trace_processor/trace_sorter.h"
-#include "src/trace_processor/track_tracker.h"
 #include "test/gtest_and_gmock.h"
 
 #include "protos/perfetto/common/sys_stats_counters.pbzero.h"
@@ -344,14 +344,12 @@ TEST_F(ProtoTraceParserTest, LoadEventsIntoRaw) {
   ASSERT_EQ(args.key()[3], context_.storage->InternString("clone_flags"));
   ASSERT_EQ(args.key()[4], context_.storage->InternString("ip"));
   ASSERT_EQ(args.key()[5], context_.storage->InternString("buf"));
-  ASSERT_STREQ(context_.storage->GetString(args.string_value()[0]).c_str(),
-               task_newtask);
+  ASSERT_STREQ(args.string_value().GetString(0).c_str(), task_newtask);
   ASSERT_EQ(args.int_value()[1], 123);
   ASSERT_EQ(args.int_value()[2], 15);
   ASSERT_EQ(args.int_value()[3], 12);
   ASSERT_EQ(args.int_value()[4], 20);
-  ASSERT_STREQ(context_.storage->GetString(args.string_value()[5]).c_str(),
-               buf_value);
+  ASSERT_STREQ(args.string_value().GetString(5).c_str(), buf_value);
 
   // TODO(taylori): Add test ftrace event with all field types
   // and test here.
@@ -2403,14 +2401,8 @@ TEST_F(ProtoTraceParserTest, LoadChromeBenchmarkMetadata) {
 
   Tokenize();
 
-  StringId name_1 = storage_->InternString(kName);
-  StringId tag_1 = storage_->InternString(kTag1);
-  StringId tag_2 = storage_->InternString(kTag2);
-
-  StringId benchmark_id = *storage_->string_pool().GetId(
-      metadata::kNames[metadata::benchmark_name]);
-  StringId tags_id = *storage_->string_pool().GetId(
-      metadata::kNames[metadata::benchmark_story_tags]);
+  base::StringView benchmark = metadata::kNames[metadata::benchmark_name];
+  base::StringView tags = metadata::kNames[metadata::benchmark_story_tags];
 
   context_.sorter->ExtractEventsForced();
 
@@ -2418,14 +2410,15 @@ TEST_F(ProtoTraceParserTest, LoadChromeBenchmarkMetadata) {
   const auto& meta_values = storage_->metadata_table().str_value();
   EXPECT_EQ(storage_->metadata_table().row_count(), 3u);
 
-  std::vector<std::pair<StringId, StringId>> meta_entries;
+  std::vector<std::pair<base::StringView, base::StringView>> meta_entries;
   for (uint32_t i = 0; i < storage_->metadata_table().row_count(); i++) {
-    meta_entries.emplace_back(std::make_pair(meta_keys[i], meta_values[i]));
+    meta_entries.emplace_back(
+        std::make_pair(meta_keys.GetString(i), meta_values.GetString(i)));
   }
   EXPECT_THAT(meta_entries,
-              UnorderedElementsAreArray({std::make_pair(benchmark_id, name_1),
-                                         std::make_pair(tags_id, tag_1),
-                                         std::make_pair(tags_id, tag_2)}));
+              UnorderedElementsAreArray({std::make_pair(benchmark, kName),
+                                         std::make_pair(tags, kTag1),
+                                         std::make_pair(tags, kTag2)}));
 }
 
 TEST_F(ProtoTraceParserTest, AndroidPackagesList) {
@@ -2462,41 +2455,67 @@ TEST_F(ProtoTraceParserTest, AndroidPackagesList) {
   // The relevant arg sets have the info about the packages. To simplify test
   // structure, make an assumption that metadata storage is filled in in the
   // FIFO order of seen packages.
-  const auto& args = context_.storage->arg_table();
-  const auto& metadata = context_.storage->metadata_table();
-
-  Table package_list = metadata.Filter(
-      {metadata.name().eq(metadata::kNames[metadata::android_packages_list])});
+  const auto& package_list = context_.storage->package_list_table();
   ASSERT_EQ(package_list.row_count(), 2u);
 
-  const Column* int_value = package_list.GetColumnByName("int_value");
-  uint32_t first_set_id = static_cast<uint32_t>(int_value->Get(0).long_value);
-  uint32_t second_set_id = static_cast<uint32_t>(int_value->Get(1).long_value);
+  EXPECT_STREQ(storage_->GetString(package_list.package_name()[0]).c_str(),
+               "com.test.app");
+  EXPECT_EQ(package_list.uid()[0], 1000u);
+  EXPECT_EQ(package_list.debuggable()[0], false);
+  EXPECT_EQ(package_list.profileable_from_shell()[0], true);
+  EXPECT_EQ(package_list.version_code()[0], 42);
 
-  // helper to look up arg values
-  auto find_arg = [&args, this](ArgSetId set_id, const char* arg_name) {
-    for (uint32_t i = 0; i < args.row_count(); i++) {
-      if (args.arg_set_id()[i] == set_id &&
-          args.key()[i] == storage_->InternString(arg_name))
-        return storage_->GetArgValue(i);
-    }
-    PERFETTO_FATAL("Didn't find expected argument");
-  };
+  EXPECT_STREQ(storage_->GetString(package_list.package_name()[1]).c_str(),
+               "com.test.app2");
+  EXPECT_EQ(package_list.uid()[1], 1001u);
+  EXPECT_EQ(package_list.debuggable()[1], false);
+  EXPECT_EQ(package_list.profileable_from_shell()[1], false);
+  EXPECT_EQ(package_list.version_code()[1], 43);
+}
 
-  auto first_name_id = find_arg(first_set_id, "name").string_value;
-  EXPECT_STREQ(storage_->GetString(first_name_id).c_str(), "com.test.app");
-  EXPECT_EQ(find_arg(first_set_id, "uid").uint_value, 1000u);
-  EXPECT_EQ(find_arg(first_set_id, "debuggable").bool_value, false);
-  EXPECT_EQ(find_arg(first_set_id, "profileable_from_shell").bool_value, true);
-  EXPECT_EQ(find_arg(first_set_id, "version_code").int_value, 42);
+TEST_F(ProtoTraceParserTest, AndroidPackagesListDuplicate) {
+  auto* packet = trace_.add_packet();
+  auto* pkg_list = packet->set_packages_list();
 
-  auto second_name_id = find_arg(second_set_id, "name").string_value;
-  EXPECT_STREQ(storage_->GetString(second_name_id).c_str(), "com.test.app2");
-  EXPECT_EQ(find_arg(second_set_id, "uid").uint_value, 1001u);
-  EXPECT_EQ(find_arg(second_set_id, "debuggable").bool_value, false);
-  EXPECT_EQ(find_arg(second_set_id, "profileable_from_shell").bool_value,
-            false);
-  EXPECT_EQ(find_arg(second_set_id, "version_code").int_value, 43);
+  pkg_list->set_read_error(false);
+  pkg_list->set_parse_error(true);
+  {
+    auto* pkg = pkg_list->add_packages();
+    pkg->set_name("com.test.app");
+    pkg->set_uid(1000);
+    pkg->set_debuggable(false);
+    pkg->set_profileable_from_shell(true);
+    pkg->set_version_code(42);
+  }
+  {
+    auto* pkg = pkg_list->add_packages();
+    pkg->set_name("com.test.app");
+    pkg->set_uid(1000);
+    pkg->set_debuggable(false);
+    pkg->set_profileable_from_shell(true);
+    pkg->set_version_code(42);
+  }
+
+  Tokenize();
+
+  // Packet-level errors reflected in stats storage.
+  const auto& stats = context_.storage->stats();
+  EXPECT_FALSE(stats[stats::packages_list_has_read_errors].value);
+  EXPECT_TRUE(stats[stats::packages_list_has_parse_errors].value);
+
+  // Expect two metadata rows, each with an int_value of a separate arg set id.
+  // The relevant arg sets have the info about the packages. To simplify test
+  // structure, make an assumption that metadata storage is filled in in the
+  // FIFO order of seen packages.
+  const auto& package_list = context_.storage->package_list_table();
+  ASSERT_EQ(package_list.row_count(), 1u);
+
+  EXPECT_STREQ(storage_->GetString(package_list.package_name()[0]).c_str(),
+               "com.test.app");
+  EXPECT_EQ(package_list.uid()[0], 1000u);
+  EXPECT_EQ(package_list.debuggable()[0], false);
+  EXPECT_EQ(package_list.profileable_from_shell()[0], true);
+  EXPECT_EQ(package_list.version_code()[0], 42);
 }
 
 TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
@@ -2550,6 +2569,7 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
 
     samples->add_callstack_iid(1);
     samples->add_timestamp_delta_us(15);
+    samples->set_process_priority(20);
   }
 
   {
@@ -2559,6 +2579,7 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
 
     samples->add_callstack_iid(42);
     samples->add_timestamp_delta_us(42);
+    samples->set_process_priority(30);
   }
 
   EXPECT_CALL(*process_, UpdateThread(16, 15))
@@ -2573,14 +2594,17 @@ TEST_F(ProtoTraceParserTest, ParseCPUProfileSamplesIntoTable) {
   EXPECT_EQ(samples.ts()[0], 11000);
   EXPECT_EQ(samples.callsite_id()[0], CallsiteId{0});
   EXPECT_EQ(samples.utid()[0], 1u);
+  EXPECT_EQ(samples.process_priority()[0], 20);
 
   EXPECT_EQ(samples.ts()[1], 26000);
   EXPECT_EQ(samples.callsite_id()[1], CallsiteId{1});
   EXPECT_EQ(samples.utid()[1], 1u);
+  EXPECT_EQ(samples.process_priority()[1], 20);
 
   EXPECT_EQ(samples.ts()[2], 68000);
   EXPECT_EQ(samples.callsite_id()[2], CallsiteId{0});
   EXPECT_EQ(samples.utid()[2], 1u);
+  EXPECT_EQ(samples.process_priority()[2], 30);
 
   // Breakpad build_ids should not be modified/mangled.
   ASSERT_STREQ(
