@@ -14,7 +14,7 @@
 
 import * as m from 'mithril';
 
-import {timeToCode} from '../common/time';
+import {timeToCode, toNs} from '../common/time';
 
 import {globals} from './globals';
 import {Panel, PanelSize} from './panel';
@@ -43,8 +43,13 @@ export class ChromeSliceDetailsPanel extends Panel {
                   m('td', `${timeToCode(sliceInfo.ts)}`)),
                 m('tr',
                   m('th', `Duration`),
-                  m('td', `${timeToCode(sliceInfo.dur)}`)),
-                this.getArgs(sliceInfo.args)),
+                  m('td',
+                    `${
+                        toNs(sliceInfo.dur) === -1 ?
+                            '-1 (Did not end)' :
+                            timeToCode(sliceInfo.dur)}`)),
+                this.getDescription(sliceInfo.description)),
+              this.getArgs(sliceInfo.args),
               ));
     } else {
       return m(
@@ -63,6 +68,15 @@ export class ChromeSliceDetailsPanel extends Panel {
     if (!args || args.size === 0) return [];
     const result = [m('tr', m('th', 'Args'))];
     for (const [key, value] of args) {
+      result.push(m('tr', m('th', key), m('td', value)));
+    }
+    return result;
+  }
+
+  getDescription(description?: Map<string, string>): m.Vnode[] {
+    if (!description) return [];
+    const result = [];
+    for (const [key, value] of description) {
       result.push(m('tr', m('th', key), m('td', value)));
     }
     return result;

@@ -17,15 +17,15 @@
 #include "src/trace_processor/importers/proto/track_event_tokenizer.h"
 
 #include "perfetto/base/logging.h"
-#include "src/trace_processor/clock_tracker.h"
+#include "src/trace_processor/importers/common/clock_tracker.h"
+#include "src/trace_processor/importers/common/process_tracker.h"
+#include "src/trace_processor/importers/common/track_tracker.h"
 #include "src/trace_processor/importers/proto/packet_sequence_state.h"
 #include "src/trace_processor/importers/proto/proto_trace_tokenizer.h"
-#include "src/trace_processor/process_tracker.h"
 #include "src/trace_processor/storage/stats.h"
 #include "src/trace_processor/storage/trace_storage.h"
 #include "src/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/trace_sorter.h"
-#include "src/trace_processor/track_tracker.h"
 
 #include "protos/perfetto/trace/clock_snapshot.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
@@ -250,7 +250,7 @@ void TrackEventTokenizer::TokenizeTrackEventPacket(
     uint64_t track_uuid;
     if (event.has_track_uuid()) {
       track_uuid = event.track_uuid();
-    } else if (defaults->has_track_uuid()) {
+    } else if (defaults && defaults->has_track_uuid()) {
       track_uuid = defaults->track_uuid();
     } else {
       PERFETTO_DLOG(
@@ -289,7 +289,7 @@ void TrackEventTokenizer::TokenizeTrackEventPacket(
     protozero::RepeatedFieldIterator<uint64_t> track_uuid_it;
     if (event.has_extra_counter_track_uuids()) {
       track_uuid_it = event.extra_counter_track_uuids();
-    } else if (defaults->has_extra_counter_track_uuids()) {
+    } else if (defaults && defaults->has_extra_counter_track_uuids()) {
       track_uuid_it = defaults->extra_counter_track_uuids();
     } else {
       PERFETTO_DLOG(
