@@ -36,6 +36,7 @@
 #include "src/trace_processor/trace_sorter.h"
 #include "test/gtest_and_gmock.h"
 
+#include "protos/perfetto/common/builtin_clock.pbzero.h"
 #include "protos/perfetto/common/sys_stats_counters.pbzero.h"
 #include "protos/perfetto/trace/android/packages_list.pbzero.h"
 #include "protos/perfetto/trace/chrome/chrome_benchmark_metadata.pbzero.h"
@@ -795,9 +796,8 @@ TEST_F(ProtoTraceParserTest, TrackEventWithoutInternedData) {
   constexpr TrackId thread_time_track{1u};
 
   InSequence in_sequence;  // Below slices should be sorted by timestamp.
+  // Only the begin thread time can be imported into the counter table.
   EXPECT_CALL(*event_, PushCounter(1005000, testing::DoubleEq(2003000),
-                                   thread_time_track));
-  EXPECT_CALL(*event_, PushCounter(1028000, testing::DoubleEq(2015000),
                                    thread_time_track));
   EXPECT_CALL(*slice_,
               Scoped(1005000, track, kNullStringId, kNullStringId, 23000, _))
@@ -1038,13 +1038,10 @@ TEST_F(ProtoTraceParserTest, TrackEventWithInternedData) {
   InSequence in_sequence;  // Below slices should be sorted by timestamp.
 
   MockBoundInserter inserter;
+  // Only the begin timestamp counters can be imported into the counter table.
   EXPECT_CALL(*event_, PushCounter(1005000, testing::DoubleEq(2003000),
                                    thread_time_track));
-  EXPECT_CALL(*event_, PushCounter(1028000, testing::DoubleEq(2015000),
-                                   thread_time_track));
   EXPECT_CALL(*event_, PushCounter(1005000, testing::DoubleEq(3010),
-                                   thread_instruction_count_track));
-  EXPECT_CALL(*event_, PushCounter(1028000, testing::DoubleEq(3060),
                                    thread_instruction_count_track));
   EXPECT_CALL(*slice_, Scoped(1005000, thread_1_track, cat_2_3, ev_2, 23000, _))
       .WillOnce(DoAll(InvokeArgument<5>(&inserter), Return(0u)));
@@ -2256,10 +2253,9 @@ TEST_F(ProtoTraceParserTest, TrackEventParseLegacyEventIntoRawTable) {
   Tokenize();
 
   EXPECT_CALL(*process_, UpdateThread(16, 15)).WillRepeatedly(Return(1));
+  // Only the begin thread time can be imported into the counter table.
   EXPECT_CALL(*event_,
               PushCounter(1010000, testing::DoubleEq(2005000), TrackId{1}));
-  EXPECT_CALL(*event_,
-              PushCounter(1033000, testing::DoubleEq(2020000), TrackId{1}));
 
   tables::ThreadTable::Row row(16);
   row.upid = 1u;
@@ -2321,9 +2317,8 @@ TEST_F(ProtoTraceParserTest, TrackEventLegacyTimestampsWithClockSnapshot) {
   context_.sorter.reset(new TraceSorter(
       CreateParser(), std::numeric_limits<int64_t>::max() /*window size*/));
 
-  clock_->AddSnapshot(
-      {{protos::pbzero::ClockSnapshot::Clock::BOOTTIME, 0},
-       {protos::pbzero::ClockSnapshot::Clock::MONOTONIC, 1000000}});
+  clock_->AddSnapshot({{protos::pbzero::BUILTIN_CLOCK_BOOTTIME, 0},
+                       {protos::pbzero::BUILTIN_CLOCK_MONOTONIC, 1000000}});
 
   {
     auto* packet = trace_.add_packet();
@@ -2727,11 +2722,10 @@ TEST_F(ProtoTraceParserTest, CPUProfileSamplesTimestampsAreClockMonotonic) {
     // 1000 us monotonic == 10000 us boottime.
     auto* clock_snapshot = packet->set_clock_snapshot();
     auto* clock_boot = clock_snapshot->add_clocks();
-    clock_boot->set_clock_id(protos::pbzero::ClockSnapshot::Clock::BOOTTIME);
+    clock_boot->set_clock_id(protos::pbzero::BUILTIN_CLOCK_BOOTTIME);
     clock_boot->set_timestamp(10000000);
     auto* clock_monotonic = clock_snapshot->add_clocks();
-    clock_monotonic->set_clock_id(
-        protos::pbzero::ClockSnapshot::Clock::MONOTONIC);
+    clock_monotonic->set_clock_id(protos::pbzero::BUILTIN_CLOCK_MONOTONIC);
     clock_monotonic->set_timestamp(1000000);
   }
 
