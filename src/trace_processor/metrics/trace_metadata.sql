@@ -35,8 +35,17 @@ SELECT TraceMetadata(
     SELECT int_value FROM metadata
     WHERE name = 'statsd_triggering_subscription_id'
   ),
+  'unique_session_name', (
+    SELECT str_value FROM metadata
+    WHERE name = 'unique_session_name'
+  ),
  'trace_size_bytes', (
     SELECT int_value FROM metadata
     WHERE name = 'trace_size_bytes'
+  ),
+  'trace_trigger', (
+    SELECT RepeatedField(slice.name)
+    FROM track JOIN slice ON track.id = slice.track_id
+    WHERE track.name = 'Trace Triggers'
   )
 );

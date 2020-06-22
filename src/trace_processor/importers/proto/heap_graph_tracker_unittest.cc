@@ -25,6 +25,20 @@ namespace {
 
 using ::testing::UnorderedElementsAre;
 
+TEST(HeapGraphTrackerTest, PackageFromLocationApp) {
+  TraceProcessorContext context;
+  context.storage.reset(new TraceStorage);
+  HeapGraphTracker tracker(&context);
+  EXPECT_EQ(tracker.PackageFromLocation(
+                "/data/app/~~ASDFGH1234QWerT==/"
+                "com.twitter.android-MNBVCX7890SDTst6==/test.apk"),
+            "com.twitter.android");
+  EXPECT_EQ(tracker.PackageFromLocation(
+                "/data/app/com.google.android.webview-6XfQhnaSkFwGK0sYL9is0G==/"
+                "base.apk"),
+            "com.google.android.webview");
+}
+
 TEST(HeapGraphTrackerTest, BuildFlamegraph) {
   //           4@A 5@B
   //             \ /

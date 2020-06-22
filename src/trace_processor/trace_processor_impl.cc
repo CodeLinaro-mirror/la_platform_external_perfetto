@@ -23,27 +23,34 @@
 #include "perfetto/base/time.h"
 #include "perfetto/ext/base/string_splitter.h"
 #include "perfetto/ext/base/string_utils.h"
-#include "src/trace_processor/additional_modules.h"
-#include "src/trace_processor/experimental_counter_dur_generator.h"
-#include "src/trace_processor/experimental_flamegraph_generator.h"
+#include "src/trace_processor/dynamic/describe_slice_generator.h"
+#include "src/trace_processor/dynamic/experimental_counter_dur_generator.h"
+#include "src/trace_processor/dynamic/experimental_flamegraph_generator.h"
+#include "src/trace_processor/dynamic/experimental_slice_layout_generator.h"
 #include "src/trace_processor/export_json.h"
+#include "src/trace_processor/importers/additional_modules.h"
 #include "src/trace_processor/importers/ftrace/sched_event_tracker.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_parser.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.h"
 #include "src/trace_processor/importers/gzip/gzip_trace_parser.h"
 #include "src/trace_processor/importers/json/json_trace_parser.h"
 #include "src/trace_processor/importers/json/json_trace_tokenizer.h"
+#include "src/trace_processor/importers/proto/metadata_tracker.h"
 #include "src/trace_processor/importers/systrace/systrace_trace_parser.h"
-#include "src/trace_processor/metadata_tracker.h"
-#include "src/trace_processor/sql_stats_table.h"
 #include "src/trace_processor/sqlite/span_join_operator_table.h"
+#include "src/trace_processor/sqlite/sql_stats_table.h"
 #include "src/trace_processor/sqlite/sqlite3_str_split.h"
+#include "src/trace_processor/sqlite/sqlite_raw_table.h"
 #include "src/trace_processor/sqlite/sqlite_table.h"
 #include "src/trace_processor/sqlite/sqlite_utils.h"
+#include "src/trace_processor/sqlite/stats_table.h"
 #include "src/trace_processor/sqlite/window_operator_table.h"
-#include "src/trace_processor/sqlite_raw_table.h"
-#include "src/trace_processor/stats_table.h"
+#include "src/trace_processor/tp_metatrace.h"
 #include "src/trace_processor/types/variadic.h"
+
+#include "protos/perfetto/trace/perfetto/perfetto_metatrace.pbzero.h"
+#include "protos/perfetto/trace/trace.pbzero.h"
+#include "protos/perfetto/trace/trace_packet.pbzero.h"
 
 #include "src/trace_processor/metrics/metrics.descriptor.h"
 #include "src/trace_processor/metrics/metrics.h"
@@ -403,6 +410,67 @@ void CreateLastNonNullFunction(sqlite3* db) {
   }
 }
 
+void ExtractArg(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
+  if (argc != 2) {
+    sqlite3_result_error(ctx, "EXTRACT_ARG: 2 args required", -1);
+    return;
+  }
+  if (sqlite3_value_type(argv[0]) != SQLITE_INTEGER) {
+    sqlite3_result_error(ctx, "EXTRACT_ARG: 1st argument should be arg set id",
+                         -1);
+    return;
+  }
+  if (sqlite3_value_type(argv[1]) != SQLITE_TEXT) {
+    sqlite3_result_error(ctx, "EXTRACT_ARG: 2nd argument should be key", -1);
+    return;
+  }
+
+  TraceStorage* storage = static_cast<TraceStorage*>(sqlite3_user_data(ctx));
+  uint32_t arg_set_id = static_cast<uint32_t>(sqlite3_value_int(argv[0]));
+  const char* key = reinterpret_cast<const char*>(sqlite3_value_text(argv[1]));
+
+  const auto& args = storage->arg_table();
+  RowMap filtered = args.FilterToRowMap(
+      {args.arg_set_id().eq(arg_set_id), args.key().eq(key)});
+  if (filtered.size() == 0) {
+    sqlite3_result_null(ctx);
+    return;
+  }
+  if (filtered.size() > 1) {
+    sqlite3_result_error(
+        ctx, "EXTRACT_ARG: received multiple args matching arg set id and key",
+        -1);
+  }
+
+  uint32_t idx = filtered.Get(0);
+  Variadic::Type type = *storage->GetVariadicTypeForId(args.value_type()[idx]);
+  switch (type) {
+    case Variadic::kBool:
+    case Variadic::kInt:
+    case Variadic::kUint:
+    case Variadic::kPointer:
+      sqlite3_result_int64(ctx, *args.int_value()[idx]);
+      break;
+    case Variadic::kJson:
+    case Variadic::kString:
+      sqlite3_result_text(ctx, args.string_value().GetString(idx).data(), -1,
+                          nullptr);
+      break;
+    case Variadic::kReal:
+      sqlite3_result_double(ctx, *args.real_value()[idx]);
+      break;
+  }
+}
+
+void CreateExtractArgFunction(TraceStorage* ts, sqlite3* db) {
+  auto ret = sqlite3_create_function_v2(db, "EXTRACT_ARG", 2,
+                                        SQLITE_UTF8 | SQLITE_DETERMINISTIC, ts,
+                                        &ExtractArg, nullptr, nullptr, nullptr);
+  if (ret != SQLITE_OK) {
+    PERFETTO_FATAL("Error initializing EXTRACT_ARG: %s", sqlite3_errmsg(db));
+  }
+}
+
 void SetupMetrics(TraceProcessor* tp,
                   sqlite3* db,
                   std::vector<metrics::SqlMetricFile>* sql_metrics) {
@@ -469,10 +537,11 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   CreateBuiltinViews(db);
   db_.reset(std::move(db));
 
-  CreateJsonExportFunction(this->context_.storage.get(), db);
+  CreateJsonExportFunction(context_.storage.get(), db);
   CreateHashFunction(db);
   CreateDemangledNameFunction(db);
   CreateLastNonNullFunction(db);
+  CreateExtractArgFunction(context_.storage.get(), db);
 
   SetupMetrics(this, *db_, &sql_metrics_);
 
@@ -489,14 +558,19 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   WindowOperatorTable::RegisterTable(*db_, storage);
 
   // New style tables but with some custom logic.
-  SqliteRawTable::RegisterTable(*db_, query_cache_.get(),
-                                context_.storage.get());
+  SqliteRawTable::RegisterTable(*db_, query_cache_.get(), &context_);
 
   // Tables dynamically generated at query time.
   RegisterDynamicTable(std::unique_ptr<ExperimentalFlamegraphGenerator>(
       new ExperimentalFlamegraphGenerator(&context_)));
   RegisterDynamicTable(std::unique_ptr<ExperimentalCounterDurGenerator>(
       new ExperimentalCounterDurGenerator(storage->counter_table())));
+  RegisterDynamicTable(std::unique_ptr<DescribeSliceGenerator>(
+      new DescribeSliceGenerator(&context_)));
+  RegisterDynamicTable(std::unique_ptr<ExperimentalSliceLayoutGenerator>(
+      new ExperimentalSliceLayoutGenerator(
+          context_.storage.get()->mutable_string_pool(),
+          &storage->slice_table())));
 
   // New style db-backed tables.
   RegisterDbTable(storage->arg_table());
@@ -522,9 +596,11 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->irq_counter_track_table());
   RegisterDbTable(storage->softirq_counter_track_table());
   RegisterDbTable(storage->gpu_counter_track_table());
+  RegisterDbTable(storage->gpu_counter_group_table());
 
   RegisterDbTable(storage->heap_graph_object_table());
   RegisterDbTable(storage->heap_graph_reference_table());
+  RegisterDbTable(storage->heap_graph_class_table());
 
   RegisterDbTable(storage->symbol_table());
   RegisterDbTable(storage->heap_profile_allocation_table());
@@ -532,15 +608,18 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->stack_profile_callsite_table());
   RegisterDbTable(storage->stack_profile_mapping_table());
   RegisterDbTable(storage->stack_profile_frame_table());
+  RegisterDbTable(storage->package_list_table());
+  RegisterDbTable(storage->profiler_smaps_table());
 
   RegisterDbTable(storage->android_log_table());
 
   RegisterDbTable(storage->vulkan_memory_allocations_table());
 
   RegisterDbTable(storage->graphics_frame_slice_table());
-  RegisterDbTable(storage->graphics_frame_stats_table());
 
   RegisterDbTable(storage->metadata_table());
+  RegisterDbTable(storage->cpu_table());
+  RegisterDbTable(storage->cpu_freq_table());
 }
 
 TraceProcessorImpl::~TraceProcessorImpl() {
@@ -622,8 +701,13 @@ TraceProcessor::Iterator TraceProcessorImpl::ExecuteQuery(
     const std::string& sql,
     int64_t time_queued) {
   sqlite3_stmt* raw_stmt;
-  int err = sqlite3_prepare_v2(*db_, sql.c_str(), static_cast<int>(sql.size()),
-                               &raw_stmt, nullptr);
+  int err;
+  {
+    PERFETTO_TP_TRACE("QUERY_PREPARE");
+    err = sqlite3_prepare_v2(*db_, sql.c_str(), static_cast<int>(sql.size()),
+                             &raw_stmt, nullptr);
+  }
+
   util::Status status;
   uint32_t col_count = 0;
   if (err != SQLITE_OK) {
@@ -728,6 +812,38 @@ util::Status TraceProcessorImpl::ComputeMetric(
   const auto& root_descriptor = pool_.descriptors()[opt_idx.value()];
   return metrics::ComputeMetrics(this, metric_names, sql_metrics_,
                                  root_descriptor, metrics_proto);
+}
+
+void TraceProcessorImpl::EnableMetatrace() {
+  metatrace::Enable();
+}
+
+util::Status TraceProcessorImpl::DisableAndReadMetatrace(
+    std::vector<uint8_t>* trace_proto) {
+  protozero::HeapBuffered<protos::pbzero::Trace> trace;
+  metatrace::DisableAndReadBuffer([&trace](metatrace::Record* record) {
+    auto packet = trace->add_packet();
+    packet->set_timestamp(record->timestamp_ns);
+    auto* evt = packet->set_perfetto_metatrace();
+    evt->set_event_name(record->event_name);
+    evt->set_event_duration_ns(record->duration_ns);
+    evt->set_thread_id(1);  // Not really important, just required for the ui.
+
+    if (record->args_buffer_size == 0)
+      return;
+
+    base::StringSplitter s(record->args_buffer, record->args_buffer_size, '\0');
+    for (; s.Next();) {
+      auto* arg_proto = evt->add_args();
+      arg_proto->set_key(s.cur_token());
+
+      bool has_next = s.Next();
+      PERFETTO_CHECK(has_next);
+      arg_proto->set_value(s.cur_token());
+    }
+  });
+  *trace_proto = trace.SerializeAsArray();
+  return util::OkStatus();
 }
 
 TraceProcessor::IteratorImpl::IteratorImpl(TraceProcessorImpl* trace_processor,

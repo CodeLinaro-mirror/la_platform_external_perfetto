@@ -13,4 +13,14 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 --
-select * from heap_graph_object
+select o.id,
+       o.type,
+       o.upid,
+       o.graph_sample_ts,
+       o.self_size,
+       o.reference_set_id,
+       o.reachable,
+       c.name as type_name,
+       c.deobfuscated_name as deobfuscated_type_name,
+       o.root_type
+from heap_graph_object o join heap_graph_class c on o.type_id = c.id

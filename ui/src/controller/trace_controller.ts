@@ -40,6 +40,7 @@ import {QuantizedLoad, ThreadDesc} from '../frontend/globals';
 import {ANDROID_LOGS_TRACK_KIND} from '../tracks/android_log/common';
 import {SLICE_TRACK_KIND} from '../tracks/chrome_slices/common';
 import {CPU_FREQ_TRACK_KIND} from '../tracks/cpu_freq/common';
+import {CPU_PROFILE_TRACK_KIND} from '../tracks/cpu_profile/common';
 import {CPU_SLICE_TRACK_KIND} from '../tracks/cpu_slices/common';
 import {GPU_FREQ_TRACK_KIND} from '../tracks/gpu_freq/common';
 import {HEAP_PROFILE_TRACK_KIND} from '../tracks/heap_profile/common';
@@ -56,6 +57,10 @@ import {
   ThreadAggregationController
 } from './aggregation/thread_aggregation_controller';
 import {Child, Children, Controller} from './controller';
+import {
+  CpuProfileController,
+  CpuProfileControllerArgs
+} from './cpu_profile_controller';
 import {globals} from './globals';
 import {
   HeapProfileController,
@@ -155,6 +160,10 @@ export class TraceController extends Controller<States> {
         const selectionArgs: SelectionControllerArgs = {engine};
         childControllers.push(
           Child('selection', SelectionController, selectionArgs));
+
+        const cpuProfileArgs: CpuProfileControllerArgs = {engine};
+        childControllers.push(
+            Child('cpuProfile', CpuProfileController, cpuProfileArgs));
 
         const heapProfileArgs: HeapProfileControllerArgs = {engine};
         childControllers.push(
@@ -279,6 +288,9 @@ export class TraceController extends Controller<States> {
 
     globals.dispatchMultiple(actions);
 
+    // Make sure the helper views are available before we start adding tracks.
+    await this.initialiseHelperViews();
+
     {
       // When we reload from a permalink don't create extra tracks:
       const {pinnedTracks, tracks} = globals.state;
@@ -289,7 +301,6 @@ export class TraceController extends Controller<States> {
 
     await this.listThreads();
     await this.loadTimelineOverview(traceTime);
-    await this.initaliseHelperViews();
     return engineMode;
   }
 
@@ -382,33 +393,67 @@ export class TraceController extends Controller<States> {
       }
     }
 
+    const rawGlobalAsyncTracks = await engine.query(`
+      SELECT
+        t.name,
+        t.track_ids,
+        MAX(experimental_slice_layout.layout_depth) as max_depth
+      FROM (
+        SELECT name, GROUP_CONCAT(track.id) AS track_ids
+        FROM track
+        WHERE track.type = "track"
+        GROUP BY name
+      ) AS t CROSS JOIN experimental_slice_layout
+      WHERE t.track_ids = experimental_slice_layout.filter_track_ids
+      GROUP BY t.track_ids;
+    `);
+    for (let i = 0; i < rawGlobalAsyncTracks.numRecords; i++) {
+      const name = rawGlobalAsyncTracks.columns[0].stringValues![i];
+      const rawTrackIds = rawGlobalAsyncTracks.columns[1].stringValues![i];
+      const trackIds = rawTrackIds.split(',').map(v => Number(v));
+      const maxDepth = +rawGlobalAsyncTracks.columns[2].longValues![i];
+      const track = {
+        engineId: this.engineId,
+        kind: 'AsyncSliceTrack',
+        trackGroup: SCROLLING_TRACK_GROUP,
+        name,
+        config: {
+          maxDepth,
+          trackIds,
+        },
+      };
+      tracksToAdd.push(track);
+    }
 
     const upidToProcessTracks = new Map();
     const rawProcessTracks = await engine.query(`
-      select
-        process_track.id as track_id,
-        process_track.upid,
-        process_track.name,
-        max(slice.depth) as max_depth
-      from process_track
-      join slice on slice.track_id = process_track.id
-      group by process_track.id
+      SELECT
+        pt.upid,
+        pt.name,
+        pt.track_ids,
+        MAX(experimental_slice_layout.layout_depth) as max_depth
+      FROM (
+        SELECT upid, name, GROUP_CONCAT(process_track.id) AS track_ids
+        FROM process_track GROUP BY upid, name
+      ) AS pt CROSS JOIN experimental_slice_layout
+      WHERE pt.track_ids = experimental_slice_layout.filter_track_ids
+      GROUP BY pt.track_ids;
     `);
     for (let i = 0; i < rawProcessTracks.numRecords; i++) {
-      const trackId = rawProcessTracks.columns[0].longValues![i];
-      const upid = rawProcessTracks.columns[1].longValues![i];
-      const name = rawProcessTracks.columns[2].stringValues![i];
-      const maxDepth = rawProcessTracks.columns[3].longValues![i];
+      const upid = +rawProcessTracks.columns[0].longValues![i];
+      const name = rawProcessTracks.columns[1].stringValues![i];
+      const rawTrackIds = rawProcessTracks.columns[2].stringValues![i];
+      const trackIds = rawTrackIds.split(',').map(v => Number(v));
+      const maxDepth = +rawProcessTracks.columns[3].longValues![i];
       const track = {
         engineId: this.engineId,
         kind: 'AsyncSliceTrack',
         name,
         config: {
-          trackId,
           maxDepth,
+          trackIds,
         },
       };
-
       const tracks = upidToProcessTracks.get(upid);
       if (tracks) {
         tracks.push(track);
@@ -481,32 +526,6 @@ export class TraceController extends Controller<States> {
           name,
           trackId,
         }
-      });
-    }
-
-    // Add global slice tracks.
-    const globalSliceTracks = await engine.query(`
-      select
-        track.name as track_name,
-        track.id as track_id,
-        max(depth) as max_depth
-      from track
-      join slice on track.id = slice.track_id
-      where track.type = 'track'
-      group by track_id
-    `);
-
-    for (let i = 0; i < globalSliceTracks.numRecords; i++) {
-      const name = globalSliceTracks.columns[0].stringValues![i];
-      const trackId = +globalSliceTracks.columns[1].longValues![i];
-      const maxDepth = +globalSliceTracks.columns[2].longValues![i];
-
-      tracksToAdd.push({
-        engineId: this.engineId,
-        kind: SLICE_TRACK_KIND,
-        name: `${name}`,
-        trackGroup: SCROLLING_TRACK_GROUP,
-        config: {maxDepth, trackId},
       });
     }
 
@@ -602,20 +621,28 @@ export class TraceController extends Controller<States> {
           thread.name as threadName,
           process.name as processName,
           total_dur as totalDur,
-          ifnull(has_sched, false) as hasSched
+          ifnull(has_sched, false) as hasSched,
+          ifnull(has_cpu_samples, false) as hasCpuSamples
         from
           thread
           left join (select utid, count(1), true as has_sched
               from sched group by utid
+          ) using(utid)
+          left join (select utid, count(1), true as has_cpu_samples
+              from cpu_profile_stack_sample group by utid
           ) using(utid)
           left join process using(upid)
           left join (select upid, sum(dur) as total_dur
               from sched join thread using(utid)
               group by upid
             ) using(upid)
+          left join (select upid, sum(value) as total_cycles
+              from android_thread_time_in_state_annotations
+              group by upid
+            ) using(upid)
         where utid != 0
         group by utid, upid
-        order by total_dur desc, upid, utid`);
+        order by total_dur desc, total_cycles desc, upid, utid`);
 
     const upidToUuid = new Map<number, string>();
     const utidToUuid = new Map<number, string>();
@@ -630,6 +657,7 @@ export class TraceController extends Controller<States> {
            processName: STR_NULL,
            totalDur: NUM_NULL,
            hasSched: NUM,
+           hasCpuSamples: NUM,
          })) {
       const utid = row.utid;
       const tid = row.tid;
@@ -639,6 +667,7 @@ export class TraceController extends Controller<States> {
       const processName = row.processName;
       const hasSchedEvents = !!row.totalDur;
       const threadHasSched = !!row.hasSched;
+      const threadHasCpuSamples = !!row.hasCpuSamples;
 
       const threadTrack =
           utid === null ? undefined : utidToThreadTrack.get(utid);
@@ -733,7 +762,7 @@ export class TraceController extends Controller<States> {
           tracksToAdd.push({
             engineId: this.engineId,
             kind: 'CounterTrack',
-            name: element.name,
+            name: `${threadName} (${element.name})`,
             trackGroup: pUuid,
             config: {
               name: element.name,
@@ -744,6 +773,17 @@ export class TraceController extends Controller<States> {
           });
         });
       }
+
+      if (threadHasCpuSamples) {
+        tracksToAdd.push({
+          engineId: this.engineId,
+          kind: CPU_PROFILE_TRACK_KIND,
+          name: `${threadName} (CPU Stack Samples)`,
+          trackGroup: pUuid,
+          config: {utid},
+        });
+      }
+
       if (threadHasSched) {
         tracksToAdd.push({
           engineId: this.engineId,
@@ -774,6 +814,53 @@ export class TraceController extends Controller<States> {
         name: 'Android logs',
         trackGroup: SCROLLING_TRACK_GROUP,
         config: {}
+      });
+    }
+
+    const annotationSliceRows = await engine.query(`
+      SELECT id, name, upid FROM annotation_slice_track`);
+    for (let i = 0; i < annotationSliceRows.numRecords; i++) {
+      const id = annotationSliceRows.columns[0].longValues![i];
+      const name = annotationSliceRows.columns[1].stringValues![i];
+      const upid = annotationSliceRows.columns[2].longValues![i] as number;
+      tracksToAdd.push({
+        engineId: this.engineId,
+        kind: SLICE_TRACK_KIND,
+        name,
+        trackGroup: upid === 0 ? SCROLLING_TRACK_GROUP : upidToUuid.get(upid),
+        config: {
+          maxDepth: 0,
+          namespace: 'annotation',
+          trackId: id,
+        },
+      });
+    }
+
+    const annotationCounterRows = await engine.query(`
+      SELECT id, name, upid, min_value, max_value
+      FROM annotation_counter_track`);
+    for (let i = 0; i < annotationCounterRows.numRecords; i++) {
+      const id = annotationCounterRows.columns[0].longValues![i];
+      const name = annotationCounterRows.columns[1].stringValues![i];
+      const upid = annotationCounterRows.columns[2].longValues![i] as number;
+      const minimumValue = annotationCounterRows.columns[3].isNulls![i] ?
+          undefined :
+          annotationCounterRows.columns[3].doubleValues![i];
+      const maximumValue = annotationCounterRows.columns[4].isNulls![i] ?
+          undefined :
+          annotationCounterRows.columns[4].doubleValues![i];
+      tracksToAdd.push({
+        engineId: this.engineId,
+        kind: 'CounterTrack',
+        name,
+        trackGroup: upid === 0 ? SCROLLING_TRACK_GROUP : upidToUuid.get(upid),
+        config: {
+          name,
+          namespace: 'annotation',
+          trackId: id,
+          minimumValue,
+          maximumValue,
+        }
       });
     }
 
@@ -874,7 +961,7 @@ export class TraceController extends Controller<States> {
     globals.publish('OverviewData', slicesData);
   }
 
-  async initaliseHelperViews() {
+  async initialiseHelperViews() {
     const engine = assertExists<Engine>(this.engine);
     this.updateStatus('Creating helper views');
     let event = 'sched_waking';
@@ -935,6 +1022,130 @@ export class TraceController extends Controller<States> {
       (partition by utid order by ts)`);
 
     await engine.query(`create index utid_index on thread_state(utid)`);
+
+    // Create the helper tables for all the annotations related data.
+    // NULL in min/max means "figure it out per track in the usual way".
+    await engine.query(`
+      CREATE TABLE annotation_counter_track(
+        id INTEGER PRIMARY KEY,
+        name STRING,
+        __metric_name STRING,
+        upid INTEGER,
+        min_value DOUBLE,
+        max_value DOUBLE
+      );
+    `);
+    await engine.query(`
+      CREATE TABLE annotation_slice_track(
+        id INTEGER PRIMARY KEY,
+        name STRING,
+        __metric_name STRING,
+        upid INTEGER
+      );
+    `);
+
+    await engine.query(`
+      CREATE TABLE annotation_counter(
+        id BIG INT,
+        track_id INT,
+        ts BIG INT,
+        value DOUBLE,
+        PRIMARY KEY (track_id, ts)
+      ) WITHOUT ROWID;
+    `);
+    await engine.query(`
+      CREATE TABLE annotation_slice(
+        id BIG INT,
+        track_id INT,
+        ts BIG INT,
+        dur BIG INT,
+        depth INT,
+        cat STRING,
+        name STRING,
+        PRIMARY KEY (track_id, ts)
+      ) WITHOUT ROWID;
+    `);
+
+    for (const metric
+             of ['android_startup',
+                 'android_ion',
+                 'android_thread_time_in_state']) {
+      // We don't care about the actual result of metric here as we are just
+      // interested in the annotation tracks.
+      const metricResult = await engine.computeMetric([metric]);
+      assertTrue(metricResult.error.length === 0);
+
+      const result = await engine.query(`
+        SELECT * FROM ${metric}_annotations LIMIT 1`);
+
+      const hasSliceName =
+          result.columnDescriptors.some(x => x.name === 'slice_name');
+      const hasDur = result.columnDescriptors.some(x => x.name === 'dur');
+      const hasUpid = result.columnDescriptors.some(x => x.name === 'upid');
+
+      const upidColumnSelect = hasUpid ? 'upid' : '0 AS upid';
+      const upidColumnWhere = hasUpid ? 'upid' : '0';
+      if (hasSliceName && hasDur) {
+        await engine.query(`
+          INSERT INTO annotation_slice_track(name, __metric_name, upid)
+          SELECT DISTINCT
+            track_name,
+            '${metric}' as metric_name,
+            ${upidColumnSelect}
+          FROM ${metric}_annotations
+          WHERE track_type = 'slice'
+        `);
+        await engine.query(`
+          INSERT INTO annotation_slice(id, track_id, ts, dur, depth, cat, name)
+          SELECT
+            row_number() over (order by ts) as id,
+            t.id AS track_id,
+            ts,
+            dur,
+            0 AS depth,
+            a.track_name as cat,
+            slice_name AS name
+          FROM ${metric}_annotations a
+          JOIN annotation_slice_track t
+          ON a.track_name = t.name AND t.__metric_name = '${metric}'
+          ORDER BY t.id, ts
+        `);
+      }
+
+      const hasValue = result.columnDescriptors.some(x => x.name === 'value');
+      if (hasValue) {
+        const minMax = await engine.query(`
+          SELECT MIN(value) as min_value, MAX(value) as max_value
+          FROM ${metric}_annotations
+          WHERE ${upidColumnWhere} != 0`);
+        const min = minMax.columns[0].longValues![0] as number;
+        const max = minMax.columns[1].longValues![0] as number;
+        await engine.query(`
+          INSERT INTO annotation_counter_track(
+            name, __metric_name, min_value, max_value, upid)
+          SELECT DISTINCT
+            track_name,
+            '${metric}' as metric_name,
+            CASE ${upidColumnWhere} WHEN 0 THEN NULL ELSE ${min} END,
+            CASE ${upidColumnWhere} WHEN 0 THEN NULL ELSE ${max} END,
+            ${upidColumnSelect}
+          FROM ${metric}_annotations
+          WHERE track_type = 'counter'
+        `);
+        await engine.query(`
+          INSERT INTO annotation_counter(id, track_id, ts, value)
+          SELECT
+            -1 as id,
+            t.id AS track_id,
+            ts,
+            value
+          FROM ${metric}_annotations a
+          JOIN annotation_counter_track t
+          ON a.track_name = t.name AND t.__metric_name = '${metric}'
+          ORDER BY t.id, ts
+        `);
+      }
+    }
   }
 
   private updateStatus(msg: string): void {
