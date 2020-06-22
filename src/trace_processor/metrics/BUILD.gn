@@ -20,6 +20,7 @@ sql_files = [
   "android/android_batt.sql",
   "android/android_cpu.sql",
   "android/android_cpu_agg.sql",
+  "android/android_cpu_raw_metrics_per_core.sql",
   "android/android_mem.sql",
   "android/android_mem_unagg.sql",
   "android/android_ion.sql",
@@ -45,7 +46,8 @@ sql_files = [
   "android/process_oom_score.sql",
   "android/mem_stats_priority_breakdown.sql",
   "android/span_view_stats.sql",
-  "android/upid_span_view.sql",
+  "android/process_counter_span_view.sql",
+  "android/counter_span_view.sql",
   "android/unmapped_java_symbols.sql",
   "android/unsymbolized_frames.sql",
   "chrome/chrome_processes.sql",
@@ -76,6 +78,7 @@ if (enable_perfetto_trace_processor_sqlite) {
       "metrics.h",
     ]
     deps = [
+      "..:metatrace",
       "../../../gn:default_deps",
       "../../../gn:sqlite",
       "../../../include/perfetto/trace_processor",
