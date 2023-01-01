@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Keep this import first.
-import '../core/static_initializers';
+import '../base/static_initializers';
 import '../gen/all_plugins';
 
 import {Draft} from 'immer';
@@ -28,12 +28,12 @@ import {RECORDING_V2_FLAG} from '../common/feature_flags';
 import {flattenArgs, traceEvent} from '../common/metatracing';
 import {pluginManager, pluginRegistry} from '../common/plugins';
 import {State} from '../common/state';
-import {initWasm} from '../common/wasm_engine_proxy';
 import {initController, runControllers} from '../controller';
 import {
   isGetCategoriesResponse,
 } from '../controller/chrome_proxy_record_controller';
 import {raf} from '../core/raf_scheduler';
+import {initWasm} from '../trace_processor/wasm_engine_proxy';
 import {setScheduleFullRedraw} from '../widgets/raf';
 
 import {App} from './app';
