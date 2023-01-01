@@ -167,14 +167,20 @@ export type UtidToTrackSortKey = {
 
 export enum ProfileType {
   HEAP_PROFILE = 'heap_profile',
+  MIXED_HEAP_PROFILE = 'heap_profile:com.android.art,libc.malloc',
   NATIVE_HEAP_PROFILE = 'heap_profile:libc.malloc',
   JAVA_HEAP_SAMPLES = 'heap_profile:com.android.art',
   JAVA_HEAP_GRAPH = 'graph',
   PERF_SAMPLE = 'perf',
 }
 
-export type FlamegraphStateViewingOption =
-    'SPACE'|'ALLOC_SPACE'|'OBJECTS'|'ALLOC_OBJECTS'|'PERF_SAMPLES';
+export enum FlamegraphStateViewingOption {
+  SPACE_MEMORY_ALLOCATED_NOT_FREED_KEY = 'SPACE',
+  ALLOC_SPACE_MEMORY_ALLOCATED_KEY = 'ALLOC_SPACE',
+  OBJECTS_ALLOCATED_NOT_FREED_KEY = 'OBJECTS',
+  OBJECTS_ALLOCATED_KEY = 'ALLOC_OBJECTS',
+  PERF_SAMPLES_KEY = 'PERF_SAMPLES',
+}
 
 export interface CallsiteInfo {
   id: number;
