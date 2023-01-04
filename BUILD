@@ -283,7 +283,6 @@ perfetto_cc_library(
     ],
     deps = [
         ":perfetto_ipc",
-        ":protos_perfetto_android_vendor_cpp",
         ":protos_perfetto_common_cpp",
         ":protos_perfetto_common_zero",
         ":protos_perfetto_config_android_cpp",
@@ -1167,6 +1166,8 @@ perfetto_filegroup(
         "src/trace_processor/importers/ftrace/ftrace_tokenizer.h",
         "src/trace_processor/importers/ftrace/iostat_tracker.cc",
         "src/trace_processor/importers/ftrace/iostat_tracker.h",
+        "src/trace_processor/importers/ftrace/mali_gpu_event_tracker.cc",
+        "src/trace_processor/importers/ftrace/mali_gpu_event_tracker.h",
         "src/trace_processor/importers/ftrace/rss_stat_tracker.cc",
         "src/trace_processor/importers/ftrace/rss_stat_tracker.h",
         "src/trace_processor/importers/ftrace/sched_event_tracker.cc",
@@ -1606,6 +1607,8 @@ perfetto_filegroup(
         "src/trace_processor/metrics/sql/chrome/chrome_histogram_hashes.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_input_to_browser_intervals.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_input_to_browser_intervals_template.sql",
+        "src/trace_processor/metrics/sql/chrome/chrome_long_tasks.sql",
+        "src/trace_processor/metrics/sql/chrome/chrome_long_tasks_delaying_input_processing.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_performance_mark_hashes.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_processes.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_reliable_range.sql",
@@ -1615,6 +1618,7 @@ perfetto_filegroup(
         "src/trace_processor/metrics/sql/chrome/chrome_stack_samples_for_task.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_tasks.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_tasks_delaying_input_processing.sql",
+        "src/trace_processor/metrics/sql/chrome/chrome_tasks_delaying_input_processing_base.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_tasks_delaying_input_processing_template.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_tasks_template.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_thread_slice.sql",
@@ -2870,25 +2874,6 @@ perfetto_py_proto_library(
     visibility = PERFETTO_CONFIG.public_visibility,
     deps = [
         ":chrome_metrics_proto",
-    ],
-)
-
-# GN target: //protos/perfetto/android_vendor:cpp
-perfetto_cc_protocpp_library(
-    name = "protos_perfetto_android_vendor_cpp",
-    deps = [
-        ":protos_perfetto_android_vendor_protos",
-    ],
-)
-
-# GN target: //protos/perfetto/android_vendor:source_set
-perfetto_proto_library(
-    name = "protos_perfetto_android_vendor_protos",
-    srcs = [
-        "protos/perfetto/android_vendor/atrace_categories.proto",
-    ],
-    visibility = [
-        PERFETTO_CONFIG.proto_library_visibility,
     ],
 )
 
