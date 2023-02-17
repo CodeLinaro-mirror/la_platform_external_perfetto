@@ -57,6 +57,7 @@
 #include "protos/perfetto/trace/ftrace/irq.pbzero.h"
 #include "protos/perfetto/trace/ftrace/kmem.pbzero.h"
 #include "protos/perfetto/trace/ftrace/lowmemorykiller.pbzero.h"
+#include "protos/perfetto/trace/ftrace/lwis.pbzero.h"
 #include "protos/perfetto/trace/ftrace/mali.pbzero.h"
 #include "protos/perfetto/trace/ftrace/mm_event.pbzero.h"
 #include "protos/perfetto/trace/ftrace/net.pbzero.h"
@@ -785,6 +786,10 @@ util::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
         ParseMaliTracingMarkWrite(ts, pid, fld_bytes);
         break;
       }
+      case FtraceEvent::kLwisTracingMarkWriteFieldNumber: {
+        ParseLwisTracingMarkWrite(ts, pid, fld_bytes);
+        break;
+      }
       case FtraceEvent::kVirtioGpuCmdQueueFieldNumber:
       case FtraceEvent::kVirtioGpuCmdResponseFieldNumber: {
         virtio_gpu_tracker_.ParseVirtioGpu(ts, fld.id(), pid, fld_bytes);
@@ -1368,6 +1373,23 @@ void FtraceParser::ParseMaliTracingMarkWrite(int64_t timestamp,
       evt.name(), tgid, evt.value());
 }
 
+void FtraceParser::ParseLwisTracingMarkWrite(int64_t timestamp,
+                                             uint32_t pid,
+                                             ConstBytes blob) {
+  protos::pbzero::LwisTracingMarkWriteFtraceEvent::Decoder evt(blob.data,
+                                                               blob.size);
+  if (!evt.type()) {
+    context_->storage->IncrementStats(stats::systrace_parse_failure);
+    return;
+  }
+
+  uint32_t tgid = static_cast<uint32_t>(evt.pid());
+  SystraceParser::GetOrCreate(context_)->ParseKernelTracingMarkWrite(
+      timestamp, pid, static_cast<char>(evt.type()), false /*trace_begin*/,
+      evt.func_name(), tgid, evt.value());
+}
+
+
 /** Parses ion heap events present in Pixel kernels. */
 void FtraceParser::ParseIonHeapGrowOrShrink(int64_t timestamp,
                                             uint32_t pid,
@@ -1680,6 +1702,8 @@ void FtraceParser::ParseTaskNewTask(int64_t timestamp,
   proc_tracker->UpdateThreadNameByUtid(new_utid, new_comm,
                                        ThreadNamePriority::kFtrace);
   proc_tracker->AssociateThreads(source_utid, new_utid);
+
+  ThreadStateTracker::GetOrCreate(context_)->PushNewTaskEvent(timestamp, new_utid, source_utid);
 }
 
 void FtraceParser::ParseTaskRename(ConstBytes blob) {
