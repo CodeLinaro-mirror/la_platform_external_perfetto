@@ -1899,6 +1899,7 @@ perfetto_filegroup(
     srcs = [
         "src/trace_processor/stdlib/android/battery.sql",
         "src/trace_processor/stdlib/android/binder.sql",
+        "src/trace_processor/stdlib/android/monitor_contention.sql",
         "src/trace_processor/stdlib/android/process_metadata.sql",
         "src/trace_processor/stdlib/android/slices.sql",
     ],
@@ -1933,6 +1934,14 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/trace_processor/stdlib/pkvm:pkvm
+perfetto_filegroup(
+    name = "src_trace_processor_stdlib_pkvm_pkvm",
+    srcs = [
+        "src/trace_processor/stdlib/pkvm/hypervisor.sql",
+    ],
+)
+
 # GN target: //src/trace_processor/stdlib:gen_amalgamated_stdlib
 perfetto_cc_amalgamated_sql(
     name = "src_trace_processor_stdlib_gen_amalgamated_stdlib",
@@ -1942,6 +1951,7 @@ perfetto_cc_amalgamated_sql(
         ":src_trace_processor_stdlib_chrome_chrome_sql",
         ":src_trace_processor_stdlib_common_common",
         ":src_trace_processor_stdlib_experimental_experimental",
+        ":src_trace_processor_stdlib_pkvm_pkvm",
     ],
     outs = [
         "src/trace_processor/stdlib/amalgamated_stdlib.h",
