@@ -48,11 +48,9 @@ def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('--inputs', required=True, nargs='*')
   parser.add_argument('--gen-dir', required=True)
-  parser.add_argument('--header-prefix')
   parser.add_argument('--relative-input-dir')
+  parser.add_argument('--import-prefix', default='')
   args = parser.parse_args()
-
-  header_prefix = args.header_prefix if args.header_prefix else ''
 
   def get_relin_path(in_path: str):
     if not args.relative_input_dir:
@@ -60,11 +58,13 @@ def main():
     return os.path.relpath(in_path, args.relative_input_dir)
 
   def get_relout_path(in_path: str):
-    path = os.path.splitext(in_path)[0]
-    return os.path.join(header_prefix, path + OUT_HEADER_SUFFIX)
+    return os.path.splitext(in_path)[0] + OUT_HEADER_SUFFIX
 
   def get_out_path(in_path: str):
     return os.path.join(args.gen_dir, get_relout_path(in_path))
+
+  def get_header_path(in_path: str):
+    return os.path.join(args.import_prefix, get_relout_path(in_path))
 
   modules = [
       os.path.splitext(get_relin_path(i).replace('/', '.'))[0]
@@ -86,7 +86,7 @@ def main():
     header_relout_deps: Set[str] = set()
     for table in header.tables:
       header_relout_deps = header_relout_deps.union([
-          get_relout_path(os.path.relpath(c.python_module, ROOT_DIR))
+          get_header_path(os.path.relpath(c.python_module, ROOT_DIR))
           for c in find_table_deps(table.table)
       ])
     header_relout_deps.discard(relout_path)
