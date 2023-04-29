@@ -17,7 +17,6 @@ from python.generators.trace_processor_table.public import Column as C
 from python.generators.trace_processor_table.public import ColumnFlag
 from python.generators.trace_processor_table.public import CppInt64
 from python.generators.trace_processor_table.public import Table
-from python.generators.trace_processor_table.public import TableDoc
 from python.generators.trace_processor_table.public import CppUint32
 
 EVENT_TABLE = Table(
@@ -53,6 +52,7 @@ ARGS_TABLE = Table(
         C("arg_set_id",
           CppUint32(),
           flags=ColumnFlag.SET_ID | ColumnFlag.SORTED),
+        C("int_value", CppInt64()),
     ])
 
 # Keep this list sorted.
