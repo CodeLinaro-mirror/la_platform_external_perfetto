@@ -565,7 +565,10 @@ export const WidgetsPage = createPage({
               }),
               m(
                   TreeNode,
-                  {left: 'Args', right: 'foo: bar, baz: qux'},
+                  {
+                    left: 'Args',
+                    summary: 'foo: string, baz: string, quux: string[4]',
+                  },
                   m(TreeNode, {left: 'foo', right: 'bar'}),
                   m(TreeNode, {left: 'baz', right: 'qux'}),
                   m(
@@ -603,6 +606,27 @@ export const WidgetsPage = createPage({
                 m(Button, {label: 'Submit', rightIcon: 'chevron_right'}),
                 m(Button, {label: 'Cancel', minimal: true}),
               )),
+          }),
+        m('h2', 'Nested Popups'),
+        m(
+          WidgetShowcase, {
+            renderWidget: () => m(
+              Popup,
+              {
+                trigger: m(Button, {label: 'Open the popup'}),
+              },
+              m(PopupMenu2,
+                {
+                  trigger: m(Button, {label: 'Select an option'}),
+                },
+                m(MenuItem, {label: 'Option 1'}),
+                m(MenuItem, {label: 'Option 2'}),
+              ),
+              m(Button, {
+                label: 'Done',
+                dismissPopup: true,
+              }),
+            ),
           }),
     );
   },
