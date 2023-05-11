@@ -24,7 +24,8 @@ import {globals} from '../../frontend/globals';
 import {timestampFromSqlNanos} from '../../frontend/sql_types';
 import {Duration} from '../../frontend/widgets/duration';
 import {Timestamp} from '../../frontend/widgets/timestamp';
-import {Tree, TreeNode} from '../../frontend/widgets/tree';
+import {dictToTree} from '../../frontend/widgets/tree';
+
 import {ARG_PREFIX} from './add_debug_track_menu';
 
 interface DebugSliceDetailsTabConfig {
@@ -40,17 +41,6 @@ function SqlValueToString(val: ColumnType) {
     return 'NULL';
   }
   return val.toString();
-}
-
-function dictToTree(dict: {[key: string]: m.Child}): m.Children {
-  const children: m.Child[] = [];
-  for (const key of Object.keys(dict)) {
-    children.push(m(TreeNode, {
-      left: key,
-      right: dict[key],
-    }));
-  }
-  return m(Tree, children);
 }
 
 export class DebugSliceDetailsTab extends
