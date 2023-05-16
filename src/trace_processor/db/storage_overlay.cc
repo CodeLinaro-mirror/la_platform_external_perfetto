@@ -22,7 +22,7 @@ namespace perfetto {
 namespace trace_processor {
 namespace column {
 
-void StorageOverlay::Filter(FilterOp op, SqlValue value, RowMap& rm) {
+void StorageOverlay::Filter(FilterOp op, SqlValue value, RowMap& rm) const {
   if (op == FilterOp::kIsNotNull)
     return;
 
@@ -52,9 +52,10 @@ void StorageOverlay::Filter(FilterOp op, SqlValue value, RowMap& rm) {
   rm.Intersect(RowMap(std::move(bv)));
 }
 
-void StorageOverlay::Sort(std::vector<uint32_t>& out) {
-  storage_->StableSort(out);
+void StorageOverlay::StableSort(uint32_t* rows, uint32_t rows_size) const {
+  storage_->StableSort(rows, rows_size);
 }
+
 }  // namespace column
 }  // namespace trace_processor
 }  // namespace perfetto

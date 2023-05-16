@@ -31,7 +31,7 @@ class Storage {
   virtual ~Storage();
 
   // Changes the vector of indices to represent the sorted state of the column.
-  virtual void StableSort(std::vector<uint32_t>&) const = 0;
+  virtual void StableSort(uint32_t* rows, uint32_t rows_size) const = 0;
 
   // Efficiently compares series of |num_elements| of data from |data_start| to
   // comparator value and appends results to BitVector::Builder. Should be used
@@ -54,6 +54,13 @@ class Storage {
   // Compares sorted (asc) series data with comparator value. Should be used
   // where possible.
   virtual void CompareSorted(FilterOp op, SqlValue value, RowMap&) const = 0;
+
+  // Compares sorted (asc) with `order` vector series with comparator value.
+  // Should be used where possible.
+  virtual void CompareSortedIndexes(FilterOp op,
+                                    SqlValue value,
+                                    uint32_t* order,
+                                    RowMap&) const = 0;
 
   // Number of elements in stored data.
   virtual uint32_t size() const = 0;

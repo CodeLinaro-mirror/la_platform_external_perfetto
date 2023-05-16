@@ -2064,11 +2064,13 @@ cc_test {
         ":perfetto_src_trace_processor_metatrace",
         ":perfetto_src_trace_processor_metrics_metrics",
         ":perfetto_src_trace_processor_prelude_functions_functions",
+        ":perfetto_src_trace_processor_prelude_functions_interface",
         ":perfetto_src_trace_processor_prelude_operators_operators",
+        ":perfetto_src_trace_processor_prelude_table_functions_interface",
         ":perfetto_src_trace_processor_prelude_table_functions_table_functions",
         ":perfetto_src_trace_processor_sorter_sorter",
+        ":perfetto_src_trace_processor_sqlite_query_constraints",
         ":perfetto_src_trace_processor_sqlite_sqlite",
-        ":perfetto_src_trace_processor_sqlite_sqlite_minimal",
         ":perfetto_src_trace_processor_storage_minimal",
         ":perfetto_src_trace_processor_storage_storage",
         ":perfetto_src_trace_processor_tables_tables",
@@ -9397,6 +9399,7 @@ filegroup {
         "src/trace_processor/db/column.cc",
         "src/trace_processor/db/column_overlay.cc",
         "src/trace_processor/db/column_storage.cc",
+        "src/trace_processor/db/null_overlay.cc",
         "src/trace_processor/db/numeric_storage.cc",
         "src/trace_processor/db/storage.cc",
         "src/trace_processor/db/storage_overlay.cc",
@@ -10037,6 +10040,7 @@ genrule {
         "src/trace_processor/metrics/sql/android/java_heap_histogram.sql",
         "src/trace_processor/metrics/sql/android/java_heap_stats.sql",
         "src/trace_processor/metrics/sql/android/mem_stats_priority_breakdown.sql",
+        "src/trace_processor/metrics/sql/android/network_activity_template.sql",
         "src/trace_processor/metrics/sql/android/p_state.sql",
         "src/trace_processor/metrics/sql/android/power_drain_in_watts.sql",
         "src/trace_processor/metrics/sql/android/power_profile_data.sql",
@@ -10166,10 +10170,17 @@ filegroup {
         "src/trace_processor/prelude/functions/import.cc",
         "src/trace_processor/prelude/functions/layout_functions.cc",
         "src/trace_processor/prelude/functions/pprof_functions.cc",
-        "src/trace_processor/prelude/functions/register_function.cc",
         "src/trace_processor/prelude/functions/sqlite3_str_split.cc",
         "src/trace_processor/prelude/functions/stack_functions.cc",
         "src/trace_processor/prelude/functions/to_ftrace.cc",
+    ],
+}
+
+// GN: //src/trace_processor/prelude/functions:interface
+filegroup {
+    name: "perfetto_src_trace_processor_prelude_functions_interface",
+    srcs: [
+        "src/trace_processor/prelude/functions/sql_function.cc",
     ],
 }
 
@@ -10198,6 +10209,14 @@ filegroup {
     ],
 }
 
+// GN: //src/trace_processor/prelude/table_functions:interface
+filegroup {
+    name: "perfetto_src_trace_processor_prelude_table_functions_interface",
+    srcs: [
+        "src/trace_processor/prelude/table_functions/table_function.cc",
+    ],
+}
+
 // GN: //src/trace_processor/prelude/table_functions:table_functions
 filegroup {
     name: "perfetto_src_trace_processor_prelude_table_functions_table_functions",
@@ -10212,7 +10231,6 @@ filegroup {
         "src/trace_processor/prelude/table_functions/experimental_sched_upid.cc",
         "src/trace_processor/prelude/table_functions/experimental_slice_layout.cc",
         "src/trace_processor/prelude/table_functions/flamegraph_construction_algorithms.cc",
-        "src/trace_processor/prelude/table_functions/table_function.cc",
         "src/trace_processor/prelude/table_functions/view.cc",
     ],
 }
@@ -10326,6 +10344,14 @@ filegroup {
     ],
 }
 
+// GN: //src/trace_processor/sqlite:query_constraints
+filegroup {
+    name: "perfetto_src_trace_processor_sqlite_query_constraints",
+    srcs: [
+        "src/trace_processor/sqlite/query_constraints.cc",
+    ],
+}
+
 // GN: //src/trace_processor/sqlite:sqlite
 filegroup {
     name: "perfetto_src_trace_processor_sqlite_sqlite",
@@ -10333,17 +10359,9 @@ filegroup {
         "src/trace_processor/sqlite/db_sqlite_table.cc",
         "src/trace_processor/sqlite/sql_stats_table.cc",
         "src/trace_processor/sqlite/sqlite_engine.cc",
+        "src/trace_processor/sqlite/sqlite_table.cc",
         "src/trace_processor/sqlite/sqlite_utils.cc",
         "src/trace_processor/sqlite/stats_table.cc",
-    ],
-}
-
-// GN: //src/trace_processor/sqlite:sqlite_minimal
-filegroup {
-    name: "perfetto_src_trace_processor_sqlite_sqlite_minimal",
-    srcs: [
-        "src/trace_processor/sqlite/query_constraints.cc",
-        "src/trace_processor/sqlite/sqlite_table.cc",
     ],
 }
 
@@ -10372,6 +10390,7 @@ genrule {
         "src/trace_processor/stdlib/android/startup/internal_startups_minsdk29.sql",
         "src/trace_processor/stdlib/android/startup/internal_startups_minsdk33.sql",
         "src/trace_processor/stdlib/android/startup/startups.sql",
+        "src/trace_processor/stdlib/android/statsd.sql",
         "src/trace_processor/stdlib/chrome/chrome_scrolls.sql",
         "src/trace_processor/stdlib/chrome/cpu_powerups.sql",
         "src/trace_processor/stdlib/common/counters.sql",
@@ -12053,17 +12072,19 @@ cc_test {
         ":perfetto_src_trace_processor_metrics_metrics",
         ":perfetto_src_trace_processor_metrics_unittests",
         ":perfetto_src_trace_processor_prelude_functions_functions",
+        ":perfetto_src_trace_processor_prelude_functions_interface",
         ":perfetto_src_trace_processor_prelude_functions_unittests",
         ":perfetto_src_trace_processor_prelude_operators_operators",
         ":perfetto_src_trace_processor_prelude_operators_unittests",
+        ":perfetto_src_trace_processor_prelude_table_functions_interface",
         ":perfetto_src_trace_processor_prelude_table_functions_table_functions",
         ":perfetto_src_trace_processor_prelude_table_functions_unittests",
         ":perfetto_src_trace_processor_rpc_rpc",
         ":perfetto_src_trace_processor_rpc_unittests",
         ":perfetto_src_trace_processor_sorter_sorter",
         ":perfetto_src_trace_processor_sorter_unittests",
+        ":perfetto_src_trace_processor_sqlite_query_constraints",
         ":perfetto_src_trace_processor_sqlite_sqlite",
-        ":perfetto_src_trace_processor_sqlite_sqlite_minimal",
         ":perfetto_src_trace_processor_sqlite_unittests",
         ":perfetto_src_trace_processor_storage_minimal",
         ":perfetto_src_trace_processor_storage_storage",
@@ -12738,13 +12759,15 @@ cc_binary {
         ":perfetto_src_trace_processor_metatrace",
         ":perfetto_src_trace_processor_metrics_metrics",
         ":perfetto_src_trace_processor_prelude_functions_functions",
+        ":perfetto_src_trace_processor_prelude_functions_interface",
         ":perfetto_src_trace_processor_prelude_operators_operators",
+        ":perfetto_src_trace_processor_prelude_table_functions_interface",
         ":perfetto_src_trace_processor_prelude_table_functions_table_functions",
         ":perfetto_src_trace_processor_rpc_httpd",
         ":perfetto_src_trace_processor_rpc_rpc",
         ":perfetto_src_trace_processor_sorter_sorter",
+        ":perfetto_src_trace_processor_sqlite_query_constraints",
         ":perfetto_src_trace_processor_sqlite_sqlite",
-        ":perfetto_src_trace_processor_sqlite_sqlite_minimal",
         ":perfetto_src_trace_processor_storage_minimal",
         ":perfetto_src_trace_processor_storage_storage",
         ":perfetto_src_trace_processor_tables_tables",
@@ -12961,11 +12984,13 @@ cc_binary_host {
         ":perfetto_src_trace_processor_metatrace",
         ":perfetto_src_trace_processor_metrics_metrics",
         ":perfetto_src_trace_processor_prelude_functions_functions",
+        ":perfetto_src_trace_processor_prelude_functions_interface",
         ":perfetto_src_trace_processor_prelude_operators_operators",
+        ":perfetto_src_trace_processor_prelude_table_functions_interface",
         ":perfetto_src_trace_processor_prelude_table_functions_table_functions",
         ":perfetto_src_trace_processor_sorter_sorter",
+        ":perfetto_src_trace_processor_sqlite_query_constraints",
         ":perfetto_src_trace_processor_sqlite_sqlite",
-        ":perfetto_src_trace_processor_sqlite_sqlite_minimal",
         ":perfetto_src_trace_processor_storage_minimal",
         ":perfetto_src_trace_processor_storage_storage",
         ":perfetto_src_trace_processor_tables_tables",
