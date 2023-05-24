@@ -16,13 +16,11 @@
 
 #include "src/trace_processor/db/null_overlay.h"
 
-#include "src/trace_processor/db/storage_variants.h"
-
 namespace perfetto {
 namespace trace_processor {
-namespace column {
+namespace overlays {
 
-void NullOverlay::Filter(FilterOp op, SqlValue sql_val, RowMap& rm) const {
+void NullOverlay::Filter(FilterOp op, SqlValue, RowMap& rm) const {
   if (op == FilterOp::kIsNull) {
     rm.Intersect(RowMap(null_bv_->Not()));
     return;
@@ -34,7 +32,7 @@ void NullOverlay::Filter(FilterOp op, SqlValue sql_val, RowMap& rm) const {
 
   // Row map for filtered data, not the size of whole column.
   RowMap filtered_data_rm(0, null_bv_->CountSetBits());
-  inner_->Filter(op, sql_val, filtered_data_rm);
+  // inner_->Filter(op, sql_val, filtered_data_rm);
 
   // Select only rows that were not filtered out from null BitVector and
   // intersect it with RowMap&.
@@ -75,13 +73,13 @@ void NullOverlay::StableSort(uint32_t* rows, uint32_t rows_size) const {
   }
 
   // Sort storage and translate them into `rows` indices.
-  inner_->StableSort(non_null_rows.data(), count_set_bits);
+  // inner_->StableSort(non_null_rows.data(), count_set_bits);
   uint32_t set_rows_offset = null_bv_->size() - count_set_bits;
   for (uint32_t i = 0; i < count_set_bits; ++i) {
     rows[set_rows_offset + i] = storage_to_rows[non_null_rows[i]];
   }
 }
 
-}  // namespace column
+}  // namespace overlays
 }  // namespace trace_processor
 }  // namespace perfetto
