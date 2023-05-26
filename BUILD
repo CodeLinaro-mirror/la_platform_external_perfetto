@@ -1277,6 +1277,9 @@ perfetto_cc_library(
 perfetto_filegroup(
     name = "src_trace_processor_db_overlays_overlays",
     srcs = [
+        "src/trace_processor/db/overlays/null_overlay.cc",
+        "src/trace_processor/db/overlays/null_overlay.h",
+        "src/trace_processor/db/overlays/storage_overlay.cc",
         "src/trace_processor/db/overlays/storage_overlay.h",
         "src/trace_processor/db/overlays/types.h",
     ],
@@ -2014,6 +2017,8 @@ perfetto_filegroup(
         "src/trace_processor/prelude/functions/import.h",
         "src/trace_processor/prelude/functions/layout_functions.cc",
         "src/trace_processor/prelude/functions/layout_functions.h",
+        "src/trace_processor/prelude/functions/math.cc",
+        "src/trace_processor/prelude/functions/math.h",
         "src/trace_processor/prelude/functions/pprof_functions.cc",
         "src/trace_processor/prelude/functions/pprof_functions.h",
         "src/trace_processor/prelude/functions/sqlite3_str_split.cc",
@@ -2174,6 +2179,8 @@ perfetto_filegroup(
         "src/trace_processor/sqlite/sqlite_engine.h",
         "src/trace_processor/sqlite/sqlite_table.cc",
         "src/trace_processor/sqlite/sqlite_table.h",
+        "src/trace_processor/sqlite/sqlite_tokenizer.cc",
+        "src/trace_processor/sqlite/sqlite_tokenizer.h",
         "src/trace_processor/sqlite/sqlite_utils.cc",
         "src/trace_processor/sqlite/sqlite_utils.h",
         "src/trace_processor/sqlite/stats_table.cc",
@@ -2213,6 +2220,8 @@ perfetto_filegroup(
     srcs = [
         "src/trace_processor/stdlib/chrome/chrome_scrolls.sql",
         "src/trace_processor/stdlib/chrome/cpu_powerups.sql",
+        "src/trace_processor/stdlib/chrome/histograms.sql",
+        "src/trace_processor/stdlib/chrome/speedometer.sql",
     ],
 )
 
@@ -2293,6 +2302,7 @@ perfetto_cc_tp_tables(
         "src/trace_processor/tables/memory_tables.py",
         "src/trace_processor/tables/metadata_tables.py",
         "src/trace_processor/tables/profiler_tables.py",
+        "src/trace_processor/tables/sched_tables.py",
         "src/trace_processor/tables/slice_tables.py",
         "src/trace_processor/tables/trace_proto_tables.py",
         "src/trace_processor/tables/track_tables.py",
@@ -2304,6 +2314,7 @@ perfetto_cc_tp_tables(
         "src/trace_processor/tables/memory_tables_py.h",
         "src/trace_processor/tables/metadata_tables_py.h",
         "src/trace_processor/tables/profiler_tables_py.h",
+        "src/trace_processor/tables/sched_tables_py.h",
         "src/trace_processor/tables/slice_tables_py.h",
         "src/trace_processor/tables/trace_proto_tables_py.h",
         "src/trace_processor/tables/track_tables_py.h",

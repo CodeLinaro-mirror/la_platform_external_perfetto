@@ -52,6 +52,7 @@
 #include "src/trace_processor/prelude/functions/create_view_function.h"
 #include "src/trace_processor/prelude/functions/import.h"
 #include "src/trace_processor/prelude/functions/layout_functions.h"
+#include "src/trace_processor/prelude/functions/math.h"
 #include "src/trace_processor/prelude/functions/pprof_functions.h"
 #include "src/trace_processor/prelude/functions/sql_function.h"
 #include "src/trace_processor/prelude/functions/sqlite3_str_split.h"
@@ -565,6 +566,11 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
     if (!status.ok())
       PERFETTO_ELOG("%s", status.c_message());
   }
+  {
+    base::Status status = RegisterMathFunctions(engine_);
+    if (!status.ok())
+      PERFETTO_ELOG("%s", status.c_message());
+  }
 
   const TraceStorage* storage = context_.storage.get();
 
@@ -650,6 +656,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
   RegisterDbTable(storage->flow_table());
   RegisterDbTable(storage->slice_table());
   RegisterDbTable(storage->sched_slice_table());
+  RegisterDbTable(storage->spurious_sched_wakeup_table());
   RegisterDbTable(storage->thread_state_table());
   RegisterDbTable(storage->gpu_slice_table());
 
