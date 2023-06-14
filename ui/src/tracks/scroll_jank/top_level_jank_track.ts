@@ -38,7 +38,7 @@ export class TopLevelJankTrack extends NamedSliceTrack {
     const sql = `CREATE VIEW ${tableName} AS
     WITH unioned_data AS (
       SELECT
-        "Scrolling" AS name,
+        "Scrolling: " || scroll_ids AS name,
         ts,
         dur,
         0 AS depth
@@ -100,6 +100,7 @@ export async function addTopLevelJankTrack(engine: Engine):
     tracksToAdd: [],
   };
 
+  await engine.query(`SELECT IMPORT('chrome.chrome_scrolls');`);
   await engine.query(`SELECT IMPORT('chrome.chrome_scroll_janks');`);
 
   result.tracksToAdd.push({
