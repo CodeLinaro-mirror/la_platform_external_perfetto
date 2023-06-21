@@ -4495,6 +4495,7 @@ genrule {
     srcs: [
         "protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto",
         "protos/perfetto/metrics/android/android_frame_timeline_metric.proto",
+        "protos/perfetto/metrics/android/android_sysui_notifications_blocking_calls_metric.proto",
         "protos/perfetto/metrics/android/android_trusty_workqueues.proto",
         "protos/perfetto/metrics/android/batt_metric.proto",
         "protos/perfetto/metrics/android/binder_metric.proto",
@@ -9440,6 +9441,7 @@ filegroup {
 filegroup {
     name: "perfetto_src_trace_processor_db_storage_storage",
     srcs: [
+        "src/trace_processor/db/storage/id_storage.cc",
         "src/trace_processor/db/storage/numeric_storage.cc",
         "src/trace_processor/db/storage/storage.cc",
     ],
@@ -10457,6 +10459,7 @@ genrule {
         "src/trace_processor/stdlib/common/slices.sql",
         "src/trace_processor/stdlib/common/timestamps.sql",
         "src/trace_processor/stdlib/experimental/android_broadcast.sql",
+        "src/trace_processor/stdlib/experimental/flat_slices.sql",
         "src/trace_processor/stdlib/experimental/proto_path.sql",
         "src/trace_processor/stdlib/experimental/slices.sql",
         "src/trace_processor/stdlib/experimental/thread_executing_span.sql",

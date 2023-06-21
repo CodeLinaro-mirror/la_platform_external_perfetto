@@ -1304,6 +1304,8 @@ perfetto_filegroup(
 perfetto_filegroup(
     name = "src_trace_processor_db_storage_storage",
     srcs = [
+        "src/trace_processor/db/storage/id_storage.cc",
+        "src/trace_processor/db/storage/id_storage.h",
         "src/trace_processor/db/storage/numeric_storage.cc",
         "src/trace_processor/db/storage/numeric_storage.h",
         "src/trace_processor/db/storage/storage.cc",
@@ -2265,6 +2267,7 @@ perfetto_filegroup(
     name = "src_trace_processor_stdlib_experimental_experimental",
     srcs = [
         "src/trace_processor/stdlib/experimental/android_broadcast.sql",
+        "src/trace_processor/stdlib/experimental/flat_slices.sql",
         "src/trace_processor/stdlib/experimental/proto_path.sql",
         "src/trace_processor/stdlib/experimental/slices.sql",
         "src/trace_processor/stdlib/experimental/thread_executing_span.sql",
