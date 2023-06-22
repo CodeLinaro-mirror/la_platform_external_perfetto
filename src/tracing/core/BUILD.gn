@@ -64,7 +64,6 @@ source_set("service") {
     "../../base",
     "../../base:version",
     "../../protozero/filtering:message_filter",
-    "../../protozero/filtering:string_filter",
   ]
   sources = [
     "metatrace_writer.cc",

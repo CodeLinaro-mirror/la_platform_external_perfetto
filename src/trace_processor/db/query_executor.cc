@@ -22,7 +22,8 @@
 
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/status_or.h"
-#include "src/trace_processor/db/overlays/arrangement_overlay.h"
+#include "src/trace_processor/containers/bit_vector.h"
+#include "src/trace_processor/containers/row_map.h"
 #include "src/trace_processor/db/overlays/null_overlay.h"
 #include "src/trace_processor/db/overlays/selector_overlay.h"
 #include "src/trace_processor/db/overlays/storage_overlay.h"
@@ -86,8 +87,8 @@ struct IndexFilterHelper {
   // Removes pairs of elements that are not set in the |bv|. Returns count of
   // removed elements.
   uint32_t KeepAtSet(BitVector filter_nulls) {
-    PERFETTO_DCHECK(filter_nulls.size() == current_.size() ||
-                    filter_nulls.CountSetBits() == 0);
+    PERFETTO_CHECK(filter_nulls.size() == current_.size() ||
+                   filter_nulls.CountSetBits() == 0);
     uint32_t count_removed =
         static_cast<uint32_t>(current_.size()) - filter_nulls.CountSetBits();
 
@@ -233,7 +234,11 @@ RowMap QueryExecutor::IndexSearch(const Constraint& c,
                                   const SimpleColumn& col,
                                   RowMap* rm) {
   // Create outmost TableIndexVector.
-  auto table_indices = rm->Copy().TakeAsIndexVector();
+  std::vector<uint32_t> table_indices;
+  table_indices.reserve(rm->size());
+  for (auto it = rm->IterateRows(); it; it.Next()) {
+    table_indices.push_back(it.index());
+  }
 
   // Datastructures for storing data across overlays.
   IndexFilterHelper to_filter(std::move(table_indices));
@@ -291,11 +296,11 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
   RowMap rm(0, table->row_count());
   for (const auto& c : c_vec) {
     const Column& col = table->columns()[c.col_idx];
-    uint32_t column_size =
-        col.IsId() ? col.overlay().row_map().Max() : col.storage_base().size();
+    uint32_t column_size = col.IsId() ? col.overlay().row_map().output_size()
+                                      : col.storage_base().size();
 
     // RowMap size
-    bool use_legacy = rm.size() <= 1;
+    bool use_legacy = rm.size() == 1;
 
     // Column types
     use_legacy = use_legacy || col.col_type() == ColumnType::kString ||
@@ -309,6 +314,10 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
     // Specific column flags.
     use_legacy = use_legacy || col.IsDense() || col.IsSetId();
 
+    // Non bit vector based selector
+    use_legacy = use_legacy || (col.overlay().size() != column_size &&
+                                !col.overlay().row_map().IsBitVector());
+
     // Extrinsically sorted columns
     use_legacy = use_legacy ||
                  (col.IsSorted() && col.overlay().row_map().IsIndexVector());
@@ -318,14 +327,8 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
       continue;
     }
 
-    // For selection, we should use either BitVector or IndexVector, not Range.
-    PERFETTO_CHECK(!(col.overlay().size() != column_size &&
-                     col.overlay().row_map().IsRange()));
-
-    SimpleColumn s_col{OverlaysVec(), nullptr, col.IsSorted()};
-
-    // Create storage
     std::unique_ptr<Storage> storage;
+    SimpleColumn s_col{OverlaysVec(), nullptr, col.IsSorted()};
     if (col.IsId()) {
       storage.reset(new storage::IdStorage(column_size));
     } else {
@@ -335,19 +338,11 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
     }
     s_col.storage = storage.get();
 
-    // Create cDBv2 overlays based on col.overlay()
     overlays::SelectorOverlay selector_overlay(
         col.overlay().row_map().GetIfBitVector());
-    if (col.overlay().size() != column_size &&
-        col.overlay().row_map().IsBitVector())
+    if (col.overlay().size() != column_size)
       s_col.overlays.emplace_back(&selector_overlay);
 
-    overlays::ArrangementOverlay arrangement_overlay(
-        col.overlay().row_map().GetIfIndexVector());
-    if (col.overlay().row_map().IsIndexVector())
-      s_col.overlays.emplace_back(&arrangement_overlay);
-
-    // Add nullability
     BitVector null_bv;
     overlays::NullOverlay null_overlay(
         col.IsNullable() ? col.storage_base().bv() : &null_bv);

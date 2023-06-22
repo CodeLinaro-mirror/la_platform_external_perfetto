@@ -13,25 +13,13 @@
 
 debuggable (R
 debuggableJJJJ
-Ù
-Cprotos/perfetto/metrics/android/android_frame_timeline_metric.protoperfetto.protos6protos/perfetto/metrics/android/process_metadata.proto"È
+¦
+Cprotos/perfetto/metrics/android/android_frame_timeline_metric.protoperfetto.protos6protos/perfetto/metrics/android/process_metadata.proto"•
 AndroidFrameTimelineMetric!
 total_frames (RtotalFrames*
 missed_app_frames (RmissedAppFrames%
 dropped_frames (RdroppedFramesV
-process (2<.perfetto.protos.AndroidFrameTimelineMetric.ProcessBreakdownRprocessY
-
-jank_types (2:.perfetto.protos.AndroidFrameTimelineMetric.JankTypeMetricR	jankTypesú
-JankTypeMetric
-type (	Rtype
-total_count (R
-totalCount:
-present_unspecified_count (RpresentUnspecifiedCount1
-present_on_time_count (RpresentOnTimeCount,
-present_late_count (RpresentLateCount.
-present_early_count (RpresentEarlyCount2
-present_dropped_count (RpresentDroppedCount2
-present_unknown_count (RpresentUnknownCountý
+process (2<.perfetto.protos.AndroidFrameTimelineMetric.ProcessBreakdownRprocess¢
 ProcessBreakdownA
 process (2'.perfetto.protos.AndroidProcessMetadataRprocess!
 total_frames (RtotalFrames#
@@ -49,9 +37,7 @@ totalCount:
 frame_dur_ms_p90 (RframeDurMsP90'
 frame_dur_ms_p95 (RframeDurMsP95'
 frame_dur_ms_p99 (RframeDurMsP99%
-dropped_frames (RdroppedFramesY
-
-jank_types (2:.perfetto.protos.AndroidFrameTimelineMetric.JankTypeMetricR	jankTypesJJJ
+dropped_frames (RdroppedFramesJJJ
 ¤
 1protos/perfetto/metrics/android/batt_metric.protoperfetto.protos"Ý
 AndroidBatteryMetric`

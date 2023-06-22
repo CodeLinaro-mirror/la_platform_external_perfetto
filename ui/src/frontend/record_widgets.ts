@@ -22,8 +22,8 @@ import {RecordConfig} from '../controller/record_config_types';
 import {copyToClipboard} from './clipboard';
 import {globals} from './globals';
 
-export declare type Setter<T> = (draft: Draft<RecordConfig>, val: T) => void;
-export declare type Getter<T> = (cfg: RecordConfig) => T;
+declare type Setter<T> = (draft: Draft<RecordConfig>, val: T) => void;
+declare type Getter<T> = (cfg: RecordConfig) => T;
 
 function defaultSort(a: string, b: string) {
   return a.localeCompare(b);
@@ -363,14 +363,11 @@ export class CodeSnippet implements m.ClassComponent<CodeSnippetAttrs> {
 }
 
 
-export interface CategoryGetter {
-  get: Getter<string[]>;
-  set: Setter<string[]>;
-}
-
-type CategoriesCheckboxListParams = CategoryGetter&{
+interface CategoriesCheckboxListParams {
   categories: Map<string, string>;
   title: string;
+  get: Getter<string[]>;
+  set: Setter<string[]>;
 }
 
 export class CategoriesCheckboxList implements

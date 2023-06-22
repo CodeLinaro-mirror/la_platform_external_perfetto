@@ -308,7 +308,6 @@ perfetto_cc_binary(
         ":src_protozero_filtering_bytecode_parser",
         ":src_protozero_filtering_filter_util",
         ":src_protozero_filtering_message_filter",
-        ":src_protozero_filtering_string_filter",
         "src/tools/proto_filter/proto_filter.cc",
     ],
     deps = [
@@ -415,7 +414,6 @@ perfetto_cc_library(
         ":src_protozero_filtering_bytecode_common",
         ":src_protozero_filtering_bytecode_parser",
         ":src_protozero_filtering_message_filter",
-        ":src_protozero_filtering_string_filter",
         ":src_protozero_proto_ring_buffer",
         ":src_traced_probes_android_game_intervention_list_android_game_intervention_list",
         ":src_traced_probes_android_log_android_log",
@@ -1250,15 +1248,6 @@ perfetto_filegroup(
     ],
 )
 
-# GN target: //src/protozero/filtering:string_filter
-perfetto_filegroup(
-    name = "src_protozero_filtering_string_filter",
-    srcs = [
-        "src/protozero/filtering/string_filter.cc",
-        "src/protozero/filtering/string_filter.h",
-    ],
-)
-
 # GN target: //src/protozero:proto_ring_buffer
 perfetto_filegroup(
     name = "src_protozero_proto_ring_buffer",
@@ -1301,8 +1290,6 @@ perfetto_cc_library(
 perfetto_filegroup(
     name = "src_trace_processor_db_overlays_overlays",
     srcs = [
-        "src/trace_processor/db/overlays/arrangement_overlay.cc",
-        "src/trace_processor/db/overlays/arrangement_overlay.h",
         "src/trace_processor/db/overlays/null_overlay.cc",
         "src/trace_processor/db/overlays/null_overlay.h",
         "src/trace_processor/db/overlays/selector_overlay.cc",
@@ -3948,7 +3935,6 @@ perfetto_proto_library(
 perfetto_proto_library(
     name = "protos_perfetto_metrics_android_protos",
     srcs = [
-        "protos/perfetto/metrics/android/android_blocking_call.proto",
         "protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto",
         "protos/perfetto/metrics/android/android_frame_timeline_metric.proto",
         "protos/perfetto/metrics/android/android_sysui_notifications_blocking_calls_metric.proto",
@@ -4871,7 +4857,6 @@ perfetto_cc_library(
         ":src_protozero_filtering_bytecode_common",
         ":src_protozero_filtering_bytecode_parser",
         ":src_protozero_filtering_message_filter",
-        ":src_protozero_filtering_string_filter",
         ":src_tracing_client_api_without_backends",
         ":src_tracing_common",
         ":src_tracing_core_core",

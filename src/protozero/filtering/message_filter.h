@@ -25,7 +25,6 @@
 
 #include "src/protozero/filtering/filter_bytecode_parser.h"
 #include "src/protozero/filtering/message_tokenizer.h"
-#include "src/protozero/filtering/string_filter.h"
 
 namespace protozero {
 
@@ -118,9 +117,6 @@ class MessageFilter {
   // Exposed only for DCHECKS in TracingServiceImpl.
   uint32_t root_msg_index() { return root_msg_index_; }
 
-  // Retuns the helper class used to perform string filtering.
-  StringFilter& string_filter() { return string_filter_; }
-
  private:
   // This is called by FilterMessageFragments().
   // Inlining allows the compiler turn the per-byte call/return into a for loop,
@@ -210,7 +206,6 @@ class MessageFilter {
 
   FilterBytecodeParser filter_;
   MessageTokenizer tokenizer_;
-  StringFilter string_filter_;
   std::vector<StackState> stack_;
 
   bool error_ = false;

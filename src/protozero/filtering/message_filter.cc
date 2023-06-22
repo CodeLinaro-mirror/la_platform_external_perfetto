@@ -18,7 +18,6 @@
 
 #include "perfetto/base/logging.h"
 #include "perfetto/protozero/proto_utils.h"
-#include "src/protozero/filtering/string_filter.h"
 
 namespace protozero {
 
@@ -163,9 +162,7 @@ void MessageFilter::FilterOneByte(uint8_t octet) {
     } else if (state->action == StackState::kFilterString) {
       *(out_++) = octet;
       if (state->eat_next_bytes == 0) {
-        string_filter_.MaybeFilter(
-            reinterpret_cast<char*>(state->filter_string_ptr),
-            static_cast<size_t>(out_ - state->filter_string_ptr));
+        // TODO(lalitm): do the filtering using |filter_string_ptr|.
       }
     }
   } else {
