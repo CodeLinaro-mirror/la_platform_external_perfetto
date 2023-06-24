@@ -120,96 +120,6 @@ SLICE_TABLE = Table(
                 ''',
         }))
 
-SCHED_SLICE_TABLE = Table(
-    python_module=__file__,
-    class_name='SchedSliceTable',
-    sql_name='sched_slice',
-    columns=[
-        C('ts', CppInt64(), flags=ColumnFlag.SORTED),
-        C('dur', CppInt64()),
-        C('cpu', CppUint32()),
-        C('utid', CppUint32()),
-        C('end_state', CppString()),
-        C('priority', CppInt32()),
-    ],
-    tabledoc=TableDoc(
-        doc='''
-          This table holds slices with kernel thread scheduling information.
-          These slices are collected when the Linux "ftrace" data source is
-          used with the "sched/switch" and "sched/wakeup*" events enabled.
-        ''',
-        group='Events',
-        columns={
-            'ts':
-                '''The timestamp at the start of the slice (in nanoseconds).''',
-            'dur':
-                '''The duration of the slice (in nanoseconds).''',
-            'utid':
-                '''The thread's unique id in the trace..''',
-            'cpu':
-                '''The CPU that the slice executed on.''',
-            'end_state':
-                '''
-                  A string representing the scheduling state of the kernel
-                  thread at the end of the slice.  The individual characters in
-                  the string mean the following: R (runnable), S (awaiting a
-                  wakeup), D (in an uninterruptible sleep), T (suspended),
-                  t (being traced), X (exiting), P (parked), W (waking),
-                  I (idle), N (not contributing to the load average),
-                  K (wakeable on fatal signals) and Z (zombie, awaiting
-                  cleanup).
-                ''',
-            'priority':
-                '''The kernel priority that the thread ran at.'''
-        }))
-
-THREAD_STATE_TABLE = Table(
-    python_module=__file__,
-    class_name='ThreadStateTable',
-    sql_name='thread_state',
-    columns=[
-        C('ts', CppInt64()),
-        C('dur', CppInt64()),
-        C('cpu', CppOptional(CppUint32())),
-        C('utid', CppUint32()),
-        C('state', CppString()),
-        C('io_wait', CppOptional(CppUint32())),
-        C('blocked_function', CppOptional(CppString())),
-        C('waker_utid', CppOptional(CppUint32())),
-    ],
-    tabledoc=TableDoc(
-        doc='''
-          This table contains the scheduling state of every thread on the
-          system during the trace. It is a subset of the |sched_slice| (sched)
-          table which only contains the times where threads were actually
-          scheduled.
-        ''',
-        group='Events',
-        columns={
-            'ts':
-                'The timestamp at the start of the slice (in nanoseconds).',
-            'dur':
-                'The duration of the slice (in nanoseconds).',
-            'cpu':
-                '''The CPU that the slice executed on.''',
-            'utid':
-                '''The thread's unique id in the trace..''',
-            'state':
-                '''
-                  The scheduling state of the thread. Can be "Running" or any
-                  of the states described in |sched_slice.end_state|.
-                ''',
-            'io_wait':
-                'Indicates whether this thread was blocked on IO.',
-            'blocked_function':
-                'The function in the kernel this thread was blocked on.',
-            'waker_utid':
-                '''
-                  The unique thread id of the thread which caused a wakeup of
-                  this thread.
-                '''
-        }))
-
 GPU_SLICE_TABLE = Table(
     python_module=__file__,
     class_name='GpuSliceTable',
@@ -342,7 +252,7 @@ EXPERIMENTAL_FLAT_SLICE_TABLE = Table(
           An experimental table which "flattens" stacks of slices to contain
           only the "deepest" slice at any point in time on each track.
         ''',
-        group='Misc',
+        group='Events',
         columns={
             'ts':
                 '''The timestamp at the start of the slice (in nanoseconds).''',
@@ -376,7 +286,5 @@ ALL_TABLES = [
     EXPERIMENTAL_FLAT_SLICE_TABLE,
     GPU_SLICE_TABLE,
     GRAPHICS_FRAME_SLICE_TABLE,
-    SCHED_SLICE_TABLE,
     SLICE_TABLE,
-    THREAD_STATE_TABLE,
 ]

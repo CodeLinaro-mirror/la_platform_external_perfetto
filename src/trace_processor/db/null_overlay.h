@@ -17,34 +17,26 @@
 #ifndef SRC_TRACE_PROCESSOR_DB_NULL_OVERLAY_H_
 #define SRC_TRACE_PROCESSOR_DB_NULL_OVERLAY_H_
 
-#include <variant>
-#include "perfetto/ext/base/status_or.h"
-#include "src/trace_processor/db/column.h"
-#include "src/trace_processor/db/column_overlay.h"
-#include "src/trace_processor/db/storage.h"
+#include "src/trace_processor/db/storage/storage.h"
 
 namespace perfetto {
 namespace trace_processor {
-namespace column {
+namespace overlays {
 
 // Overlay responsible for operations related to column nullability.
-class NullOverlay : public ColumnOverlay {
+class NullOverlay {
  public:
-  explicit NullOverlay(std::unique_ptr<ColumnOverlay> inner,
-                       const BitVector* null_bv)
-      : inner_(std::move(inner)), null_bv_(null_bv) {}
+  explicit NullOverlay(const BitVector* null_bv) : null_bv_(null_bv) {}
 
-  void Filter(FilterOp, SqlValue, RowMap&) const override;
-  void StableSort(uint32_t* rows, uint32_t rows_size) const override;
+  void Filter(FilterOp, SqlValue, RowMap&) const;
+  void StableSort(uint32_t* rows, uint32_t rows_size) const;
 
  private:
-  std::unique_ptr<ColumnOverlay> inner_;
-
   // Vector of data nullability.
   const BitVector* null_bv_;
 };
 
-}  // namespace column
+}  // namespace overlays
 }  // namespace trace_processor
 }  // namespace perfetto
 

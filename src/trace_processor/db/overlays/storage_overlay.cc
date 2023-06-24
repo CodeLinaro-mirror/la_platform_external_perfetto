@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-#include "src/trace_processor/db/storage.h"
+#include "src/trace_processor/db/overlays/storage_overlay.h"
 
 namespace perfetto {
 namespace trace_processor {
-namespace column {
+namespace overlays {
 
-Storage::~Storage() = default;
+StorageOverlay::~StorageOverlay() = default;
 
-}  // namespace column
+}  // namespace overlays
 }  // namespace trace_processor
 }  // namespace perfetto
