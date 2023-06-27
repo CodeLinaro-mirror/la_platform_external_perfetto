@@ -289,8 +289,7 @@ BitVector NumericStorage::LinearSearch(FilterOp op,
   if (!val.has_value() || op == FilterOp::kIsNull || op == FilterOp::kGlob)
     return BitVector(size(), false);
 
-  BitVector::Builder builder(range.end);
-  builder.Skip(range.start);
+  BitVector::Builder builder(range.end, range.start);
   if (const auto* u32 = std::get_if<uint32_t>(&*val)) {
     auto* start = static_cast<const uint32_t*>(data_) + range.start;
     TypedLinearSearch(*u32, start, op, builder);
@@ -350,16 +349,19 @@ RowMap::Range NumericStorage::BinarySearchIntrinsic(
     case FilterOp::kEq:
       return RowMap::Range(LowerBoundIntrinsic(data_, *val, search_range),
                            UpperBoundIntrinsic(data_, *val, search_range));
-    case FilterOp::kLe:
-      return RowMap::Range(0, UpperBoundIntrinsic(data_, *val, search_range));
+    case FilterOp::kLe: {
+      return RowMap::Range(search_range.start,
+                           UpperBoundIntrinsic(data_, *val, search_range));
+    }
     case FilterOp::kLt:
-      return RowMap::Range(0, LowerBoundIntrinsic(data_, *val, search_range));
+      return RowMap::Range(search_range.start,
+                           LowerBoundIntrinsic(data_, *val, search_range));
     case FilterOp::kGe:
       return RowMap::Range(LowerBoundIntrinsic(data_, *val, search_range),
-                           size_);
+                           search_range.end);
     case FilterOp::kGt:
       return RowMap::Range(UpperBoundIntrinsic(data_, *val, search_range),
-                           size_);
+                           search_range.end);
     case FilterOp::kNe:
     case FilterOp::kIsNull:
     case FilterOp::kIsNotNull:

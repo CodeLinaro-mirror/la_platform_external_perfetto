@@ -137,11 +137,13 @@ void QueryExecutor::FilterColumn(const Constraint& c,
   // If the number of elements in the rowmap is small or the number of elements
   // is less than 1/10th of the range, use indexed filtering.
   // TODO(b/283763282): use Overlay estimations.
-  if (rm->IsIndexVector() || rm_size < 1024 || rm_size * 10 < range_size) {
+  bool disallows_index_search = rm->IsRange();
+  bool prefers_index_search =
+      rm->IsIndexVector() || rm_size < 1024 || rm_size * 10 < range_size;
+  if (!disallows_index_search && prefers_index_search) {
     *rm = IndexSearch(c, col, rm);
     return;
   }
-
   LinearSearch(c, col, rm);
 }
 
@@ -168,20 +170,32 @@ void QueryExecutor::LinearSearch(const Constraint& c,
 
     if (res.IsBitVector()) {
       TableBitVector t_bv = col.overlays[rev_i]->MapToTableBitVector(
-          StorageBitVector{res.TakeIfBitVector()}, op);
+          StorageBitVector{std::move(res).TakeIfBitVector()}, op);
       res.val = RangeOrBitVector(std::move(t_bv.bv));
     } else {
       res = col.overlays[rev_i]->MapToTableRangeOrBitVector(
-          StorageRange(res.TakeIfRange()), op);
+          StorageRange(std::move(res).TakeIfRange()), op);
     }
   }
 
-  if (res.IsBitVector()) {
-    rm->Intersect(RowMap(res.TakeIfBitVector()));
+  if (rm->IsRange()) {
+    if (res.IsRange()) {
+      Range range = std::move(res).TakeIfRange();
+      *rm = RowMap(range.start, range.end);
+    } else {
+      // The BitVector was already limited on the RowMap when created, so we can
+      // take it as it is.
+      *rm = RowMap(std::move(res).TakeIfBitVector());
+    }
     return;
   }
 
-  rm->Intersect(RowMap(res.TakeIfRange().start, res.TakeIfRange().end));
+  if (res.IsRange()) {
+    Range range = std::move(res).TakeIfRange();
+    rm->Intersect(RowMap(range.start, range.end));
+    return;
+  }
+  rm->Intersect(RowMap(std::move(res).TakeIfBitVector()));
 }
 
 RowMap QueryExecutor::IndexSearch(const Constraint& c,
@@ -235,7 +249,8 @@ RowMap QueryExecutor::IndexSearch(const Constraint& c,
   // TODO(b/283763282): Remove after implementing extrinsic binary search.
   PERFETTO_DCHECK(matched_in_storage.IsBitVector());
 
-  count_removed += to_filter.KeepAtSet(matched_in_storage.TakeIfBitVector());
+  count_removed +=
+      to_filter.KeepAtSet(std::move(matched_in_storage).TakeIfBitVector());
   valid.insert(valid.end(), to_filter.global().begin(),
                to_filter.global().end());
 
