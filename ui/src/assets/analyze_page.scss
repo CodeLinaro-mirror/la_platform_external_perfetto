@@ -15,20 +15,11 @@
 .analyze-page {
   overflow-y: auto;
   overflow-x: hidden;
-  .query-input {
+  .pf-editor {
     width: 100%;
-    background-color: #111;
-    // When the user resizes the text box, the height is explicitly
-    // set as an inline style with overrides this style.
-    min-height: 2em;
-    height: var(--height-before-resize);
-    color: rgb(157, 220, 103);
-    font-size: inherit;
-    font-family: var(--monospace-font);
-    line-height: 1.2em;
-    padding: 0.5em;
-    overflow: auto;
+    height: 0;
+    min-height: 3rem;
+    overflow-y: auto;
     resize: vertical;
-    outline: none;
   }
 }

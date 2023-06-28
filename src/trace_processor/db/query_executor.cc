@@ -30,6 +30,7 @@
 #include "src/trace_processor/db/query_executor.h"
 #include "src/trace_processor/db/storage/id_storage.h"
 #include "src/trace_processor/db/storage/numeric_storage.h"
+#include "src/trace_processor/db/storage/string_storage.h"
 #include "src/trace_processor/db/storage/types.h"
 #include "src/trace_processor/db/table.h"
 
@@ -202,12 +203,14 @@ RowMap QueryExecutor::IndexSearch(const Constraint& c,
                                   const SimpleColumn& col,
                                   RowMap* rm) {
   // Create outmost TableIndexVector.
-  auto table_indices = rm->Copy().TakeAsIndexVector();
+  std::vector<uint32_t> table_indices = std::move(*rm).TakeAsIndexVector();
 
   // Datastructures for storing data across overlays.
   IndexFilterHelper to_filter(std::move(table_indices));
-  std::vector<uint32_t> valid;
+  std::vector<uint32_t> matched;
   uint32_t count_removed = 0;
+  uint32_t count_starting_indices =
+      static_cast<uint32_t>(to_filter.current().size());
 
   // Fetch the list of indices that require storage lookup and deal with all
   // of the indices that can be compared before it.
@@ -234,8 +237,8 @@ RowMap QueryExecutor::IndexSearch(const Constraint& c,
     BitVector valid_bv =
         overlay->IndexSearch(op, {no_storage_lookup.current()});
     count_removed += no_storage_lookup.KeepAtSet(std::move(valid_bv));
-    valid.insert(valid.end(), no_storage_lookup.global().begin(),
-                 no_storage_lookup.global().end());
+    matched.insert(matched.end(), no_storage_lookup.global().begin(),
+                   no_storage_lookup.global().end());
 
     // Update the current indices to the next storage overlay.
     to_filter.current() =
@@ -251,13 +254,13 @@ RowMap QueryExecutor::IndexSearch(const Constraint& c,
 
   count_removed +=
       to_filter.KeepAtSet(std::move(matched_in_storage).TakeIfBitVector());
-  valid.insert(valid.end(), to_filter.global().begin(),
-               to_filter.global().end());
+  matched.insert(matched.end(), to_filter.global().begin(),
+                 to_filter.global().end());
 
-  PERFETTO_CHECK(rm->size() == valid.size() + count_removed);
+  PERFETTO_CHECK(count_starting_indices == matched.size() + count_removed);
 
-  std::sort(valid.begin(), valid.end());
-  return RowMap(std::move(valid));
+  std::sort(matched.begin(), matched.end());
+  return RowMap(std::move(matched));
 }
 
 RowMap QueryExecutor::FilterLegacy(const Table* table,
@@ -272,8 +275,7 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
     bool use_legacy = rm.size() <= 1;
 
     // Column types
-    use_legacy = use_legacy || col.col_type() == ColumnType::kString ||
-                 col.col_type() == ColumnType::kDummy;
+    use_legacy = use_legacy || col.col_type() == ColumnType::kDummy;
 
     // Mismatched types
     use_legacy = use_legacy || (overlays::FilterOpToOverlayOp(c.op) ==
@@ -296,12 +298,22 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
     PERFETTO_CHECK(!(col.overlay().size() != column_size &&
                      col.overlay().row_map().IsRange()));
 
+    // String columns are inherently nullable: null values are signified with
+    // Id::Null(). String columns are also never sorted.
+    PERFETTO_CHECK(!(col.col_type() == ColumnType::kString &&
+                     (col.IsNullable() || col.IsSorted())));
+
     SimpleColumn s_col{OverlaysVec(), nullptr};
 
     // Create storage
     std::unique_ptr<Storage> storage;
     if (col.IsId()) {
       storage.reset(new storage::IdStorage(column_size));
+    } else if (col.col_type() == ColumnType::kString) {
+      storage.reset(new storage::StringStorage(
+          table->string_pool(),
+          static_cast<const StringPool::Id*>(col.storage_base().data()),
+          col.storage_base().non_null_size()));
     } else {
       storage.reset(new storage::NumericStorage(
           col.storage_base().data(), col.storage_base().non_null_size(),
