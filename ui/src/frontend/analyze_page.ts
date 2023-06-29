@@ -47,7 +47,7 @@ export function runAnalyzeQuery(query: string) {
     runQuery(query, engine).then((resp: QueryResponse) => {
       addTab({
         kind: QueryResultTab.kind,
-        tag: 'analyze_page_query',
+        tag: 'query_page_query',
         config: {
           query: query,
           title: 'Standalone Query',
