@@ -14,7 +14,7 @@
 
 import {BigintMath} from '../base/bigint_math';
 import {assertTrue} from '../base/logging';
-import {asTPTimestamp, toTraceTime} from '../frontend/sql_types';
+import {globals} from '../frontend/globals';
 
 import {ColumnType} from './query_result';
 
@@ -113,11 +113,25 @@ export class Timecode {
   }
 }
 
-// Single entry point where timestamps can be converted to the globally
-// configured domain.
-// In the future this will be configurable.
-export function toDomainTime(time: TPTime): TPTime {
-  return toTraceTime(asTPTimestamp(time));
+// Offset between t=0 and the configured time domain.
+export function timestampOffset() {
+  const fmt = timestampFormat();
+  switch (fmt) {
+    case TimestampFormat.Timecode:
+    case TimestampFormat.Seconds:
+      return globals.state.traceTime.start;
+    case TimestampFormat.Raw:
+    case TimestampFormat.RawLocale:
+      return 0n;
+    default:
+      const x: never = fmt;
+      throw new Error(`Unsupported format ${x}`);
+  }
+}
+
+// Convert absolute timestamp to domain time.
+export function toDomainTime(ts: TPTime) {
+  return ts - timestampOffset();
 }
 
 export function toNs(seconds: number) {
@@ -195,13 +209,15 @@ export interface Span<Unit, Duration = Unit> {
   get duration(): Duration;
   get midpoint(): Unit;
   contains(span: Unit|Span<Unit, Duration>): boolean;
-  intersects(x: Span<Unit>): boolean;
+  intersectsSpan(span: Span<Unit, Duration>): boolean;
+  intersects(a: Unit, b: Unit): boolean;
   equals(span: Span<Unit, Duration>): boolean;
   add(offset: Duration): Span<Unit, Duration>;
   pad(padding: Duration): Span<Unit, Duration>;
 }
 
 export class TPTimeSpan implements Span<TPTime, TPDuration> {
+  static readonly ZERO = new TPTimeSpan(0n, 0n);
   readonly start: TPTime;
   readonly end: TPTime;
 
@@ -229,8 +245,12 @@ export class TPTimeSpan implements Span<TPTime, TPDuration> {
     }
   }
 
-  intersects(x: Span<TPTime, TPDuration>): boolean {
-    return !(x.end <= this.start || x.start >= this.end);
+  intersectsSpan(span: Span<TPTime, TPDuration>): boolean {
+    return !(span.end <= this.start || span.start >= this.end);
+  }
+
+  intersects(start: TPTime, end: TPTime): boolean {
+    return !(end <= this.start || start >= this.end);
   }
 
   equals(span: Span<TPTime, TPDuration>): boolean {
@@ -244,4 +264,35 @@ export class TPTimeSpan implements Span<TPTime, TPDuration> {
   pad(padding: TPDuration): Span<TPTime, TPDuration> {
     return new TPTimeSpan(this.start - padding, this.end + padding);
   }
+}
+
+export enum TimestampFormat {
+  Timecode = 'timecode',
+  Raw = 'raw',
+  RawLocale = 'rawLocale',
+  Seconds = 'seconds',
+}
+
+let timestampFormatCached: TimestampFormat|undefined;
+
+const TIMESTAMP_FORMAT_KEY = 'timestampFormat';
+const DEFAULT_TIMESTAMP_FORMAT = TimestampFormat.Timecode;
+
+function isTimestampFormat(value: unknown): value is TimestampFormat {
+  return Object.values(TimestampFormat).includes(value as TimestampFormat);
+}
+
+export function timestampFormat(): TimestampFormat {
+  const storedFormat = localStorage.getItem(TIMESTAMP_FORMAT_KEY);
+  if (storedFormat && isTimestampFormat(storedFormat)) {
+    timestampFormatCached = storedFormat;
+  } else {
+    timestampFormatCached = DEFAULT_TIMESTAMP_FORMAT;
+  }
+  return timestampFormatCached;
+}
+
+export function setTimestampFormat(format: TimestampFormat) {
+  timestampFormatCached = format;
+  localStorage.setItem(TIMESTAMP_FORMAT_KEY, format);
 }

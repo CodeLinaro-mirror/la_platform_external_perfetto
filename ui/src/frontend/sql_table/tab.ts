@@ -14,16 +14,16 @@
 
 import m from 'mithril';
 
+import {exists} from '../../base/utils';
 import {BottomTab, bottomTabRegistry, NewBottomTabArgs} from '../bottom_tab';
 import {copyToClipboard} from '../clipboard';
 import {Icons} from '../semantic_icons';
 import {Button} from '../widgets/button';
 import {DetailsShell} from '../widgets/details_shell';
-import {exists} from '../widgets/utils';
 
 import {SqlTableState} from './state';
 import {SqlTable} from './table';
-import {SqlTableDescription} from './table_description';
+import {SqlTableDescription, tableDisplayName} from './table_description';
 
 interface SqlTableTabConfig {
   table: SqlTableDescription;
@@ -71,7 +71,7 @@ export class SqlTableTab extends BottomTab<SqlTableTabConfig> {
         DetailsShell,
         {
           title: 'Table',
-          description: this.config.displayName ?? this.config.table.name,
+          description: this.getDisplayName(),
           buttons: [
             ...navigation,
             m(Button, {
@@ -94,8 +94,12 @@ export class SqlTableTab extends BottomTab<SqlTableTabConfig> {
 
   getTitle(): string {
     const rowCount = this.state.getTotalRowCount();
-    const rows = rowCount === undefined ? '' : `(${rowCount})`;
-    return `Table ${this.config.displayName ?? this.config.table.name} ${rows}`;
+    const rows = rowCount === undefined ? '' : ` (${rowCount})`;
+    return `Table ${this.getDisplayName()}${rows}`;
+  }
+
+  private getDisplayName(): string {
+    return this.config.displayName ?? tableDisplayName(this.config.table);
   }
 
   isLoading(): boolean {

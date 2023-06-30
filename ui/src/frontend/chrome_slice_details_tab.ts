@@ -16,6 +16,7 @@ import m from 'mithril';
 
 import {BigintMath} from '../base/bigint_math';
 import {sqliteString} from '../base/string_utils';
+import {exists} from '../base/utils';
 import {Actions} from '../common/actions';
 import {EngineProxy} from '../common/engine';
 import {runQuery} from '../common/queries';
@@ -47,13 +48,12 @@ import {getProcessName, getThreadName} from './thread_and_process_info';
 import {Button} from './widgets/button';
 import {DetailsShell} from './widgets/details_shell';
 import {Duration} from './widgets/duration';
-import {Column, GridLayout} from './widgets/grid_layout';
+import {GridLayout, GridLayoutColumn} from './widgets/grid_layout';
 import {MenuItem, PopupMenu2} from './widgets/menu';
 import {Section} from './widgets/section';
 import {SqlRef} from './widgets/sql_ref';
 import {Timestamp} from './widgets/timestamp';
 import {Tree, TreeNode} from './widgets/tree';
-import {exists} from './widgets/utils';
 
 interface ContextMenuItem {
   name: string;
@@ -182,15 +182,18 @@ function renderArgKey(key: string, value?: Arg): m.Children {
           label: 'Find slices with same arg value',
           icon: 'search',
           onclick: () => {
-            runQueryInNewTab(
-                `
-              select slice.*
-              from slice
-              join args using (arg_set_id)
-              where key=${sqliteString(fullKey)} and display_value=${
-                    sqliteString(displayValue)}
-          `,
-                `Arg: ${sqliteString(fullKey)}=${sqliteString(displayValue)}`);
+            addTab({
+              kind: SqlTableTab.kind,
+              config: {
+                table: SqlTables.slice,
+                filters: [{
+                  type: 'arg_filter',
+                  argSetIdColumn: 'arg_set_id',
+                  argName: fullKey,
+                  op: `= ${sqliteString(displayValue)}`,
+                }],
+              },
+            });
           },
         }),
         value && m(MenuItem, {
@@ -390,7 +393,7 @@ export class ChromeSliceDetailsTab extends
     const args = this.renderArguments(engine, slice);
     if (precFlows ?? followingFlows ?? args) {
       return m(
-          Column,
+          GridLayoutColumn,
           precFlows,
           followingFlows,
           args,
