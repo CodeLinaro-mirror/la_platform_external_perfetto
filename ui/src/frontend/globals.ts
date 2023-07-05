@@ -37,11 +37,12 @@ import {
   tpTimeFromSeconds,
   TPTimeSpan,
 } from '../common/time';
+import {setPerfHooks} from '../core/perf';
+import {raf} from '../core/raf_scheduler';
 
 import {Analytics, initAnalytics} from './analytics';
 import {BottomTabList} from './bottom_tab';
 import {FrontendLocalState} from './frontend_local_state';
-import {RafScheduler} from './raf_scheduler';
 import {Router} from './router';
 import {ServiceWorkerController} from './service_worker_controller';
 import {SliceSqlId, TPTimestamp} from './sql_types';
@@ -220,7 +221,6 @@ class Globals {
   private _dispatch?: Dispatch = undefined;
   private _store?: Store<State>;
   private _frontendLocalState?: FrontendLocalState = undefined;
-  private _rafScheduler?: RafScheduler = undefined;
   private _serviceWorkerController?: ServiceWorkerController = undefined;
   private _logging?: Analytics = undefined;
   private _isInternalUser: boolean|undefined = undefined;
@@ -276,7 +276,14 @@ class Globals {
     this._router = router;
     this._store = createStore(initialState);
     this._frontendLocalState = new FrontendLocalState();
-    this._rafScheduler = new RafScheduler();
+
+    setPerfHooks(
+        () => this.state.perfDebug,
+        () => this.dispatch(Actions.togglePerfDebug({})));
+
+    raf.beforeRedraw = () => this.frontendLocalState.clearVisibleTracks();
+    raf.afterRedraw = () => this.frontendLocalState.sendVisibleTracks();
+
     this._serviceWorkerController = new ServiceWorkerController();
     this._testing =
         self.location && self.location.search.indexOf('testing=1') >= 0;
@@ -337,10 +344,6 @@ class Globals {
 
   get frontendLocalState() {
     return assertExists(this._frontendLocalState);
-  }
-
-  get rafScheduler() {
-    return assertExists(this._rafScheduler);
   }
 
   get logging() {
@@ -611,7 +614,6 @@ class Globals {
     this._dispatch = undefined;
     this._store = undefined;
     this._frontendLocalState = undefined;
-    this._rafScheduler = undefined;
     this._serviceWorkerController = undefined;
 
     // TODO(hjd): Unify trackDataStore, queryResults, overviewStore, threads.
@@ -661,7 +663,7 @@ class Globals {
   // however pending RAFs and workers seem to outlive the |window| and need to
   // be cleaned up explicitly.
   shutdown() {
-    this._rafScheduler!.shutdown();
+    raf.shutdown();
   }
 
   // Get a timescale that covers the entire trace
