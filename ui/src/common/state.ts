@@ -14,11 +14,13 @@
 
 import {RecordConfig} from '../controller/record_config_types';
 import {
+  GenericSliceDetailsTabConfigBase,
+} from '../frontend/generic_slice_details_tab';
+import {
   Aggregation,
   PivotTree,
   TableColumn,
 } from '../frontend/pivot_table_types';
-import {TopLevelScrollSelection} from '../tracks/scroll_jank/scroll_track';
 
 import {Direction} from './event_set';
 import {TPDuration, TPTime} from './time';
@@ -104,6 +106,7 @@ export const MAX_TIME = 180;
 // 29. Add ftrace state. <-- Borked, state contains a non-serializable object.
 // 30. Convert ftraceFilter.excludedNames from Set<string> to string[].
 // 31. Convert all timestamps to bigints.
+// 32. Add pendingDeeplink.
 export const STATE_VERSION = 31;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
@@ -378,11 +381,21 @@ export interface LogSelection {
   trackId: string;
 }
 
+export interface GenericSliceSelection {
+  kind: 'GENERIC_SLICE';
+  id: number;
+  sqlTableName: string;
+  start: TPTime;
+  duration: TPDuration;
+  // NOTE: this config can be expanded for multiple details panel types.
+  detailsPanelConfig: {kind: string; config: GenericSliceDetailsTabConfigBase;};
+}
+
 export type Selection =
     (NoteSelection|SliceSelection|CounterSelection|HeapProfileSelection|
      CpuProfileSampleSelection|ChromeSliceSelection|ThreadStateSelection|
      AreaSelection|PerfSamplesSelection|LogSelection|DebugSliceSelection|
-     TopLevelScrollSelection)&{trackId?: string};
+     GenericSliceSelection)&{trackId?: string};
 export type SelectionKind = Selection['kind'];  // 'THREAD_STATE' | 'SLICE' ...
 
 export interface Pagination {
@@ -515,6 +528,12 @@ export interface FtraceFilterState {
   excludedNames: string[];
 }
 
+export interface PendingDeeplinkState {
+  ts?: string;
+  dur?: string;
+  tid?: string;
+}
+
 export interface State {
   version: number;
   nextId: string;
@@ -609,6 +628,10 @@ export interface State {
 
   // Omnibox info.
   omniboxState: OmniboxState;
+
+  // Pending deeplink which will happen when we first finish opening a
+  // trace.
+  pendingDeeplink?: PendingDeeplinkState;
 }
 
 export const defaultTraceTime = {

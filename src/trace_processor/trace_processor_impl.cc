@@ -384,6 +384,18 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
     context_.content_analyzer.reset(new ProtoContentAnalyzer(&context_));
   }
 
+  auto v2 = context_.config.dev_flags.find("enable_db2_filtering");
+  if (v2 != context_.config.dev_flags.end()) {
+    if (v2->second == "true") {
+      Table::kUseFilterV2 = true;
+    } else if (v2->second == "false") {
+      Table::kUseFilterV2 = false;
+    } else {
+      PERFETTO_ELOG("Unknown value for enable_db2_filtering %s",
+                    v2->second.c_str());
+    }
+  }
+
   sqlite3_str_split_init(engine_.sqlite_engine()->db());
   RegisterAdditionalModules(&context_);
 
@@ -404,7 +416,10 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
                                context_.clock_converter.get());
   RegisterFunction<ToMonotonic>(&engine_, "TO_MONOTONIC", 1,
                                 context_.clock_converter.get());
+  RegisterFunction<ToUiTimeFormat>(&engine_, "TO_UI_TIME_FORMAT", 1);
   RegisterFunction<CreateFunction>(&engine_, "CREATE_FUNCTION", 3, &engine_);
+  RegisterFunction<ExperimentalMemoize>(&engine_, "EXPERIMENTAL_MEMOIZE", 1,
+                                        &engine_);
   RegisterFunction<CreateViewFunction>(
       &engine_, "CREATE_VIEW_FUNCTION", 3,
       std::unique_ptr<CreateViewFunction::Context>(

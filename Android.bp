@@ -567,6 +567,7 @@ cc_library_shared {
         ":perfetto_src_protozero_filtering_bytecode_common",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_traced_probes_android_game_intervention_list_android_game_intervention_list",
@@ -801,6 +802,7 @@ cc_library_static {
         ":perfetto_src_protozero_filtering_bytecode_common",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_tracing_client_api_without_backends",
         ":perfetto_src_tracing_common",
@@ -1208,6 +1210,7 @@ cc_library_static {
         ":perfetto_src_protozero_filtering_bytecode_generator",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_traced_probes_android_game_intervention_list_android_game_intervention_list",
@@ -1498,6 +1501,7 @@ cc_library_static {
         ":perfetto_src_protozero_filtering_bytecode_common",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_traced_probes_android_game_intervention_list_android_game_intervention_list",
@@ -2038,6 +2042,7 @@ cc_test {
         ":perfetto_src_protozero_filtering_bytecode_generator",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_shared_lib_shared_lib",
@@ -4362,8 +4367,10 @@ genrule {
 genrule {
     name: "perfetto_protos_perfetto_metrics_chrome_descriptor",
     srcs: [
+        "protos/perfetto/metrics/android/android_blocking_call.proto",
         "protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto",
         "protos/perfetto/metrics/android/android_frame_timeline_metric.proto",
+        "protos/perfetto/metrics/android/android_sysui_notifications_blocking_calls_metric.proto",
         "protos/perfetto/metrics/android/android_trusty_workqueues.proto",
         "protos/perfetto/metrics/android/batt_metric.proto",
         "protos/perfetto/metrics/android/binder_metric.proto",
@@ -4405,7 +4412,6 @@ genrule {
         "protos/perfetto/metrics/android/unsymbolized_frames.proto",
         "protos/perfetto/metrics/chrome/all_chrome_metrics.proto",
         "protos/perfetto/metrics/chrome/args_class_names.proto",
-        "protos/perfetto/metrics/chrome/blink_gc_metric.proto",
         "protos/perfetto/metrics/chrome/dropped_frames.proto",
         "protos/perfetto/metrics/chrome/frame_times.proto",
         "protos/perfetto/metrics/chrome/histogram_hashes.proto",
@@ -4436,8 +4442,10 @@ genrule {
 genrule {
     name: "perfetto_protos_perfetto_metrics_descriptor",
     srcs: [
+        "protos/perfetto/metrics/android/android_blocking_call.proto",
         "protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto",
         "protos/perfetto/metrics/android/android_frame_timeline_metric.proto",
+        "protos/perfetto/metrics/android/android_sysui_notifications_blocking_calls_metric.proto",
         "protos/perfetto/metrics/android/android_trusty_workqueues.proto",
         "protos/perfetto/metrics/android/batt_metric.proto",
         "protos/perfetto/metrics/android/binder_metric.proto",
@@ -4492,8 +4500,10 @@ genrule {
 genrule {
     name: "perfetto_protos_perfetto_metrics_webview_descriptor",
     srcs: [
+        "protos/perfetto/metrics/android/android_blocking_call.proto",
         "protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto",
         "protos/perfetto/metrics/android/android_frame_timeline_metric.proto",
+        "protos/perfetto/metrics/android/android_sysui_notifications_blocking_calls_metric.proto",
         "protos/perfetto/metrics/android/android_trusty_workqueues.proto",
         "protos/perfetto/metrics/android/batt_metric.proto",
         "protos/perfetto/metrics/android/binder_metric.proto",
@@ -9099,6 +9109,14 @@ filegroup {
     ],
 }
 
+// GN: //src/protozero/filtering:string_filter
+filegroup {
+    name: "perfetto_src_protozero_filtering_string_filter",
+    srcs: [
+        "src/protozero/filtering/string_filter.cc",
+    ],
+}
+
 // GN: //src/protozero/filtering:unittests
 filegroup {
     name: "perfetto_src_protozero_filtering_unittests",
@@ -9108,6 +9126,7 @@ filegroup {
         "src/protozero/filtering/filter_util_unittest.cc",
         "src/protozero/filtering/message_filter_unittest.cc",
         "src/protozero/filtering/message_tokenizer_unittest.cc",
+        "src/protozero/filtering/string_filter_unittest.cc",
     ],
 }
 
@@ -9410,7 +9429,7 @@ filegroup {
     srcs: [
         "src/trace_processor/db/column.cc",
         "src/trace_processor/db/column_storage.cc",
-        "src/trace_processor/db/null_overlay.cc",
+        "src/trace_processor/db/query_executor.cc",
         "src/trace_processor/db/table.cc",
         "src/trace_processor/db/view.cc",
     ],
@@ -9420,6 +9439,7 @@ filegroup {
 filegroup {
     name: "perfetto_src_trace_processor_db_overlays_overlays",
     srcs: [
+        "src/trace_processor/db/overlays/arrangement_overlay.cc",
         "src/trace_processor/db/overlays/null_overlay.cc",
         "src/trace_processor/db/overlays/selector_overlay.cc",
         "src/trace_processor/db/overlays/storage_overlay.cc",
@@ -9430,6 +9450,7 @@ filegroup {
 filegroup {
     name: "perfetto_src_trace_processor_db_overlays_unittests",
     srcs: [
+        "src/trace_processor/db/overlays/arrangement_overlay_unittest.cc",
         "src/trace_processor/db/overlays/null_overlay_unittest.cc",
         "src/trace_processor/db/overlays/selector_overlay_unittest.cc",
     ],
@@ -9439,6 +9460,7 @@ filegroup {
 filegroup {
     name: "perfetto_src_trace_processor_db_storage_storage",
     srcs: [
+        "src/trace_processor/db/storage/id_storage.cc",
         "src/trace_processor/db/storage/numeric_storage.cc",
         "src/trace_processor/db/storage/storage.cc",
     ],
@@ -9458,6 +9480,7 @@ filegroup {
     srcs: [
         "src/trace_processor/db/column_storage_overlay_unittest.cc",
         "src/trace_processor/db/compare_unittest.cc",
+        "src/trace_processor/db/query_executor_unittest.cc",
         "src/trace_processor/db/view_unittest.cc",
     ],
 }
@@ -10055,6 +10078,7 @@ genrule {
         "src/trace_processor/metrics/sql/android/android_simpleperf.sql",
         "src/trace_processor/metrics/sql/android/android_startup.sql",
         "src/trace_processor/metrics/sql/android/android_surfaceflinger.sql",
+        "src/trace_processor/metrics/sql/android/android_sysui_notifications_blocking_calls_metric.sql",
         "src/trace_processor/metrics/sql/android/android_task_names.sql",
         "src/trace_processor/metrics/sql/android/android_trace_quality.sql",
         "src/trace_processor/metrics/sql/android/android_trusty_workqueues.sql",
@@ -10168,6 +10192,7 @@ genrule {
         "src/trace_processor/metrics/sql/chrome/scroll_jank_cause_blocking_touch_move.sql",
         "src/trace_processor/metrics/sql/chrome/scroll_jank_cause_get_bitmap.sql",
         "src/trace_processor/metrics/sql/chrome/scroll_jank_cause_queuing_delay.sql",
+        "src/trace_processor/metrics/sql/chrome/scroll_jank_v3.sql",
         "src/trace_processor/metrics/sql/chrome/sufficient_chrome_processes.sql",
         "src/trace_processor/metrics/sql/chrome/test_chrome_metric.sql",
         "src/trace_processor/metrics/sql/chrome/touch_flow_event.sql",
@@ -10175,7 +10200,6 @@ genrule {
         "src/trace_processor/metrics/sql/chrome/touch_jank.sql",
         "src/trace_processor/metrics/sql/chrome/vsync_intervals.sql",
         "src/trace_processor/metrics/sql/common/parent_slice.sql",
-        "src/trace_processor/metrics/sql/experimental/blink_gc_metric.sql",
         "src/trace_processor/metrics/sql/experimental/chrome_dropped_frames.sql",
         "src/trace_processor/metrics/sql/experimental/chrome_long_latency.sql",
         "src/trace_processor/metrics/sql/experimental/frame_times.sql",
@@ -10441,9 +10465,11 @@ genrule {
         "src/trace_processor/stdlib/android/startup/internal_startups_minsdk33.sql",
         "src/trace_processor/stdlib/android/startup/startups.sql",
         "src/trace_processor/stdlib/android/statsd.sql",
+        "src/trace_processor/stdlib/chrome/chrome_scroll_janks.sql",
         "src/trace_processor/stdlib/chrome/chrome_scrolls.sql",
         "src/trace_processor/stdlib/chrome/cpu_powerups.sql",
         "src/trace_processor/stdlib/chrome/histograms.sql",
+        "src/trace_processor/stdlib/chrome/metadata.sql",
         "src/trace_processor/stdlib/chrome/speedometer.sql",
         "src/trace_processor/stdlib/common/counters.sql",
         "src/trace_processor/stdlib/common/cpus.sql",
@@ -10452,7 +10478,10 @@ genrule {
         "src/trace_processor/stdlib/common/slices.sql",
         "src/trace_processor/stdlib/common/timestamps.sql",
         "src/trace_processor/stdlib/experimental/android_broadcast.sql",
+        "src/trace_processor/stdlib/experimental/flat_slices.sql",
         "src/trace_processor/stdlib/experimental/proto_path.sql",
+        "src/trace_processor/stdlib/experimental/slices.sql",
+        "src/trace_processor/stdlib/experimental/thread_executing_span.sql",
         "src/trace_processor/stdlib/pkvm/hypervisor.sql",
     ],
     cmd: "$(location tools/gen_amalgamated_sql.py) --namespace=stdlib --cpp-out=$(out) $(in)",
@@ -12067,6 +12096,7 @@ cc_test {
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_filter_util",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_filtering_unittests",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
@@ -12507,6 +12537,7 @@ cc_library_static {
         ":perfetto_src_protozero_filtering_bytecode_common",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_traced_probes_android_game_intervention_list_android_game_intervention_list",
@@ -13259,6 +13290,7 @@ cc_binary {
         ":perfetto_src_protozero_filtering_bytecode_common",
         ":perfetto_src_protozero_filtering_bytecode_parser",
         ":perfetto_src_protozero_filtering_message_filter",
+        ":perfetto_src_protozero_filtering_string_filter",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_traced_probes_ftrace_ftrace_procfs",
         ":perfetto_src_traced_probes_packages_list_packages_list_parser",
