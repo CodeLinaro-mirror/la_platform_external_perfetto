@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import * as m from 'mithril';
+import m from 'mithril';
 
 import {Anchor} from './anchor';
 import {classNames} from './classnames';
@@ -24,15 +24,17 @@ import {TableShowcase} from './tables/table_showcase';
 import {Button} from './widgets/button';
 import {Checkbox} from './widgets/checkbox';
 import {EmptyState} from './widgets/empty_state';
+import {Form, FormButtonBar, FormLabel} from './widgets/form';
 import {Icon} from './widgets/icon';
-import {Menu, MenuDivider, MenuItem} from './widgets/menu';
+import {Menu, MenuDivider, MenuItem, PopupMenu2} from './widgets/menu';
 import {MultiSelect, MultiSelectDiff} from './widgets/multiselect';
 import {Popup, PopupPosition} from './widgets/popup';
-import {PopupMenu2} from './widgets/popup_menu_2';
 import {Portal} from './widgets/portal';
 import {Select} from './widgets/select';
 import {Spinner} from './widgets/spinner';
+import {Switch} from './widgets/switch';
 import {TextInput} from './widgets/text_input';
+import {LazyTreeNode, Tree, TreeLayout, TreeNode} from './widgets/tree';
 
 const options: {[key: string]: boolean} = {
   foobar: false,
@@ -241,6 +243,18 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
   }
 }
 
+function recursiveLazyTreeNode(
+    left: string, summary: string, hoardData: boolean): m.Children {
+  return m(LazyTreeNode, {
+    left,
+    summary,
+    hoardData,
+    fetchData: async () => {
+      await new Promise((r) => setTimeout(r, 200));
+      return () => recursiveLazyTreeNode(left, summary, hoardData);
+    },
+  });
+}
 
 export const WidgetsPage = createPage({
   view() {
@@ -249,14 +263,16 @@ export const WidgetsPage = createPage({
         m('h1', 'Widgets'),
         m('h2', 'Button'),
         m(WidgetShowcase, {
-          renderWidget: ({label, icon, ...rest}) => m(Button, {
+          renderWidget: ({label, icon, rightIcon, ...rest}) => m(Button, {
             icon: icon ? 'send' : undefined,
+            rightIcon: rightIcon ? 'arrow_forward' : undefined,
             label: label ? 'Button' : '',
             ...rest,
           }),
           initialOpts: {
             label: true,
-            icon: false,
+            icon: true,
+            rightIcon: false,
             disabled: false,
             minimal: false,
             active: false,
@@ -267,6 +283,15 @@ export const WidgetsPage = createPage({
         m(WidgetShowcase, {
           renderWidget: (opts) => m(Checkbox, {label: 'Checkbox', ...opts}),
           initialOpts: {
+            disabled: false,
+          },
+        }),
+        m('h2', 'Switch'),
+        m(WidgetShowcase, {
+          renderWidget: ({label, ...rest}: any) =>
+              m(Switch, {label: label ? 'Switch' : undefined, ...rest}),
+          initialOpts: {
+            label: true,
             disabled: false,
           },
         }),
@@ -401,7 +426,7 @@ export const WidgetsPage = createPage({
           initialOpts: {
             icon: true,
             showNumSelected: true,
-            repeatCheckedItemsAtTop: true,
+            repeatCheckedItemsAtTop: false,
           },
         }),
         m('h2', 'PopupMenu'),
@@ -430,34 +455,71 @@ export const WidgetsPage = createPage({
         }),
         m('h2', 'Menu'),
         m(WidgetShowcase, {
-          renderWidget: ({disabled}) => m(
+          renderWidget: () => m(
               Menu,
               m(MenuItem, {label: 'New', icon: 'add'}),
               m(MenuItem, {label: 'Open', icon: 'folder_open'}),
-              m(MenuItem, {label: 'Save', icon: 'save', disabled}),
+              m(MenuItem, {label: 'Save', icon: 'save', disabled: true}),
               m(MenuDivider),
               m(MenuItem, {label: 'Delete', icon: 'delete'}),
+              m(MenuDivider),
+              m(
+                  MenuItem,
+                  {label: 'Share', icon: 'share'},
+                  m(MenuItem, {label: 'Everyone', icon: 'public'}),
+                  m(MenuItem, {label: 'Friends', icon: 'group'}),
+                  m(
+                      MenuItem,
+                      {label: 'Specific people', icon: 'person_add'},
+                      m(MenuItem, {label: 'Alice', icon: 'person'}),
+                      m(MenuItem, {label: 'Bob', icon: 'person'}),
+                      ),
+                  ),
+              m(
+                  MenuItem,
+                  {label: 'More', icon: 'more_horiz'},
+                  m(MenuItem, {label: 'Query', icon: 'database'}),
+                  m(MenuItem, {label: 'Download', icon: 'download'}),
+                  m(MenuItem, {label: 'Clone', icon: 'copy_all'}),
+                  ),
               ),
-          initialOpts: {
-            disabled: false,
-          },
+
         }),
         m('h2', 'PopupMenu2'),
         m(WidgetShowcase, {
           renderWidget: (opts) => m(
               PopupMenu2,
               {
-                trigger: m(Button, {label: 'File', icon: 'expand_more'}),
+                trigger: m(Button, {label: 'Menu', icon: 'arrow_drop_down'}),
                 ...opts,
               },
               m(MenuItem, {label: 'New', icon: 'add'}),
               m(MenuItem, {label: 'Open', icon: 'folder_open'}),
-              m(MenuItem, {label: 'Save', icon: 'save'}),
+              m(MenuItem, {label: 'Save', icon: 'save', disabled: true}),
               m(MenuDivider),
               m(MenuItem, {label: 'Delete', icon: 'delete'}),
+              m(MenuDivider),
+              m(
+                  MenuItem,
+                  {label: 'Share', icon: 'share'},
+                  m(MenuItem, {label: 'Everyone', icon: 'public'}),
+                  m(MenuItem, {label: 'Friends', icon: 'group'}),
+                  m(
+                      MenuItem,
+                      {label: 'Specific people', icon: 'person_add'},
+                      m(MenuItem, {label: 'Alice', icon: 'person'}),
+                      m(MenuItem, {label: 'Bob', icon: 'person'}),
+                      ),
+                  ),
+              m(
+                  MenuItem,
+                  {label: 'More', icon: 'more_horiz'},
+                  m(MenuItem, {label: 'Query', icon: 'database'}),
+                  m(MenuItem, {label: 'Download', icon: 'download'}),
+                  m(MenuItem, {label: 'Clone', icon: 'copy_all'}),
+                  ),
               ),
           initialOpts: {
-            closeOnItemClick: true,
             popupPosition: new EnumOption(
                 PopupPosition.Bottom,
                 Object.values(PopupPosition),
@@ -478,6 +540,108 @@ export const WidgetsPage = createPage({
             easing: false,
           },
         }),
+        m('h2', 'Tree'),
+        m(WidgetShowcase, {
+          renderWidget: (opts) => m(
+              Tree,
+              opts,
+              m(TreeNode, {left: 'Name', right: 'my_event'}),
+              m(TreeNode, {left: 'CPU', right: '2'}),
+              m(TreeNode, {
+                left: 'SQL',
+                right: m(
+                    PopupMenu2,
+                    {
+                      trigger: m(Anchor, {
+                        text: 'SELECT * FROM ftrace_event WHERE id = 123',
+                        icon: 'unfold_more',
+                      }),
+                    },
+                    m(MenuItem, {
+                      label: 'Copy SQL Query',
+                      icon: 'content_copy',
+                    }),
+                    m(MenuItem, {
+                      label: 'Execute Query in new tab',
+                      icon: 'open_in_new',
+                    }),
+                    ),
+              }),
+              m(TreeNode, {
+                left: 'Thread',
+                right: m(Anchor, {text: 'my_thread[456]', icon: 'open_in_new'}),
+              }),
+              m(TreeNode, {
+                left: 'Process',
+                right: m(Anchor, {text: '/bin/foo[789]', icon: 'open_in_new'}),
+              }),
+              recursiveLazyTreeNode('Lazy', '(hoarding)', true),
+              recursiveLazyTreeNode('Lazy', '(non-hoarding)', false),
+              m(
+                  TreeNode,
+                  {
+                    left: 'Args',
+                    summary: 'foo: string, baz: string, quux: string[4]',
+                  },
+                  m(TreeNode, {left: 'foo', right: 'bar'}),
+                  m(TreeNode, {left: 'baz', right: 'qux'}),
+                  m(
+                      TreeNode,
+                      {left: 'quux'},
+                      m(TreeNode, {left: '[0]', right: 'corge'}),
+                      m(TreeNode, {left: '[1]', right: 'grault'}),
+                      m(TreeNode, {left: '[2]', right: 'garply'}),
+                      m(TreeNode, {left: '[3]', right: 'waldo'}),
+                      ),
+                  ),
+              ),
+          initialOpts: {
+            layout: new EnumOption(
+                TreeLayout.Grid,
+                Object.values(TreeLayout),
+                ),
+          },
+          wide: true,
+        }),
+        m('h2', 'Form'),
+        m(
+          WidgetShowcase, {
+            renderWidget: () => m(
+              Form,
+              m(FormLabel, {for: 'foo'}, 'Foo'),
+              m(TextInput, {id: 'foo'}),
+              m(FormLabel, {for: 'bar'}, 'Bar'),
+              m(Select, {id: 'bar'}, [
+                m('option', {value: 'foo', label: 'Foo'}),
+                m('option', {value: 'bar', label: 'Bar'}),
+                m('option', {value: 'baz', label: 'Baz'}),
+              ]),
+              m(FormButtonBar,
+                m(Button, {label: 'Submit', rightIcon: 'chevron_right'}),
+                m(Button, {label: 'Cancel', minimal: true}),
+              )),
+          }),
+        m('h2', 'Nested Popups'),
+        m(
+          WidgetShowcase, {
+            renderWidget: () => m(
+              Popup,
+              {
+                trigger: m(Button, {label: 'Open the popup'}),
+              },
+              m(PopupMenu2,
+                {
+                  trigger: m(Button, {label: 'Select an option'}),
+                },
+                m(MenuItem, {label: 'Option 1'}),
+                m(MenuItem, {label: 'Option 2'}),
+              ),
+              m(Button, {
+                label: 'Done',
+                dismissPopup: true,
+              }),
+            ),
+          }),
     );
   },
 });

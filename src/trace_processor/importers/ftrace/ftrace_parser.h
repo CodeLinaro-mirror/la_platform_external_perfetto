@@ -216,6 +216,7 @@ class FtraceParser {
   void ParseWakeSourceActivate(int64_t timestamp, protozero::ConstBytes);
   void ParseWakeSourceDeactivate(int64_t timestamp, protozero::ConstBytes);
   void ParseSuspendResume(int64_t timestamp, protozero::ConstBytes);
+  void ParseSuspendResumeMinimal(int64_t timestamp, protozero::ConstBytes);
   void ParseSchedCpuUtilCfs(int64_t timestap, protozero::ConstBytes);
 
   void ParseFuncgraphEntry(int64_t timestamp,
@@ -288,6 +289,8 @@ class FtraceParser {
   const StringId gpu_freq_name_id_;
   const StringId cpu_idle_name_id_;
   const StringId suspend_resume_name_id_;
+  const StringId suspend_resume_minimal_name_id_;
+  const StringId suspend_resume_minimal_slice_name_id_;
   const StringId kfree_skb_name_id_;
   const StringId ion_total_id_;
   const StringId ion_change_id_;
@@ -350,6 +353,7 @@ class FtraceParser {
   const StringId cma_nr_test_fail_id_;
   const StringId syscall_ret_id_;
   const StringId syscall_args_id_;
+  const StringId replica_slice_id_;
   std::vector<StringId> syscall_arg_name_ids_;
 
   struct FtraceMessageStrings {
@@ -395,6 +399,9 @@ class FtraceParser {
   // A name collision is possible, always show if active wakelock exists
   // with a give name
   std::unordered_map<std::string, uint32_t> active_wakelock_to_count_;
+
+  // Record whether a suspend resume action is ongoing.
+  std::unordered_map<std::string, bool> ongoing_suspend_resume_actions;
 
   bool has_seen_first_ftrace_packet_ = false;
 

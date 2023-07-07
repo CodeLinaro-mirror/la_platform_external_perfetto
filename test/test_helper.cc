@@ -156,18 +156,6 @@ bool TestHelper::AttachConsumer(const std::string& key) {
   return success;
 }
 
-bool TestHelper::SaveTraceForBugreportAndWait() {
-  bool success = false;
-  auto checkpoint = CreateCheckpoint("bugreport");
-  auto callback = [&success, checkpoint](bool s, const std::string&) {
-    success = s;
-    checkpoint();
-  };
-  endpoint_->SaveTraceForBugreport(callback);
-  RunUntilCheckpoint("bugreport");
-  return success;
-}
-
 void TestHelper::CreateProducerProvidedSmb() {
   fake_producer_thread_.CreateProducerProvidedSmb();
 }
@@ -302,7 +290,7 @@ void TestHelper::OnTraceStats(bool, const TraceStats&) {}
 
 void TestHelper::OnObservableEvents(const ObservableEvents&) {}
 
-void TestHelper::OnSessionCloned(bool, const std::string&) {}
+void TestHelper::OnSessionCloned(const OnSessionClonedArgs&) {}
 
 // static
 const char* TestHelper::GetDefaultModeConsumerSocketName() {

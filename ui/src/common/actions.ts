@@ -14,7 +14,7 @@
 
 import {Draft} from 'immer';
 
-import {assertExists, assertTrue} from '../base/logging';
+import {assertExists, assertTrue, assertUnreachable} from '../base/logging';
 import {RecordConfig} from '../controller/record_config_types';
 import {globals} from '../frontend/globals';
 import {
@@ -24,6 +24,7 @@ import {
   tableColumnEquals,
   toggleEnabled,
 } from '../frontend/pivot_table_types';
+import {DebugTrackV2Config} from '../tracks/debug/slice_track';
 
 import {randomColor} from './colorizer';
 import {
@@ -40,10 +41,11 @@ import {
   CallsiteInfo,
   EngineMode,
   FlamegraphStateViewingOption,
+  FtraceFilterPatch,
   LoadedConfig,
-  LogsPagination,
   NewEngineMode,
   OmniboxState,
+  Pagination,
   PivotTableResult,
   PrimaryTrackSortKey,
   ProfileType,
@@ -59,9 +61,9 @@ import {
   UtidToTrackSortKey,
   VisibleState,
 } from './state';
-import {toNs} from './time';
+import {TPDuration, TPTime} from './time';
 
-const DEBUG_SLICE_TRACK_KIND = 'DebugSliceTrack';
+export const DEBUG_SLICE_TRACK_KIND = 'DebugSliceTrack';
 
 type StateDraft = Draft<State>;
 
@@ -87,8 +89,8 @@ export interface PostedTrace {
 }
 
 export interface PostedScrollToRange {
-  timeStart: number;
-  timeEnd: number;
+  timeStart: TPTime;
+  timeEnd: TPTime;
   viewPercentage?: number;
 }
 
@@ -274,11 +276,12 @@ export const StateActions = {
     };
   },
 
-  addDebugTrack(state: StateDraft, args: {engineId: string, name: string}):
+  addDebugTrack(
+      state: StateDraft,
+      args: {engineId: string, name: string, config: DebugTrackV2Config}):
       void {
         if (state.debugTrackId !== undefined) return;
         const trackId = generateNextId(state);
-        state.debugTrackId = trackId;
         this.addTrack(state, {
           id: trackId,
           engineId: args.engineId,
@@ -286,18 +289,15 @@ export const StateActions = {
           name: args.name,
           trackSortKey: PrimaryTrackSortKey.DEBUG_SLICE_TRACK,
           trackGroup: SCROLLING_TRACK_GROUP,
-          config: {
-            maxDepth: 1,
-          },
+          config: args.config,
         });
         this.toggleTrackPinned(state, {trackId});
       },
 
-  removeDebugTrack(state: StateDraft, _: {}): void {
-    const {debugTrackId} = state;
-    if (debugTrackId === undefined) return;
-    removeTrack(state, debugTrackId);
-    state.debugTrackId = undefined;
+  removeDebugTrack(state: StateDraft, args: {trackId: string}): void {
+    const track = state.tracks[args.trackId];
+    assertTrue(track.kind === DEBUG_SLICE_TRACK_KIND);
+    removeTrack(state, args.trackId);
   },
 
   removeVisualisedArgTracks(state: StateDraft, args: {trackIds: string[]}) {
@@ -396,20 +396,6 @@ export const StateActions = {
   updateTrackConfig(state: StateDraft, args: {id: string, config: {}}) {
     if (state.tracks[args.id] === undefined) return;
     state.tracks[args.id].config = args.config;
-  },
-
-  executeQuery(
-      state: StateDraft,
-      args: {queryId: string; query: string, engineId?: string}): void {
-    state.queries[args.queryId] = {
-      id: args.queryId,
-      query: args.query,
-      engineId: args.engineId,
-    };
-  },
-
-  deleteQuery(state: StateDraft, args: {queryId: string}): void {
-    delete state.queries[args.queryId];
   },
 
   moveTrack(
@@ -566,7 +552,7 @@ export const StateActions = {
 
   addAutomaticNote(
       state: StateDraft,
-      args: {timestamp: number, color: string, text: string}): void {
+      args: {timestamp: TPTime, color: string, text: string}): void {
     const id = generateNextId(state);
     state.notes[id] = {
       noteType: 'DEFAULT',
@@ -577,7 +563,7 @@ export const StateActions = {
     };
   },
 
-  addNote(state: StateDraft, args: {timestamp: number, color: string}): void {
+  addNote(state: StateDraft, args: {timestamp: TPTime, color: string}): void {
     const id = generateNextId(state);
     state.notes[id] = {
       noteType: 'DEFAULT',
@@ -620,14 +606,10 @@ export const StateActions = {
   },
 
   markArea(state: StateDraft, args: {area: Area, persistent: boolean}): void {
+    const {start, end, tracks} = args.area;
+    assertTrue(start <= end);
     const areaId = generateNextId(state);
-    assertTrue(args.area.endSec >= args.area.startSec);
-    state.areas[areaId] = {
-      id: areaId,
-      startSec: args.area.startSec,
-      endSec: args.area.endSec,
-      tracks: args.area.tracks,
-    };
+    state.areas[areaId] = {id: areaId, start, end, tracks};
     const noteId = args.persistent ? generateNextId(state) : '0';
     const color = args.persistent ? randomColor() : '#344596';
     state.notes[noteId] = {
@@ -681,7 +663,7 @@ export const StateActions = {
 
   selectCounter(
       state: StateDraft,
-      args: {leftTs: number, rightTs: number, id: number, trackId: string}):
+      args: {leftTs: TPTime, rightTs: TPTime, id: number, trackId: string}):
       void {
         state.currentSelection = {
           kind: 'COUNTER',
@@ -694,7 +676,7 @@ export const StateActions = {
 
   selectHeapProfile(
       state: StateDraft,
-      args: {id: number, upid: number, ts: number, type: ProfileType}): void {
+      args: {id: number, upid: number, ts: TPTime, type: ProfileType}): void {
     state.currentSelection = {
       kind: 'HEAP_PROFILE',
       id: args.id,
@@ -704,8 +686,8 @@ export const StateActions = {
     };
     this.openFlamegraph(state, {
       type: args.type,
-      startNs: toNs(state.traceTime.startSec),
-      endNs: args.ts,
+      start: state.traceTime.start,
+      end: args.ts,
       upids: [args.upid],
       viewingOption: DEFAULT_VIEWING_OPTION,
     });
@@ -714,8 +696,8 @@ export const StateActions = {
   selectPerfSamples(state: StateDraft, args: {
     id: number,
     upid: number,
-    leftTs: number,
-    rightTs: number,
+    leftTs: TPTime,
+    rightTs: TPTime,
     type: ProfileType
   }): void {
     state.currentSelection = {
@@ -728,8 +710,8 @@ export const StateActions = {
     };
     this.openFlamegraph(state, {
       type: args.type,
-      startNs: args.leftTs,
-      endNs: args.rightTs,
+      start: args.leftTs,
+      end: args.rightTs,
       upids: [args.upid],
       viewingOption: PERF_SAMPLES_KEY,
     });
@@ -737,16 +719,16 @@ export const StateActions = {
 
   openFlamegraph(state: StateDraft, args: {
     upids: number[],
-    startNs: number,
-    endNs: number,
+    start: TPTime,
+    end: TPTime,
     type: ProfileType,
     viewingOption: FlamegraphStateViewingOption
   }): void {
     state.currentFlamegraphState = {
       kind: 'FLAMEGRAPH_STATE',
       upids: args.upids,
-      startNs: args.startNs,
-      endNs: args.endNs,
+      start: args.start,
+      end: args.end,
       type: args.type,
       viewingOption: args.viewingOption,
       focusRegex: '',
@@ -795,6 +777,40 @@ export const StateActions = {
         state.pendingScrollId = args.scroll ? args.id : undefined;
       },
 
+  selectDebugSlice(state: StateDraft, args: {
+    id: number,
+    sqlTableName: string,
+    start: TPTime,
+    duration: TPDuration,
+    trackId: string,
+  }): void {
+    state.currentSelection = {
+      kind: 'DEBUG_SLICE',
+      id: args.id,
+      sqlTableName: args.sqlTableName,
+      start: args.start,
+      duration: args.duration,
+      trackId: args.trackId,
+    };
+  },
+
+  selectTopLevelScrollSlice(state: StateDraft, args: {
+    id: number,
+    sqlTableName: string,
+    start: TPTime,
+    duration: TPTime,
+    trackId: string,
+  }): void {
+    state.currentSelection = {
+      kind: 'TOP_LEVEL_SCROLL',
+      id: args.id,
+      sqlTableName: args.sqlTableName,
+      start: args.start,
+      duration: args.duration,
+      trackId: args.trackId,
+    };
+  },
+
   clearPendingScrollId(state: StateDraft, _: {}): void {
     state.pendingScrollId = undefined;
   },
@@ -823,8 +839,34 @@ export const StateActions = {
     state.currentSelection = null;
   },
 
-  updateLogsPagination(state: StateDraft, args: LogsPagination): void {
+  updateLogsPagination(state: StateDraft, args: Pagination): void {
     state.logsPagination = args;
+  },
+
+  updateFtracePagination(state: StateDraft, args: Pagination): void {
+    state.ftracePagination = args;
+  },
+
+  updateFtraceFilter(state: StateDraft, patch: FtraceFilterPatch) {
+    const {excludedNames: diffs} = patch;
+    const excludedNames = state.ftraceFilter.excludedNames;
+    for (const [addRemove, name] of diffs) {
+      switch (addRemove) {
+        case 'add':
+          if (!excludedNames.some((excluded: string) => excluded === name)) {
+            excludedNames.push(name);
+          }
+          break;
+        case 'remove':
+          state.ftraceFilter.excludedNames =
+              state.ftraceFilter.excludedNames.filter(
+                  (excluded: string) => excluded !== name);
+          break;
+        default:
+          assertUnreachable(addRemove);
+          break;
+      }
+    }
   },
 
   startRecording(state: StateDraft, _: {}): void {
@@ -864,25 +906,17 @@ export const StateActions = {
   },
 
   selectArea(state: StateDraft, args: {area: Area}): void {
+    const {start, end, tracks} = args.area;
+    assertTrue(start <= end);
     const areaId = generateNextId(state);
-    assertTrue(args.area.endSec >= args.area.startSec);
-    state.areas[areaId] = {
-      id: areaId,
-      startSec: args.area.startSec,
-      endSec: args.area.endSec,
-      tracks: args.area.tracks,
-    };
+    state.areas[areaId] = {id: areaId, start, end, tracks};
     state.currentSelection = {kind: 'AREA', areaId};
   },
 
   editArea(state: StateDraft, args: {area: Area, areaId: string}): void {
-    assertTrue(args.area.endSec >= args.area.startSec);
-    state.areas[args.areaId] = {
-      id: args.areaId,
-      startSec: args.area.startSec,
-      endSec: args.area.endSec,
-      tracks: args.area.tracks,
-    };
+    const {start, end, tracks} = args.area;
+    assertTrue(start <= end);
+    state.areas[args.areaId] = {id: args.areaId, start, end, tracks};
   },
 
   reSelectArea(state: StateDraft, args: {areaId: string, noteId: string}):
@@ -945,10 +979,6 @@ export const StateActions = {
     state.lastRecordingError = undefined;
   },
 
-  setAnalyzePageQuery(state: StateDraft, args: {query: string}): void {
-    state.analyzePageQuery = args.query;
-  },
-
   requestSelectedMetric(state: StateDraft, _: {}): void {
     if (!state.metrics.availableMetrics) throw Error('No metrics available');
     if (state.metrics.selectedIndex === undefined) {
@@ -1006,11 +1036,11 @@ export const StateActions = {
     state.searchIndex = args.index;
   },
 
-  setHoveredLogsTimestamp(state: StateDraft, args: {ts: number}) {
-    state.hoveredLogsTimestamp = args.ts;
+  setHoverCursorTimestamp(state: StateDraft, args: {ts: TPTime}) {
+    state.hoverCursorTimestamp = args.ts;
   },
 
-  setHoveredNoteTimestamp(state: StateDraft, args: {ts: number}) {
+  setHoveredNoteTimestamp(state: StateDraft, args: {ts: TPTime}) {
     state.hoveredNoteTimestamp = args.ts;
   },
 
