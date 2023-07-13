@@ -48,7 +48,6 @@ import {
   ProfileType,
 } from '../common/state';
 import {
-
   Duration,
   duration,
   Span,
@@ -387,6 +386,8 @@ export class TraceController extends Controller<States> {
     }
     this.engine = engine;
 
+    pluginManager.onTraceLoad(globals.store, engine);
+
     if (isMetatracingEnabled()) {
       this.engine.enableMetatrace(
         assertExists(getEnabledMetatracingCategories()));
@@ -567,8 +568,6 @@ export class TraceController extends Controller<States> {
         }));
       }
     }
-
-    pluginManager.onTraceLoad(globals.store, engine);
 
     return engineMode;
   }
