@@ -172,13 +172,17 @@ numThreadsK
 min (Rmin
 max (Rmax
 avg (Ravg
-¸
-9protos/perfetto/metrics/android/camera_unagg_metric.protoperfetto.protos"≠
+à
+9protos/perfetto/metrics/android/camera_unagg_metric.protoperfetto.protos"π
 AndroidCameraUnaggregatedMetric[
-gc_rss_and_dma (26.perfetto.protos.AndroidCameraUnaggregatedMetric.ValueRgcRssAndDma-
+gc_rss_and_dma (26.perfetto.protos.AndroidCameraUnaggregatedMetric.ValueRgcRssAndDma∏
 Value
-ts (Rts
-value (Rvalue
+ts (Rts
+gca_rss_val (R	gcaRssVal
+hal_rss_val (R	halRssVal0
+cameraserver_rss_val (RcameraserverRssVal
+dma_val (RdmaVal
+value (Rvalue
 Ì
 5protos/perfetto/metrics/android/display_metrics.protoperfetto.protos"¢
 AndroidDisplayMetrics4
@@ -896,8 +900,8 @@ m
 build_id (	RbuildId
 address (Raddress(
 google_lookup_id (	RgoogleLookupId
-˜
-3protos/perfetto/metrics/android/binder_metric.protoperfetto.protos"Æ
+ê
+3protos/perfetto/metrics/android/binder_metric.protoperfetto.protos"«
 AndroidBinderMetrice
 process_breakdown (28.perfetto.protos.AndroidBinderMetric.PerProcessBreakdownRprocessBreakdown{
 unaggregated_txn_breakdown (2=.perfetto.protos.AndroidBinderMetric.UnaggregatedTxnBreakdownRunaggregatedTxnBreakdown
@@ -906,9 +910,10 @@ m
 pid (Rpid
 
 slice_name (	R	sliceName
-count (Rcountï
+count (RcountÆ
 UnaggregatedTxnBreakdown
-	aidl_name (	RaidlName%
+	aidl_name (	RaidlName
+is_sync (RisSync%
 client_process (	RclientProcess#
 client_thread (	RclientThread$
 is_main_thread (RisMainThread

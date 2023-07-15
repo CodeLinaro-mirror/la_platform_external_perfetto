@@ -251,10 +251,11 @@ message AndroidBinderMetric {
     optional uint32 count = 4;
   }
 
-  // Next field id: 21
+  // Next field id: 22
   message UnaggregatedTxnBreakdown {
     // General
     optional string aidl_name = 1;
+    optional bool is_sync = 21;
     // Client
     // Removed: was binder_txn_id
     reserved 2;
@@ -335,7 +336,11 @@ message AndroidCameraMetric {
 message AndroidCameraUnaggregatedMetric {
   message Value {
     optional int64 ts = 1;
-    optional double value = 2;
+    optional double gca_rss_val = 2;
+    optional double hal_rss_val = 3;
+    optional double cameraserver_rss_val = 4;
+    optional double dma_val = 5;
+    optional double value = 6;
   }
 
   // Timeseries for the sum of DMA and RSS across GCA, cameraserver
