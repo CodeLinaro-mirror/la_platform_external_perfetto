@@ -89,16 +89,16 @@ class TablesSched(TestSuite):
         """,
         out=Csv("""
         "id","type","ts","thread_state_id","irq_context","utid","waker_utid"
-        0,"spurious_sched_wakeup",1735850782904,395,0,230,1465
-        1,"spurious_sched_wakeup",1736413914899,852,0,230,1467
-        2,"spurious_sched_wakeup",1736977755745,1261,0,230,1469
-        3,"spurious_sched_wakeup",1737046900004,1434,0,1472,1473
-        4,"spurious_sched_wakeup",1737047159060,1463,0,1474,1472
-        5,"spurious_sched_wakeup",1737081636170,2721,0,1214,1319
-        6,"spurious_sched_wakeup",1737108696536,4684,0,501,557
-        7,"spurious_sched_wakeup",1737153309978,6080,0,11,506
-        8,"spurious_sched_wakeup",1737165240546,6562,0,565,499
-        9,"spurious_sched_wakeup",1737211563344,8645,0,178,1195
+        0,"spurious_sched_wakeup",1735850782904,422,0,230,1465
+        1,"spurious_sched_wakeup",1736413914899,884,0,230,1467
+        2,"spurious_sched_wakeup",1736977755745,1295,0,230,1469
+        3,"spurious_sched_wakeup",1737046900004,1468,0,1472,1473
+        4,"spurious_sched_wakeup",1737047159060,1497,0,1474,1472
+        5,"spurious_sched_wakeup",1737081636170,2987,0,1214,1319
+        6,"spurious_sched_wakeup",1737108696536,5005,0,501,557
+        7,"spurious_sched_wakeup",1737153309978,6426,0,11,506
+        8,"spurious_sched_wakeup",1737165240546,6910,0,565,499
+        9,"spurious_sched_wakeup",1737211563344,8994,0,178,1195
         """))
 
   def test_raw_common_flags(self):
@@ -175,7 +175,7 @@ class TablesSched(TestSuite):
           blocked_state,
           blocked_function
         FROM experimental_thread_executing_span_graph
-          WHERE id = 348
+          WHERE id = 375
         """,
         out=Csv("""
         "ts","dur","tid","pid","thread_name","process_name","waker_thread_name","waker_process_name","blocked_dur","blocked_state","blocked_function"
@@ -273,23 +273,28 @@ class TablesSched(TestSuite):
           blocked_state,
           blocked_function,
           height,
-          is_leaf
+          is_leaf,
+          leaf_ts,
+          leaf_blocked_dur,
+          leaf_blocked_state,
+          leaf_blocked_function
         FROM EXPERIMENTAL_THREAD_EXECUTING_SPAN_ANCESTORS(NULL)
+        WHERE leaf_blocked_function IS NOT NULL
         ORDER BY height DESC, ts, tid
         LIMIT 10
         """,
         out=Csv("""
-        "ts","dur","tid","pid","thread_name","process_name","waker_thread_name","waker_process_name","blocked_dur","blocked_state","blocked_function","height","is_leaf"
-        1740252621947,35807217,3548,3487,"AsyncTask #1","com.android.providers.media.module","binder:553_7","/system/bin/mediaserver",16688,"S","[NULL]",153,0
-        1740287823247,9522163,282,282,"f2fs_ckpt-254:5","f2fs_ckpt-254:5","AsyncTask #1","com.android.providers.media.module",332115250,"S","[NULL]",152,0
-        1740252621947,35807217,3548,3487,"AsyncTask #1","com.android.providers.media.module","binder:553_7","/system/bin/mediaserver",16688,"S","[NULL]",151,0
-        1740297282282,13298848,3548,3487,"AsyncTask #1","com.android.providers.media.module","f2fs_ckpt-254:5","f2fs_ckpt-254:5",8853118,"D","f2fs_issue_checkpoint",151,0
-        1740287823247,9522163,282,282,"f2fs_ckpt-254:5","f2fs_ckpt-254:5","AsyncTask #1","com.android.providers.media.module",332115250,"S","[NULL]",150,0
-        1740310563850,141705,2134,553,"binder:553_3","/system/bin/mediaserver","AsyncTask #1","com.android.providers.media.module",53196161,"S","[NULL]",150,0
-        1740297282282,13298848,3548,3487,"AsyncTask #1","com.android.providers.media.module","f2fs_ckpt-254:5","f2fs_ckpt-254:5",8853118,"D","f2fs_issue_checkpoint",149,0
-        1740310673843,167265,3548,3487,"AsyncTask #1","com.android.providers.media.module","binder:553_3","/system/bin/mediaserver",92713,"S","[NULL]",149,0
-        1740310563850,141705,2134,553,"binder:553_3","/system/bin/mediaserver","AsyncTask #1","com.android.providers.media.module",53196161,"S","[NULL]",148,0
-        1740310830675,146216,2134,553,"binder:553_3","/system/bin/mediaserver","AsyncTask #1","com.android.providers.media.module",125120,"S","[NULL]",148,0
+        "ts","dur","tid","pid","thread_name","process_name","waker_thread_name","waker_process_name","blocked_dur","blocked_state","blocked_function","height","is_leaf","leaf_ts","leaf_blocked_dur","leaf_blocked_state","leaf_blocked_function"
+        1737172465260,29548030,2052,2043,"FinalizerDaemon","com.android.deskclock","FinalizerWatchd","com.android.camera2",11770793,"D","rwsem_down_write_slowpath",5,0,1737197989304,9855602,"D","rwsem_down_write_slowpath"
+        1737188135137,13870797,2223,2206,"HeapTaskDaemon","com.android.calendar","FinalizerDaemon","com.android.deskclock",4102877,"D","rwsem_down_write_slowpath",4,0,1737197989304,9855602,"D","rwsem_down_write_slowpath"
+        1737192309903,9714420,2368,2358,"FinalizerWatchd","com.android.dynsystem:dynsystem","HeapTaskDaemon","com.android.calendar",7296983,"D","rwsem_down_write_slowpath",4,0,1737202220876,207586,"D","rwsem_down_write_slowpath"
+        1737163289015,17475229,2322,2311,"binder:2311_1","com.android.contacts","android.bg","com.android.quicksearchbox",27986951,"D","rwsem_down_write_slowpath",3,0,1737188046830,14783279,"D","rwsem_down_write_slowpath"
+        1737172465260,29548030,2052,2043,"FinalizerDaemon","com.android.deskclock","FinalizerWatchd","com.android.camera2",11770793,"D","rwsem_down_write_slowpath",3,0,1737183285297,3424846,"D","rwsem_down_write_slowpath"
+        1737192309903,9714420,2368,2358,"FinalizerWatchd","com.android.dynsystem:dynsystem","HeapTaskDaemon","com.android.calendar",7296983,"D","rwsem_down_write_slowpath",3,0,1737197989304,9855602,"D","rwsem_down_write_slowpath"
+        1737202014546,94607,2282,2272,"FinalizerWatchd","com.android.camera2","FinalizerWatchd","com.android.dynsystem:dynsystem",723969,"D","rwsem_down_write_slowpath",3,0,1737202220876,207586,"D","rwsem_down_write_slowpath"
+        1737179755966,8288639,2100,2093,"HeapTaskDaemon","com.android.localtransport","binder:2311_1","com.android.contacts",8507685,"D","rwsem_down_write_slowpath",2,0,1737188046830,14783279,"D","rwsem_down_write_slowpath"
+        1737179861894,4170366,2223,2206,"HeapTaskDaemon","com.android.calendar","FinalizerDaemon","com.android.deskclock",63556,"D","rwsem_down_write_slowpath",2,0,1737183285297,3424846,"D","rwsem_down_write_slowpath"
+        1737179861894,4170366,2223,2206,"HeapTaskDaemon","com.android.calendar","FinalizerDaemon","com.android.deskclock",63556,"D","rwsem_down_write_slowpath",2,0,1737184034149,735476,"D","rwsem_down_write_slowpath"
         """))
 
   def test_thread_executing_span_descendants_id(self):
@@ -303,22 +308,15 @@ class TablesSched(TestSuite):
           depth,
           is_root,
           COUNT(thread_name) AS count
-        FROM EXPERIMENTAL_THREAD_EXECUTING_SPAN_DESCENDANTS(10834)
+        FROM EXPERIMENTAL_THREAD_EXECUTING_SPAN_DESCENDANTS(22886)
         GROUP BY 1,2,3,4
         ORDER BY depth
         """,
         out=Csv("""
         "thread_name","waker_thread_name","depth","is_root","count"
-        "android.hardwar","android.bg",0,0,1
-        "android.bg","android.hardwar",1,0,1
-        "android.hardwar","android.bg",2,0,1
-        "android.bg","android.hardwar",3,0,1
-        "logd.writer","android.bg",4,0,1
-        "statsd.writer","android.bg",4,0,4
-        "system_server","android.bg",4,0,32
-        "binder:398_2","statsd.writer",5,0,3
-        "logd.reader.per","logd.writer",5,0,1
-        "logcat","logd.reader.per",6,0,1
+        "SensorService","android.hardwar",0,1,1
+        "android.ui","SensorService",1,0,1
+        "system_server","SensorService",1,0,1
         """))
 
   def test_thread_executing_span_ancestors_id(self):
@@ -331,12 +329,12 @@ class TablesSched(TestSuite):
           waker_thread_name,
           height,
           is_leaf
-        FROM EXPERIMENTAL_THREAD_EXECUTING_SPAN_ANCESTORS(10840) ORDER BY height
+        FROM EXPERIMENTAL_THREAD_EXECUTING_SPAN_ANCESTORS(15601) ORDER BY height
         """,
         out=Csv("""
         "thread_name","waker_thread_name","height","is_leaf"
-        "android.hardwar","android.bg",0,0
-        "android.bg","android.hardwar",1,0
+        "rcu_exp_gp_kthr","binder:243_4",0,1
+        "binder:243_4","init",1,0
         """))
 
   def test_thread_executing_span_from_non_sleep_thread_state(self):
@@ -344,11 +342,11 @@ class TablesSched(TestSuite):
         trace=DataPath('sched_wakeup_trace.atr'),
         query="""
         SELECT IMPORT('experimental.thread_executing_span');
-        SELECT EXPERIMENTAL_THREAD_EXECUTING_SPAN_ID_FROM_THREAD_STATE_ID(11933) AS thread_executing_span_id
+        SELECT EXPERIMENTAL_THREAD_EXECUTING_SPAN_ID_FROM_THREAD_STATE_ID(16170) AS thread_executing_span_id
         """,
         out=Csv("""
         "thread_executing_span_id"
-        11888
+        16022
         """))
 
   def test_thread_executing_span_from_sleep_thread_state(self):
@@ -356,7 +354,7 @@ class TablesSched(TestSuite):
         trace=DataPath('sched_wakeup_trace.atr'),
         query="""
         SELECT IMPORT('experimental.thread_executing_span');
-        SELECT EXPERIMENTAL_THREAD_EXECUTING_SPAN_ID_FROM_THREAD_STATE_ID(11845) AS thread_executing_span_id
+        SELECT EXPERIMENTAL_THREAD_EXECUTING_SPAN_ID_FROM_THREAD_STATE_ID(15957) AS thread_executing_span_id
         """,
         out=Csv("""
         "thread_executing_span_id"

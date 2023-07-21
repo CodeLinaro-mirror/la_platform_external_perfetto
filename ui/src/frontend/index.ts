@@ -50,10 +50,12 @@ import {postMessageHandler} from './post_message_handler';
 import {QueryPage} from './query_page';
 import {RecordPage, updateAvailableAdbDevices} from './record_page';
 import {RecordPageV2} from './record_page_v2';
-import {Router} from './router';
+import {Route, Router} from './router';
 import {CheckHttpRpcConnection} from './rpc_http_dialog';
+import {executeSearch} from './search_handler';
 import {SqlTableTab} from './sql_table/tab';
 import {SqlTables} from './sql_table/well_known_tables';
+import {shareTrace} from './trace_attrs';
 import {TraceInfoPage} from './trace_info_page';
 import {maybeOpenTraceFromRoute} from './trace_url_handler';
 import {ViewerPage} from './viewer_page';
@@ -101,6 +103,22 @@ function setExtensionAvailability(available: boolean) {
   globals.dispatch(Actions.setExtensionAvailable({
     available,
   }));
+}
+
+function routeChange(route: Route) {
+  raf.scheduleFullRedraw();
+  maybeOpenTraceFromRoute(route);
+  if (route.fragment) {
+    // This needs to happen after the next redraw call. It's not enough
+    // to use setTimeout(..., 0); since that may occur before the
+    // redraw scheduled above.
+    raf.addPendingCallback(() => {
+      const e = document.getElementById(route.fragment);
+      if (e) {
+        e.scrollIntoView();
+      }
+    });
+  }
 }
 
 function setupContentSecurityPolicy() {
@@ -206,10 +224,7 @@ function main() {
     '/info': TraceInfoPage,
     '/widgets': WidgetsPage,
   });
-  router.onRouteChanged = (route) => {
-    raf.scheduleFullRedraw();
-    maybeOpenTraceFromRoute(route);
-  };
+  router.onRouteChanged = routeChange;
 
   // These need to be set before globals.initialize.
   const route = Router.parseUrl(window.location.href);
@@ -266,6 +281,39 @@ function main() {
                 displayName: 'slice',
               },
             });
+          },
+        },
+        {
+          id: 'dev.perfetto.ToggleLeftSidebar',
+          name: 'Toggle left sidebar',
+          callback: () => {
+            globals.dispatch(Actions.toggleSidebar({}));
+          },
+        },
+        {
+          id: 'dev.perfetto.TogglePerformanceMetrics',
+          name: 'Toggle performance metrics',
+          callback: () => {
+            globals.dispatch(Actions.togglePerfDebug({}));
+          },
+        },
+        {
+          id: 'dev.perfetto.ShareTrace',
+          name: 'Share trace',
+          callback: shareTrace,
+        },
+        {
+          id: 'dev.perfetto.SearchNext',
+          name: 'Go to next search result',
+          callback: () => {
+            executeSearch();
+          },
+        },
+        {
+          id: 'dev.perfetto.SearchPrev',
+          name: 'Go to previous search result',
+          callback: () => {
+            executeSearch(true);
           },
         },
       ];
@@ -387,7 +435,7 @@ function onCssLoaded() {
 
     // Handles the initial ?local_cache_key=123 or ?s=permalink or ?url=...
     // cases.
-    maybeOpenTraceFromRoute(route);
+    routeChange(route);
   });
 }
 
