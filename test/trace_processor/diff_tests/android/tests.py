@@ -523,7 +523,7 @@ class Android(TestSuite):
       SELECT * FROM android_io_f2fs_counter_stats;
       """,
         out=Csv("""
-        "counter_name","counter_sum","counter_max","counter_min","counter_dur","counter_count","counter_avg"
+        "name","sum","max","min","dur","count","avg"
         "read_app_total",580966.000000,567184.000000,13782.000000,2515275969,2,290483.000000
         "read_app_buffered",580966.000000,567184.000000,13782.000000,2515275969,2,290483.000000
         "write_cp_node",94208.000000,94208.000000,0.000000,2515275969,2,47104.000000
@@ -542,10 +542,6 @@ class Android(TestSuite):
         "write_sync_meta_avg",1.000000,1.000000,0.000000,2515276848,2,0.500000
         "write_sync_data_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "write_sync_data_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
-        "write_gc_node",0.000000,0.000000,0.000000,2515275969,2,0.000000
-        "write_gc_data",0.000000,0.000000,0.000000,2515275969,2,0.000000
-        "write_fs_meta",0.000000,0.000000,0.000000,2515275969,2,0.000000
-        "write_cp_data",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "write_async_node_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "write_async_node_cnt",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "write_async_node_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
@@ -555,21 +551,25 @@ class Android(TestSuite):
         "write_async_data_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "write_async_data_cnt",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "write_async_data_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
-        "write_app_direct",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_node_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "read_node_cnt",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "read_node_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "read_meta_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "read_meta_cnt",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "read_meta_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
+        "read_data_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
+        "read_data_cnt",0.000000,0.000000,0.000000,2515276848,2,0.000000
+        "read_data_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
+        "write_gc_node",0.000000,0.000000,0.000000,2515275969,2,0.000000
+        "write_gc_data",0.000000,0.000000,0.000000,2515275969,2,0.000000
+        "write_fs_meta",0.000000,0.000000,0.000000,2515275969,2,0.000000
+        "write_cp_data",0.000000,0.000000,0.000000,2515275969,2,0.000000
+        "write_app_direct",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_fs_node",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_fs_meta",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_fs_gdata",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_fs_data",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_fs_cdata",0.000000,0.000000,0.000000,2515275969,2,0.000000
-        "read_data_peak",0.000000,0.000000,0.000000,2515276848,2,0.000000
-        "read_data_cnt",0.000000,0.000000,0.000000,2515276848,2,0.000000
-        "read_data_avg",0.000000,0.000000,0.000000,2515276848,2,0.000000
         "read_app_mapped",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "read_app_direct",0.000000,0.000000,0.000000,2515275969,2,0.000000
         "other_fs_discard",0.000000,0.000000,0.000000,2515275969,2,0.000000
@@ -599,6 +599,20 @@ class Android(TestSuite):
         3516,"fg",3487,"com.android.providers.media.module",2425,65077,8,8
         3548,"AsyncTask #1",3487,"com.android.providers.media.module",2643,65077,8,8
       """))
+
+  def test_f2fs_aggregate_write_stats(self):
+      return DiffTestBlueprint(
+        trace=DataPath('android_monitor_contention_trace.atr'),
+        query= """
+        SELECT IMPORT('android.io');
+        SELECT total_write_count, distinct_processes, total_bytes_written,
+               distinct_device_count, distict_inode_count, distinct_thread_count
+        FROM android_io_f2fs_aggregate_write_stats
+        """,
+        out= Csv("""
+        "total_write_count","distinct_processes","total_bytes_written","distinct_device_count","distict_inode_count","distinct_thread_count"
+        203,3,375180,1,13,6
+        """))
 
   def test_binder_async_txns(self):
     return DiffTestBlueprint(
