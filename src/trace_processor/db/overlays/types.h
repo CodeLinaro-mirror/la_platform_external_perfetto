@@ -16,21 +16,32 @@
 #ifndef SRC_TRACE_PROCESSOR_DB_OVERLAYS_TYPES_H_
 #define SRC_TRACE_PROCESSOR_DB_OVERLAYS_TYPES_H_
 
+#include <variant>
+#include "perfetto/base/logging.h"
 #include "src/trace_processor/containers/bit_vector.h"
 #include "src/trace_processor/containers/row_map.h"
+#include "src/trace_processor/db/storage/types.h"
 
 namespace perfetto {
 namespace trace_processor {
 namespace overlays {
 
+using Range = RowMap::Range;
+
 // A range of indices in the table space.
 struct TableRange {
-  RowMap::Range range;
+  TableRange(uint32_t start, uint32_t end) : range(start, end) {}
+  explicit TableRange(Range r) : range(r) {}
+
+  Range range;
 };
 
 // A range of indices in the storage space.
 struct StorageRange {
-  RowMap::Range range;
+  StorageRange(uint32_t start, uint32_t end) : range(start, end) {}
+  explicit StorageRange(Range r) : range(r) {}
+
+  Range range;
 };
 
 // A BitVector with set bits corresponding to indices in the table space.
@@ -43,14 +54,39 @@ struct StorageBitVector {
   BitVector bv;
 };
 
+using RangeOrBitVector = std::variant<Range, BitVector>;
+
+struct TableRangeOrBitVector {
+  explicit TableRangeOrBitVector(Range range) : val(range) {}
+  explicit TableRangeOrBitVector(BitVector bv) : val(std::move(bv)) {}
+
+  bool IsRange() const { return std::holds_alternative<Range>(val); }
+  bool IsBitVector() const { return std::holds_alternative<BitVector>(val); }
+
+  BitVector TakeIfBitVector() {
+    PERFETTO_DCHECK(IsBitVector());
+    return std::move(*std::get_if<BitVector>(&val));
+  }
+  Range TakeIfRange() {
+    PERFETTO_DCHECK(IsRange());
+    return std::move(*std::get_if<Range>(&val));
+  }
+
+  RangeOrBitVector val = Range();
+};
+
 // Represents a vector of indices in the table space.
 struct TableIndexVector {
   std::vector<uint32_t> indices;
+
+  uint32_t size() const { return static_cast<uint32_t>(indices.size()); }
 };
 
 // Represents a vector of indices in the storage space.
 struct StorageIndexVector {
   std::vector<uint32_t> indices;
+
+  uint32_t size() const { return static_cast<uint32_t>(indices.size()); }
 };
 
 // A subset of FilterOp containing operations which can be handled by
@@ -60,6 +96,16 @@ enum class OverlayOp {
   kIsNotNull,
   kOther,
 };
+
+inline OverlayOp FilterOpToOverlayOp(FilterOp op) {
+  if (op == FilterOp::kIsNull) {
+    return OverlayOp::kIsNull;
+  }
+  if (op == FilterOp::kIsNotNull) {
+    return OverlayOp::kIsNotNull;
+  }
+  return OverlayOp::kOther;
+}
 
 // Contains estimates of the cost for each of method in this class per row.
 struct CostEstimatePerRow {

@@ -355,16 +355,28 @@ perfetto_cc_binary(
         ":libperfetto_client_experimental",
         ":protos_perfetto_common_cpp",
         ":protos_perfetto_common_zero",
+        ":protos_perfetto_config_android_cpp",
         ":protos_perfetto_config_android_zero",
+        ":protos_perfetto_config_cpp",
+        ":protos_perfetto_config_ftrace_cpp",
         ":protos_perfetto_config_ftrace_zero",
+        ":protos_perfetto_config_gpu_cpp",
         ":protos_perfetto_config_gpu_zero",
+        ":protos_perfetto_config_inode_file_cpp",
         ":protos_perfetto_config_inode_file_zero",
+        ":protos_perfetto_config_interceptors_cpp",
         ":protos_perfetto_config_interceptors_zero",
+        ":protos_perfetto_config_power_cpp",
         ":protos_perfetto_config_power_zero",
+        ":protos_perfetto_config_process_stats_cpp",
         ":protos_perfetto_config_process_stats_zero",
+        ":protos_perfetto_config_profiling_cpp",
         ":protos_perfetto_config_profiling_zero",
+        ":protos_perfetto_config_statsd_cpp",
         ":protos_perfetto_config_statsd_zero",
+        ":protos_perfetto_config_sys_stats_cpp",
         ":protos_perfetto_config_sys_stats_zero",
+        ":protos_perfetto_config_system_info_cpp",
         ":protos_perfetto_config_system_info_zero",
         ":protos_perfetto_config_track_event_cpp",
         ":protos_perfetto_config_track_event_zero",
@@ -997,6 +1009,7 @@ perfetto_cc_library(
     name = "src_base_unix_socket",
     srcs = [
         "src/base/unix_socket.cc",
+        "src/base/vm_sockets.h",
     ],
     hdrs = [
         ":include_perfetto_base_base",
@@ -1288,6 +1301,8 @@ perfetto_cc_library(
 perfetto_filegroup(
     name = "src_trace_processor_db_overlays_overlays",
     srcs = [
+        "src/trace_processor/db/overlays/arrangement_overlay.cc",
+        "src/trace_processor/db/overlays/arrangement_overlay.h",
         "src/trace_processor/db/overlays/null_overlay.cc",
         "src/trace_processor/db/overlays/null_overlay.h",
         "src/trace_processor/db/overlays/selector_overlay.cc",
@@ -1302,6 +1317,8 @@ perfetto_filegroup(
 perfetto_filegroup(
     name = "src_trace_processor_db_storage_storage",
     srcs = [
+        "src/trace_processor/db/storage/id_storage.cc",
+        "src/trace_processor/db/storage/id_storage.h",
         "src/trace_processor/db/storage/numeric_storage.cc",
         "src/trace_processor/db/storage/numeric_storage.h",
         "src/trace_processor/db/storage/storage.cc",
@@ -1321,8 +1338,8 @@ perfetto_filegroup(
         "src/trace_processor/db/column_storage.h",
         "src/trace_processor/db/column_storage_overlay.h",
         "src/trace_processor/db/compare.h",
-        "src/trace_processor/db/null_overlay.cc",
-        "src/trace_processor/db/null_overlay.h",
+        "src/trace_processor/db/query_executor.cc",
+        "src/trace_processor/db/query_executor.h",
         "src/trace_processor/db/table.cc",
         "src/trace_processor/db/table.h",
         "src/trace_processor/db/typed_column.h",
@@ -1788,6 +1805,7 @@ perfetto_filegroup(
         "src/trace_processor/metrics/sql/android/android_simpleperf.sql",
         "src/trace_processor/metrics/sql/android/android_startup.sql",
         "src/trace_processor/metrics/sql/android/android_surfaceflinger.sql",
+        "src/trace_processor/metrics/sql/android/android_sysui_notifications_blocking_calls_metric.sql",
         "src/trace_processor/metrics/sql/android/android_task_names.sql",
         "src/trace_processor/metrics/sql/android/android_trace_quality.sql",
         "src/trace_processor/metrics/sql/android/android_trusty_workqueues.sql",
@@ -1908,6 +1926,7 @@ perfetto_filegroup(
         "src/trace_processor/metrics/sql/chrome/scroll_jank_cause_blocking_touch_move.sql",
         "src/trace_processor/metrics/sql/chrome/scroll_jank_cause_get_bitmap.sql",
         "src/trace_processor/metrics/sql/chrome/scroll_jank_cause_queuing_delay.sql",
+        "src/trace_processor/metrics/sql/chrome/scroll_jank_v3.sql",
         "src/trace_processor/metrics/sql/chrome/sufficient_chrome_processes.sql",
         "src/trace_processor/metrics/sql/chrome/test_chrome_metric.sql",
         "src/trace_processor/metrics/sql/chrome/touch_flow_event.sql",
@@ -1929,7 +1948,6 @@ perfetto_filegroup(
 perfetto_filegroup(
     name = "src_trace_processor_metrics_sql_experimental_experimental",
     srcs = [
-        "src/trace_processor/metrics/sql/experimental/blink_gc_metric.sql",
         "src/trace_processor/metrics/sql/experimental/chrome_dropped_frames.sql",
         "src/trace_processor/metrics/sql/experimental/chrome_long_latency.sql",
         "src/trace_processor/metrics/sql/experimental/frame_times.sql",
@@ -2235,9 +2253,11 @@ perfetto_filegroup(
 perfetto_filegroup(
     name = "src_trace_processor_stdlib_chrome_chrome_sql",
     srcs = [
+        "src/trace_processor/stdlib/chrome/chrome_scroll_janks.sql",
         "src/trace_processor/stdlib/chrome/chrome_scrolls.sql",
         "src/trace_processor/stdlib/chrome/cpu_powerups.sql",
         "src/trace_processor/stdlib/chrome/histograms.sql",
+        "src/trace_processor/stdlib/chrome/metadata.sql",
         "src/trace_processor/stdlib/chrome/speedometer.sql",
     ],
 )
@@ -2260,7 +2280,10 @@ perfetto_filegroup(
     name = "src_trace_processor_stdlib_experimental_experimental",
     srcs = [
         "src/trace_processor/stdlib/experimental/android_broadcast.sql",
+        "src/trace_processor/stdlib/experimental/flat_slices.sql",
         "src/trace_processor/stdlib/experimental/proto_path.sql",
+        "src/trace_processor/stdlib/experimental/slices.sql",
+        "src/trace_processor/stdlib/experimental/thread_executing_span.sql",
     ],
 )
 
@@ -3925,8 +3948,10 @@ perfetto_proto_library(
 perfetto_proto_library(
     name = "protos_perfetto_metrics_android_protos",
     srcs = [
+        "protos/perfetto/metrics/android/android_blocking_call.proto",
         "protos/perfetto/metrics/android/android_blocking_calls_cuj_metric.proto",
         "protos/perfetto/metrics/android/android_frame_timeline_metric.proto",
+        "protos/perfetto/metrics/android/android_sysui_notifications_blocking_calls_metric.proto",
         "protos/perfetto/metrics/android/android_trusty_workqueues.proto",
         "protos/perfetto/metrics/android/batt_metric.proto",
         "protos/perfetto/metrics/android/binder_metric.proto",
@@ -3989,7 +4014,6 @@ perfetto_proto_library(
     srcs = [
         "protos/perfetto/metrics/chrome/all_chrome_metrics.proto",
         "protos/perfetto/metrics/chrome/args_class_names.proto",
-        "protos/perfetto/metrics/chrome/blink_gc_metric.proto",
         "protos/perfetto/metrics/chrome/dropped_frames.proto",
         "protos/perfetto/metrics/chrome/frame_times.proto",
         "protos/perfetto/metrics/chrome/histogram_hashes.proto",
@@ -5638,4 +5662,9 @@ perfetto_py_binary(
     data = ["CHANGELOG"],
     main = "tools/write_version_header.py",
     python_version = "PY3",
+)
+
+exports_files(
+    ["ui/src/assets/favicon.png"],
+    visibility = PERFETTO_CONFIG.public_visibility,
 )
