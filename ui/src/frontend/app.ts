@@ -18,6 +18,7 @@ import {Trash} from '../base/disposable';
 import {findRef} from '../base/dom_utils';
 import {FuzzyFinder} from '../base/fuzzy';
 import {assertExists} from '../base/logging';
+import {undoCommonChatAppReplacements} from '../base/string_utils';
 import {Actions} from '../common/actions';
 import {setTimestampFormat, TimestampFormat} from '../common/time';
 import {raf} from '../core/raf_scheduler';
@@ -187,7 +188,11 @@ export class App implements m.ClassComponent {
       key: 'b',
       mods: ['Mod'],
       allowInEditable: true,
-      callback: () => globals.dispatch(Actions.toggleSidebar({})),
+      callback:
+          () => {
+            globals.commandManager.runCommand(
+                'dev.perfetto.CoreCommands.ToggleLeftSidebar');
+          },
     },
   ];
 
@@ -230,11 +235,6 @@ export class App implements m.ClassComponent {
               },
             });
           },
-    },
-    {
-      id: 'perfetto.ToggleLeftSidebar',
-      name: 'Toggle left sidebar',
-      callback: () => globals.dispatch(Actions.toggleSidebar({})),
     },
     {
       id: 'perfetto.TogglePerformanceMetrics',
@@ -423,7 +423,7 @@ export class App implements m.ClassComponent {
       },
       onSubmit: (value, alt) => {
         runQueryInNewTab(
-            value,
+            undoCommonChatAppReplacements(value),
             alt ? 'Pinned query' : 'Omnibox query',
             alt ? undefined : 'omnibox_query');
       },

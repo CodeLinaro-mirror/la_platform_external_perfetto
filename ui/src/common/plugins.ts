@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
+import {ViewerImpl, ViewerProxy} from '../common/viewer';
 import {
   TrackControllerFactory,
   trackControllerRegistry,
@@ -22,6 +22,7 @@ import {trackRegistry} from '../frontend/track_registry';
 import {
   Command,
   EngineProxy,
+  MetricVisualisation,
   PluginContext,
   PluginInfo,
   Store,
@@ -37,6 +38,8 @@ import {State} from './state';
 interface TracePluginContext {
   plugin: TracePlugin;
   store: Store<unknown>;
+  engine: EngineProxy;
+  viewer: ViewerProxy;
 }
 
 // Every plugin gets its own PluginContext. This is how we keep track
@@ -77,11 +80,14 @@ export class PluginContextImpl implements PluginContext {
     }
   }
 
-  onTraceLoad(store: Store<State>, engine: Engine): void {
+  onTraceLoad(store: Store<State>, engine: Engine, viewer: ViewerImpl): void {
     const TracePluginClass = this.tracePluginFactory;
     if (TracePluginClass) {
       // Make an engine proxy for this plugin.
       const engineProxy: EngineProxy = engine.getProxy(this.pluginId);
+
+      // Make a viewer for this plugin.
+      const viewerProxy: ViewerProxy = viewer.getProxy(this.pluginId);
 
       // Extract the initial state and pass to the plugin factory for migration.
       const initialState = store.state.plugins[this.pluginId];
@@ -97,8 +103,10 @@ export class PluginContextImpl implements PluginContext {
 
       // Instantiate the plugin.
       this._tracePluginCtx = {
-        plugin: new TracePluginClass(storeProxy, engineProxy),
+        plugin: new TracePluginClass(storeProxy, engineProxy, viewerProxy),
         store: storeProxy,
+        engine: engineProxy,
+        viewer: viewerProxy,
       };
     }
   }
@@ -107,6 +115,8 @@ export class PluginContextImpl implements PluginContext {
     if (this._tracePluginCtx) {
       this._tracePluginCtx.plugin.dispose();
       this._tracePluginCtx.store.dispose();
+      this._tracePluginCtx.engine.dispose();
+      this._tracePluginCtx.viewer.dispose();
       this._tracePluginCtx = undefined;
     }
   }
@@ -178,9 +188,9 @@ export class PluginManager {
     return promises;
   }
 
-  onTraceLoad(store: Store<State>, engine: Engine): void {
+  onTraceLoad(store: Store<State>, engine: Engine, viewer: ViewerImpl): void {
     for (const context of this.contexts.values()) {
-      context.onTraceLoad(store, engine);
+      context.onTraceLoad(store, engine, viewer);
     }
   }
 
@@ -195,6 +205,17 @@ export class PluginManager {
       const tracePlugin = ctx.tracePlugin;
       if (tracePlugin && tracePlugin.commands) {
         return tracePlugin.commands();
+      } else {
+        return [];
+      }
+    });
+  }
+
+  metricVisualisations(): MetricVisualisation[] {
+    return Array.from(this.contexts.values()).flatMap((ctx) => {
+      const tracePlugin = ctx.tracePlugin;
+      if (tracePlugin && tracePlugin.metricVisualisations) {
+        return tracePlugin.metricVisualisations();
       } else {
         return [];
       }

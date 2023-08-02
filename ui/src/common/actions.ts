@@ -1008,40 +1008,12 @@ export const StateActions = {
     state.lastRecordingError = undefined;
   },
 
-  requestSelectedMetric(state: StateDraft, _: {}): void {
-    if (!state.metrics.availableMetrics) throw Error('No metrics available');
-    if (state.metrics.selectedIndex === undefined) {
-      throw Error('No metric selected');
-    }
-    state.metrics.requestedMetric =
-        state.metrics.availableMetrics[state.metrics.selectedIndex];
-  },
-
-  resetMetricRequest(state: StateDraft, args: {name: string}): void {
-    if (state.metrics.requestedMetric !== args.name) return;
-    state.metrics.requestedMetric = undefined;
-  },
-
-  setAvailableMetrics(state: StateDraft, args: {availableMetrics: string[]}):
-      void {
-        state.metrics.availableMetrics = args.availableMetrics;
-        if (args.availableMetrics.length > 0) state.metrics.selectedIndex = 0;
-      },
-
-  setMetricSelectedIndex(state: StateDraft, args: {index: number}): void {
-    if (!state.metrics.availableMetrics ||
-        args.index >= state.metrics.availableMetrics.length) {
-      throw Error('metric selection out of bounds');
-    }
-    state.metrics.selectedIndex = args.index;
-  },
-
   togglePerfDebug(state: StateDraft, _: {}): void {
     state.perfDebug = !state.perfDebug;
   },
 
-  toggleSidebar(state: StateDraft, _: {}): void {
-    state.sidebarVisible = !state.sidebarVisible;
+  setSidebar(state: StateDraft, args: {visible: boolean}): void {
+    state.sidebarVisible = args.visible;
   },
 
   setHoveredUtidAndPid(state: StateDraft, args: {utid: number, pid: number}) {
