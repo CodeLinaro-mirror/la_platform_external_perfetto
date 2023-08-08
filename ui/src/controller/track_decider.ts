@@ -42,8 +42,13 @@ import {ACTUAL_FRAMES_SLICE_TRACK_KIND} from '../tracks/actual_frames';
 import {ANDROID_LOGS_TRACK_KIND} from '../tracks/android_log';
 import {ASYNC_SLICE_TRACK_KIND} from '../tracks/async_slices';
 import {
-  decideTracks as scrollJankDecideTracks,
+  ENABLE_SCROLL_JANK_PLUGIN_V2,
+  getScrollJankTracks,
+  INPUT_LATENCY_TRACK,
 } from '../tracks/chrome_scroll_jank';
+import {
+  decideTracks as scrollJankDecideTracks,
+} from '../tracks/chrome_scroll_jank/chrome_tasks_scroll_jank_track';
 import {SLICE_TRACK_KIND} from '../tracks/chrome_slices';
 import {COUNTER_TRACK_KIND, CounterScaleOptions} from '../tracks/counter';
 import {CPU_FREQ_TRACK_KIND} from '../tracks/cpu_freq';
@@ -62,10 +67,6 @@ import {
   PROCESS_SCHEDULING_TRACK_KIND,
 } from '../tracks/process_scheduling';
 import {PROCESS_SUMMARY_TRACK} from '../tracks/process_summary';
-import {
-  ENABLE_SCROLL_JANK_PLUGIN_V2, getScrollJankTracks,
-  INPUT_LATENCY_TRACK,
-} from '../tracks/scroll_jank';
 import {THREAD_STATE_TRACK_KIND} from '../tracks/thread_state';
 import {THREAD_STATE_TRACK_V2_KIND} from '../tracks/thread_state_v2';
 
@@ -367,7 +368,7 @@ class TrackDecider {
       parentName: STR_NULL,
       parentId: NUM_NULL,
       trackIds: STR,
-      maxDepth: NUM,
+      maxDepth: NUM_NULL,
     });
 
     const parentIdToGroupId = new Map<number, string>();
@@ -383,6 +384,11 @@ class TrackDecider {
       const parentTrackId = it.parentId;
       const maxDepth = it.maxDepth;
       let trackGroup = SCROLLING_TRACK_GROUP;
+
+      // If there are no slices in this track, skip it.
+      if (maxDepth === null) {
+        continue;
+      }
 
       if (parentTrackId !== null) {
         const groupId = parentIdToGroupId.get(parentTrackId);
@@ -1115,7 +1121,7 @@ class TrackDecider {
       trackIds: STR,
       processName: STR_NULL,
       pid: NUM_NULL,
-      maxDepth: NUM,
+      maxDepth: NUM_NULL,
     });
     for (; it.valid(); it.next()) {
       const upid = it.upid;
@@ -1125,6 +1131,11 @@ class TrackDecider {
       const processName = it.processName;
       const pid = it.pid;
       const maxDepth = it.maxDepth;
+
+      if (maxDepth === null) {
+        // If there are no slices in this track, skip it.
+        continue;
+      }
 
       const uuid = this.getUuid(0, upid);
 
@@ -1174,7 +1185,7 @@ class TrackDecider {
       trackIds: STR,
       processName: STR_NULL,
       pid: NUM_NULL,
-      maxDepth: NUM,
+      maxDepth: NUM_NULL,
     });
     for (; it.valid(); it.next()) {
       const upid = it.upid;
@@ -1184,6 +1195,11 @@ class TrackDecider {
       const processName = it.processName;
       const pid = it.pid;
       const maxDepth = it.maxDepth;
+
+      if (maxDepth === null) {
+        // If there are no slices in this track, skip it.
+        continue;
+      }
 
       const uuid = this.getUuid(0, upid);
 
@@ -1233,7 +1249,7 @@ class TrackDecider {
       trackIds: STR,
       processName: STR_NULL,
       pid: NUM_NULL,
-      maxDepth: NUM,
+      maxDepth: NUM_NULL,
     });
 
     for (; it.valid(); it.next()) {
@@ -1244,6 +1260,11 @@ class TrackDecider {
       const processName = it.processName;
       const pid = it.pid;
       const maxDepth = it.maxDepth;
+
+      if (maxDepth === null) {
+        // If there are no slices in this track, skip it.
+        continue;
+      }
 
       const uuid = this.getUuid(0, upid);
 
@@ -1747,7 +1768,7 @@ class TrackDecider {
         'max_layout_depth(track_count INT, track_ids STRING)',
         'INT',
         '
-          select ifnull(iif(
+          select iif(
             $track_count = 1,
             (
               select max(depth)
@@ -1758,7 +1779,7 @@ class TrackDecider {
               select max(layout_depth)
               from experimental_slice_layout($track_ids)
             )
-          ), 0);
+          );
         '
       );
     `);

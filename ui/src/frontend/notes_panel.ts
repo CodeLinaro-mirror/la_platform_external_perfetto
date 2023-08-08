@@ -17,6 +17,8 @@ import m from 'mithril';
 import {Actions} from '../common/actions';
 import {randomColor} from '../common/colorizer';
 import {AreaNote, Note} from '../common/state';
+import {timestampOffset} from '../common/time';
+import {raf} from '../core/raf_scheduler';
 
 import {
   BottomTab,
@@ -62,11 +64,11 @@ export class NotesPanel extends Panel {
   oncreate({dom}: m.CVnodeDOM) {
     dom.addEventListener('mousemove', (e: Event) => {
       this.hoveredX = (e as PerfettoMouseEvent).layerX - TRACK_SHELL_WIDTH;
-      globals.rafScheduler.scheduleRedraw();
+      raf.scheduleRedraw();
     }, {passive: true});
     dom.addEventListener('mouseenter', (e: Event) => {
       this.hoveredX = (e as PerfettoMouseEvent).layerX - TRACK_SHELL_WIDTH;
-      globals.rafScheduler.scheduleRedraw();
+      raf.scheduleRedraw();
     });
     dom.addEventListener('mouseout', () => {
       this.hoveredX = null;
@@ -124,13 +126,14 @@ export class NotesPanel extends Panel {
     ctx.rect(TRACK_SHELL_WIDTH, 0, size.width - TRACK_SHELL_WIDTH, size.height);
     ctx.clip();
 
-    const span = globals.frontendLocalState.visibleWindow.timestampSpan;
+    const span = globals.frontendLocalState.visibleTimeSpan;
     const {visibleTimeScale} = globals.frontendLocalState;
     if (size.width > TRACK_SHELL_WIDTH && span.duration > 0n) {
       const maxMajorTicks = getMaxMajorTicks(size.width - TRACK_SHELL_WIDTH);
       const map = timeScaleForVisibleWindow(TRACK_SHELL_WIDTH, size.width);
-      for (const {type, time} of new TickGenerator(
-               span, maxMajorTicks, globals.state.traceTime.start)) {
+      const offset = timestampOffset();
+      const tickGen = new TickGenerator(span, maxMajorTicks, offset);
+      for (const {type, time} of tickGen) {
         const px = Math.floor(map.tpTimeToPx(time));
         if (type === TickType.MAJOR) {
           ctx.fillRect(px, 0, 1, size.height);
@@ -363,7 +366,7 @@ export class NotesEditorTab extends BottomTab<NotesEditorTabConfig> {
             onclick: () => {
               globals.dispatch(Actions.removeNote({id: this.config.id}));
               globals.dispatch(Actions.setCurrentTab({tab: undefined}));
-              globals.rafScheduler.scheduleFullRedraw();
+              raf.scheduleFullRedraw();
             },
           })),
     );

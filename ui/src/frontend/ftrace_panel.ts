@@ -13,10 +13,10 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {StringListPatch} from 'src/common/state';
 
 import {Actions} from '../common/actions';
 import {colorForString} from '../common/colorizer';
+import {StringListPatch} from '../common/state';
 import {TPTime} from '../common/time';
 
 import {globals} from './globals';
@@ -24,9 +24,9 @@ import {Panel} from './panel';
 import {asTPTimestamp} from './sql_types';
 import {DetailsShell} from './widgets/details_shell';
 import {
-  MultiSelect,
   MultiSelectDiff,
   Option as MultiSelectOption,
+  PopupMultiSelect,
 } from './widgets/multiselect';
 import {PopupPosition} from './widgets/popup';
 import {Timestamp} from './widgets/timestamp';
@@ -136,7 +136,7 @@ export class FtracePanel extends Panel<{}> {
         });
 
     return m(
-        MultiSelect,
+        PopupMultiSelect,
         {
           label: 'Filter',
           minimal: true,

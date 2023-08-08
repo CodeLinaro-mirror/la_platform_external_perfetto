@@ -29,10 +29,10 @@ namespace {
 using Range = RowMap::Range;
 
 template <typename Comparator>
-BitVector IndexSearchWithComparator(uint32_t val,
-                                    uint32_t* indices,
-                                    uint32_t indices_size,
-                                    Comparator comparator) {
+RangeOrBitVector IndexSearchWithComparator(uint32_t val,
+                                           uint32_t* indices,
+                                           uint32_t indices_size,
+                                           Comparator comparator) {
   // Slow path: we compare <64 elements and append to get us to a word
   // boundary.
   const uint32_t* ptr = indices;
@@ -62,17 +62,19 @@ BitVector IndexSearchWithComparator(uint32_t val,
   for (uint32_t i = 0; i < back_elements; ++i) {
     builder.Append(comparator(ptr[i], val));
   }
-  return std::move(builder).Build();
+  return RangeOrBitVector(std::move(builder).Build());
 }
 }  // namespace
 
-BitVector IdStorage::LinearSearch(FilterOp op,
-                                  SqlValue sql_val,
-                                  RowMap::Range range) const {
-  PERFETTO_DCHECK(op == FilterOp::kNe);
+RangeOrBitVector IdStorage::Search(FilterOp op,
+                                   SqlValue sql_val,
+                                   RowMap::Range range) const {
+  if (op != FilterOp::kNe)
+    return RangeOrBitVector(BinarySearchIntrinsic(op, sql_val, range));
+
   if (sql_val.AsLong() > std::numeric_limits<uint32_t>::max() ||
       sql_val.AsLong() < std::numeric_limits<uint32_t>::min())
-    return BitVector(size_, false);
+    return RangeOrBitVector(BitVector(size_, false));
 
   uint32_t val = static_cast<uint32_t>(sql_val.AsLong());
   BitVector ret(range.start, false);
@@ -80,20 +82,21 @@ BitVector IdStorage::LinearSearch(FilterOp op,
   ret.Resize(size_, false);
 
   ret.Clear(val);
-  return ret;
+  return RangeOrBitVector(std::move(ret));
 }
 
-BitVector IdStorage::IndexSearch(FilterOp op,
-                                 SqlValue sql_val,
-                                 uint32_t* indices,
-                                 uint32_t indices_size) const {
+RangeOrBitVector IdStorage::IndexSearch(FilterOp op,
+                                        SqlValue sql_val,
+                                        uint32_t* indices,
+                                        uint32_t indices_size,
+                                        bool) const {
   if (op == FilterOp::kIsNotNull)
-    return BitVector(indices_size, true);
+    return RangeOrBitVector(BitVector(indices_size, true));
 
   if (op == FilterOp::kIsNull || op == FilterOp::kGlob || sql_val.is_null() ||
       sql_val.AsLong() > std::numeric_limits<uint32_t>::max() ||
       sql_val.AsLong() < std::numeric_limits<uint32_t>::min())
-    return BitVector(indices_size, false);
+    return RangeOrBitVector(BitVector(indices_size, false));
 
   uint32_t val = static_cast<uint32_t>(sql_val.AsLong());
 
@@ -128,13 +131,14 @@ RowMap::Range IdStorage::BinarySearchIntrinsic(FilterOp op,
                                                SqlValue sql_val,
                                                Range range) const {
   PERFETTO_DCHECK(range.end <= size_);
-  if (op == FilterOp::kEq) {
+  if (op == FilterOp::kEq && sql_val.type == SqlValue::Type::kLong) {
     int64_t long_val = sql_val.AsLong();
-    auto end = static_cast<uint32_t>(
-        std::min(long_val, static_cast<int64_t>(range.end - 1)));
-    auto start = static_cast<uint32_t>(
-        std::max(long_val, static_cast<int64_t>(range.start)));
-    return Range(end, end + (start <= end));
+    if (long_val > std::numeric_limits<uint32_t>::max() ||
+        long_val < std::numeric_limits<uint32_t>::min()) {
+      return RowMap::Range();
+    }
+    uint32_t res = static_cast<uint32_t>(long_val);
+    return Range(res, res + (range.start <= res && res < range.end));
   }
 
   if (op == FilterOp::kIsNotNull)
@@ -142,11 +146,11 @@ RowMap::Range IdStorage::BinarySearchIntrinsic(FilterOp op,
 
   if (op == FilterOp::kIsNull || op == FilterOp::kGlob || sql_val.is_null() ||
       sql_val.AsLong() > std::numeric_limits<uint32_t>::max() ||
-      sql_val.AsLong() < std::numeric_limits<uint32_t>::min())
+      sql_val.AsLong() < std::numeric_limits<uint32_t>::min()) {
     return RowMap::Range();
+  }
 
   uint32_t val = static_cast<uint32_t>(sql_val.AsLong());
-
   switch (op) {
     case FilterOp::kLe:
       return RowMap::Range(range.start, std::min(val + 1, range.end));

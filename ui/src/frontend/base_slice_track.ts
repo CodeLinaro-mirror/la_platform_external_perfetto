@@ -23,17 +23,20 @@ import {
 import {LONG, NUM} from '../common/query_result';
 import {Selection, SelectionKind} from '../common/state';
 import {
+  Span,
   TPDuration,
   tpDurationFromNanos,
   TPTime,
   tpTimeFromNanos,
 } from '../common/time';
+import {raf} from '../core/raf_scheduler';
 
 import {checkerboardExcept} from './checkerboard';
 import {globals} from './globals';
 import {Slice} from './slice';
 import {DEFAULT_SLICE_LAYOUT, SliceLayout} from './slice_layout';
-import {constraintsToQueryFragment} from './sql_utils';
+import {constraintsToQuerySuffix} from './sql_utils';
+import {PxSpan, TimeScale} from './time_scale';
 import {NewTrackArgs, SliceRect, Track} from './track';
 import {BUCKETS_PER_PIXEL, CacheKey, TrackCache} from './track_cache';
 
@@ -610,7 +613,7 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
     const extraCols = this.extraSqlColumns.join(',');
     const maybeDepth = this.isFlat() ? undefined : 'depth';
 
-    const constraint = constraintsToQueryFragment({
+    const constraint = constraintsToQuerySuffix({
       filters: [
         `ts >= ${slicesKey.start - this.maxDurNs}`,
         `ts <= ${slicesKey.end}`,
@@ -665,7 +668,7 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
     this.slices = slices;
 
     this.sqlState = 'QUERY_DONE';
-    globals.rafScheduler.scheduleRedraw();
+    raf.scheduleRedraw();
   }
 
   private rowToSliceInternal(row: T['row']): CastInternal<T['slice']> {
@@ -875,8 +878,10 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
     return this.computedTrackHeight;
   }
 
-  getSliceRect(_tStart: TPTime, _tEnd: TPTime, _depth: number): SliceRect
-      |undefined {
+  getSliceRect(
+      _visibleTimeScale: TimeScale, _visibleWindow: Span<TPTime, TPDuration>,
+      _windowSpan: PxSpan, _tStart: TPTime, _tEnd: TPTime,
+      _depth: number): SliceRect|undefined {
     // TODO(hjd): Implement this as part of updating flow events.
     return undefined;
   }

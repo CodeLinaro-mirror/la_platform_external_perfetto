@@ -14,6 +14,7 @@
 
 import m from 'mithril';
 
+import {findRef} from '../base/dom_utils';
 import {assertExists, assertTrue} from '../base/logging';
 import {Actions} from '../common/actions';
 import {
@@ -29,6 +30,7 @@ import {
   ProfileType,
 } from '../common/state';
 import {profileType} from '../controller/flamegraph_controller';
+import {raf} from '../core/raf_scheduler';
 
 import {Flamegraph, NodeRendering} from './flamegraph';
 import {globals} from './globals';
@@ -40,7 +42,6 @@ import {getCurrentTrace} from './sidebar';
 import {convertTraceToPprofAndDownload} from './trace_converter';
 import {Button} from './widgets/button';
 import {Duration} from './widgets/duration';
-import {findRef} from './widgets/utils';
 
 interface FlamegraphDetailsPanelAttrs {}
 
@@ -171,7 +172,7 @@ export class FlamegraphDetailsPanel extends Panel<FlamegraphDetailsPanelAttrs> {
           text: 'Skip',
           action: () => {
             globals.dispatch(Actions.dismissFlamegraphModal({}));
-            globals.rafScheduler.scheduleFullRedraw();
+            raf.scheduleFullRedraw();
           },
         },
       ],
@@ -257,7 +258,7 @@ export class FlamegraphDetailsPanel extends Panel<FlamegraphDetailsPanelAttrs> {
     // TODO(stevegolton): If we truely want to be standalone, then we shouldn't
     // rely on someone else calling the rafScheduler when the window is resized,
     // but it's good enough for now as we know the ViewerPage will do it.
-    globals.rafScheduler.addRedrawCallback(this.rafRedrawCallback);
+    raf.addRedrawCallback(this.rafRedrawCallback);
   }
 
   onupdate({dom}: m.CVnodeDOM<FlamegraphDetailsPanelAttrs>) {
@@ -265,7 +266,7 @@ export class FlamegraphDetailsPanel extends Panel<FlamegraphDetailsPanelAttrs> {
   }
 
   onremove(_vnode: m.CVnodeDOM<FlamegraphDetailsPanelAttrs>) {
-    globals.rafScheduler.removeRedrawCallback(this.rafRedrawCallback);
+    raf.removeRedrawCallback(this.rafRedrawCallback);
   }
 
   private static findCanvasElement(dom: Element): HTMLCanvasElement|undefined {
@@ -318,13 +319,13 @@ export class FlamegraphDetailsPanel extends Panel<FlamegraphDetailsPanelAttrs> {
 
   private onMouseMove({x, y}: {x: number, y: number}): boolean {
     this.flamegraph.onMouseMove({x, y});
-    globals.rafScheduler.scheduleFullRedraw();
+    raf.scheduleFullRedraw();
     return true;
   }
 
   private onMouseOut() {
     this.flamegraph.onMouseOut();
-    globals.rafScheduler.scheduleFullRedraw();
+    raf.scheduleFullRedraw();
   }
 
   private static selectViewingOptions(profileType: ProfileType) {

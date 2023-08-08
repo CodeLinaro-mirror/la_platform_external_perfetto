@@ -16,11 +16,9 @@ import {Actions} from '../../common/actions';
 import {
   generateSqlWithInternalLayout,
 } from '../../common/internal_layout_utils';
-import {PluginContext} from '../../common/plugin_api';
 import {Selection} from '../../common/state';
 import {OnSliceClickArgs} from '../../frontend/base_slice_track';
 import {
-  GenericSliceDetailsTabConfig,
   GenericSliceDetailsTabConfigBase,
 } from '../../frontend/generic_slice_details_tab';
 import {globals} from '../../frontend/globals';
@@ -29,6 +27,7 @@ import {
   NamedSliceTrackTypes,
 } from '../../frontend/named_slice_track';
 import {NewTrackArgs} from '../../frontend/track';
+import {PluginContext} from '../../public';
 
 export interface CustomSqlTableDefConfig {
   // Table name
@@ -87,9 +86,6 @@ export abstract class CustomSqlTableSliceTrack<
     }
 
     const detailsPanelConfig = this.getDetailsPanel();
-    (detailsPanelConfig.config as GenericSliceDetailsTabConfig).id =
-        args.slice.id;
-
     globals.makeSelection(Actions.selectGenericSlice({
       id: args.slice.id,
       sqlTableName: this.tableName,
