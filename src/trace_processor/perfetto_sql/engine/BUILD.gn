@@ -26,6 +26,8 @@ source_set("engine") {
     "perfetto_sql_engine.h",
     "perfetto_sql_parser.cc",
     "perfetto_sql_parser.h",
+    "runtime_table_function.cc",
+    "runtime_table_function.h",
   ]
   deps = [
     "../..:metatrace",

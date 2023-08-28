@@ -29,6 +29,19 @@ export {
 } from '../common/query_result';
 export {Store} from '../frontend/store';
 
+// An imperative API for plugins to change the UI.
+export interface Viewer {
+  // Control of the sidebar.
+  sidebar: {
+    // Show the sidebar.
+    show(): void;
+    // Hide the sidebar.
+    hide(): void;
+    // Returns true if the sidebar is visble.
+    isVisible(): boolean;
+  }
+}
+
 export interface Command {
   // A unique id for this command.
   id: string;
@@ -38,9 +51,51 @@ export interface Command {
   callback: (...args: any[]) => void;
 }
 
+export interface MetricVisualisation {
+  // The name of the metric e.g. 'android_camera'
+  metric: string;
+
+  // A vega or vega-lite visualisation spec.
+  // The data from the metric under path will be exposed as a
+  // datasource named "metric" in Vega(-Lite)
+  spec: string;
+
+  // A path index into the metric.
+  // For example if the metric returns the folowing protobuf:
+  // {
+  //   foo {
+  //     bar {
+  //       baz: { name: "a" }
+  //       baz: { name: "b" }
+  //       baz: { name: "c" }
+  //     }
+  //   }
+  // }
+  // That becomes the following json:
+  // { "foo": { "bar": { "baz": [
+  //  {"name": "a"},
+  //  {"name": "b"},
+  //  {"name": "c"},
+  // ]}}}
+  // And given path = ["foo", "bar", "baz"]
+  // We extract:
+  // [ {"name": "a"}, {"name": "b"}, {"name": "c"} ]
+  // And pass that to the vega(-lite) visualisation.
+  path: string[];
+}
+
 // All trace plugins must implement this interface.
 export interface TracePlugin extends Disposable {
-  commands(): Command[];
+  commands?: () => Command[];
+
+  // Called any time a trace is loaded. Plugins should return all
+  // potential tracks. Zero or more of the provided tracks may be
+  // instantiated depending on the users choices.
+  tracks?: () => Promise<TrackInfo[]>;
+
+  // Metric visualisations. These extend the metrics page with
+  // visualisations for specific metrics.
+  metricVisualisations?: () => MetricVisualisation[];
 }
 
 // This interface defines what a plugin factory should look like.
@@ -58,7 +113,7 @@ export interface TracePluginFactory<StateT> {
   migrate(initialState: unknown): StateT;
 
   // Instantiate the plugin.
-  new(store: Store<StateT>, engine: EngineProxy): TracePlugin;
+  new(store: Store<StateT>, engine: EngineProxy, viewer: Viewer): TracePlugin;
 }
 
 export interface TrackInfo {
@@ -74,11 +129,6 @@ export interface TrackInfo {
   config: {};
 }
 
-// Called any time a trace is loaded. Plugins should return all
-// potential tracks. Zero or more of the provided tracks may be
-// instantiated depending on the users choices.
-export type TrackProvider = (engine: EngineProxy) => Promise<TrackInfo[]>;
-
 // The public API plugins use to extend the UI. This is passed to each
 // plugin via the exposed 'activate' function.
 export interface PluginContext {
@@ -87,12 +137,6 @@ export interface PluginContext {
   // the functionality of |TrackController| has been merged into Track so
   // |TrackController|s are not necessary in new code.
   registerTrackController(track: TrackControllerFactory): void;
-
-  // Register a |TrackProvider|. |TrackProvider|s return |TrackInfo| for
-  // all potential tracks in a trace. The core UI selects some of these
-  // |TrackInfo|s and constructs concrete Track instances using the
-  // registered |TrackCreator|s.
-  registerTrackProvider(provider: TrackProvider): void;
 
   // Register a track factory. The core UI invokes |TrackCreator| to
   // construct tracks discovered by invoking |TrackProvider|s.

@@ -43,20 +43,23 @@ class PerfettoSqlParser {
   // PerfettoSQL statement and should be directly executed with SQLite.
   struct SqliteSql {
     SqlSource sql;
-    bool operator==(const SqliteSql& c) const { return sql == c.sql; }
   };
   // Indicates that the specified SQL was a CREATE PERFETTO FUNCTION statement
   // with the following parameters.
   struct CreateFunction {
+    bool replace;
     std::string prototype;
     std::string returns;
     SqlSource sql;
-    bool operator==(const CreateFunction& c) const {
-      return std::tie(prototype, returns, sql) ==
-             std::tie(c.prototype, c.returns, c.sql);
-    }
+    bool is_table;
   };
-  using Statement = std::variant<SqliteSql, CreateFunction>;
+  // Indicates that the specified SQL was a CREATE PERFETTO TABLE statement
+  // with the following parameters.
+  struct CreateTable {
+    std::string name;
+    SqlSource sql;
+  };
+  using Statement = std::variant<SqliteSql, CreateFunction, CreateTable>;
 
   // Creates a new SQL parser with the a block of PerfettoSQL statements.
   // Concretely, the passed string can contain >1 statement.
@@ -86,11 +89,14 @@ class PerfettoSqlParser {
   PerfettoSqlParser(PerfettoSqlParser&&) = delete;
   PerfettoSqlParser& operator=(PerfettoSqlParser&&) = delete;
 
-  bool ParseCreatePerfettoFunction();
+  bool ParseCreatePerfettoFunction(bool replace);
+
+  bool ParseCreatePerfettoTable();
+
+  bool ParseArgumentDefinitions(std::string*);
 
   bool ErrorAtToken(const SqliteTokenizer::Token&, const char* error);
 
-  SqlSource sql_;
   SqliteTokenizer tokenizer_;
   base::Status status_;
   std::optional<Statement> statement_;
