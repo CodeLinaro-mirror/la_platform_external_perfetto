@@ -14,6 +14,7 @@
 
 import m from 'mithril';
 
+import {Hotkey, Platform} from '../base/hotkeys';
 import {raf} from '../core/raf_scheduler';
 
 import {Anchor} from './anchor';
@@ -29,6 +30,7 @@ import {Checkbox} from './widgets/checkbox';
 import {Editor} from './widgets/editor';
 import {EmptyState} from './widgets/empty_state';
 import {Form, FormLabel} from './widgets/form';
+import {HotkeyGlyphs} from './widgets/hotkey_glyphs';
 import {Icon} from './widgets/icon';
 import {Menu, MenuDivider, MenuItem, PopupMenu2} from './widgets/menu';
 import {
@@ -323,7 +325,7 @@ function ControlledPopup() {
 }
 
 type Options = {
-  [key: string]: EnumOption|boolean
+  [key: string]: EnumOption|boolean|string;
 };
 
 class EnumOption {
@@ -338,8 +340,7 @@ interface WidgetTitleAttrs {
 class WidgetTitle implements m.ClassComponent<WidgetTitleAttrs> {
   view({attrs}: m.CVnode<WidgetTitleAttrs>) {
     const {label} = attrs;
-    // TODO(hjd): Use replaceAll when have updated to es2021.
-    const id = label.replace(/ /g, '').toLowerCase();
+    const id = label.replaceAll(' ', '').toLowerCase();
     const href = `#!/widgets#${id}`;
     return m(Anchor, {id, href}, m('h2', label));
   }
@@ -379,6 +380,8 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
           if (option instanceof EnumOption) {
             this.optValues[key] = option.initial;
           } else if (typeof option === 'boolean') {
+            this.optValues[key] = option;
+          } else if (typeof option === 'string') {
             this.optValues[key] = option;
           }
         }
@@ -425,6 +428,8 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
       return this.renderEnumOption(key, value);
     } else if (typeof value === 'boolean') {
       return this.renderBooleanOption(key);
+    } else if (typeof value === 'string') {
+      return this.renderStringOption(key);
     } else {
       return null;
     }
@@ -436,6 +441,17 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
       label: key,
       onchange: () => {
         this.optValues[key] = !this.optValues[key];
+        raf.scheduleFullRedraw();
+      },
+    });
+  }
+
+  private renderStringOption(key: string) {
+    return m(TextInput, {
+      placeholder: key,
+      value: this.optValues[key],
+      oninput: (e: Event) => {
+        this.optValues[key] = (e.target as HTMLInputElement).value;
         raf.scheduleFullRedraw();
       },
     });
@@ -934,6 +950,25 @@ export const WidgetsPage = createPage({
                   renderForm('popup-form'),
                 ),
               ),
+            }),
+          m(
+            WidgetShowcase, {
+              label: 'Hotkey',
+              renderWidget: (opts) => {
+                if (opts.platform === 'auto') {
+                  return m(HotkeyGlyphs, {hotkey: opts.hotkey as Hotkey});
+                } else {
+                  const platform = opts.platform as Platform;
+                  return m(HotkeyGlyphs, {
+                    hotkey: opts.hotkey as Hotkey,
+                    spoof: platform,
+                  });
+                }
+              },
+              initialOpts: {
+                hotkey: 'Mod+Shift+P',
+                platform: new EnumOption('auto', ['auto', 'Mac', 'PC']),
+              },
             }),
     );
   },

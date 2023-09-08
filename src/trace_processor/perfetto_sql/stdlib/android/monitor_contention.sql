@@ -114,7 +114,7 @@ CREATE PERFETTO FUNCTION android_extract_android_monitor_contention_blocked_src(
 RETURNS STRING AS
 SELECT STR_SPLIT(STR_SPLIT($slice_name, ")(", 2), ")", 0);
 
-CREATE TABLE internal_valid_android_monitor_contention AS
+CREATE PERFETTO TABLE internal_valid_android_monitor_contention AS
 SELECT slice.id AS id
 FROM slice
 LEFT JOIN slice child
@@ -201,14 +201,14 @@ CREATE INDEX internal_android_monitor_contention_idx
 
 -- Monitor contention slices that are blocked by another monitor contention slice.
 -- They will have a |parent_id| field which is the id of the slice they are blocked by.
-CREATE TABLE internal_children AS
+CREATE PERFETTO TABLE internal_children AS
 SELECT parent.id AS parent_id, child.* FROM android_monitor_contention child
 JOIN android_monitor_contention parent ON parent.blocked_utid = child.blocking_utid
 AND child.ts BETWEEN parent.ts AND parent.ts + parent.dur;
 
 -- Monitor contention slices that are blocking another monitor contention slice.
 -- They will have a |child_id| field which is the id of the slice they are blocking.
-CREATE TABLE internal_parents AS
+CREATE PERFETTO TABLE internal_parents AS
 SELECT parent.*, child.id AS child_id FROM android_monitor_contention parent
 JOIN android_monitor_contention child ON parent.blocked_utid = child.blocking_utid
 AND child.ts BETWEEN parent.ts AND parent.ts + parent.dur;
@@ -383,9 +383,9 @@ CREATE PERFETTO FUNCTION android_monitor_contention_graph(upid INT)
 RETURNS TABLE(pprof BYTES) AS
 WITH contention_chain AS (
 SELECT *,
-       IIF(blocked_thread_name LIKE 'binder:%', 'binder', blocked_thread_name)
+       IIF(blocked_thread_name GLOB 'binder:*', 'binder', blocked_thread_name)
         AS blocked_thread_name_norm,
-       IIF(blocking_thread_name LIKE 'binder:%', 'binder', blocking_thread_name)
+       IIF(blocking_thread_name GLOB 'binder:*', 'binder', blocking_thread_name)
         AS blocking_thread_name_norm
 FROM android_monitor_contention_chain WHERE upid = $upid
 GROUP BY id, parent_id

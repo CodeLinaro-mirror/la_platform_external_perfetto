@@ -55,6 +55,7 @@ import {CheckHttpRpcConnection} from './rpc_http_dialog';
 import {TraceInfoPage} from './trace_info_page';
 import {maybeOpenTraceFromRoute} from './trace_url_handler';
 import {ViewerPage} from './viewer_page';
+import {VizPage} from './viz_page';
 import {WidgetsPage} from './widgets_page';
 
 const EXTENSION_ID = 'lfmkphfpdbjijhpomgecfikhfohaoine';
@@ -156,6 +157,7 @@ function setupContentSecurityPolicy() {
       'blob:',
       'https://www.google-analytics.com',
       'https://www.googletagmanager.com',
+      'https://*.googleapis.com',
     ],
     'style-src': [
       `'self'`,
@@ -223,6 +225,7 @@ function main() {
     '/metrics': MetricsPage,
     '/info': TraceInfoPage,
     '/widgets': WidgetsPage,
+    '/viz': VizPage,
   });
   router.onRouteChanged = routeChange;
 
@@ -330,6 +333,8 @@ function onCssLoaded() {
       dur: route.args.dur,
       pid: route.args.pid,
       query: route.args.query,
+      visStart: route.args.visStart,
+      visEnd: route.args.visEnd,
     }));
 
     if (!globals.embeddedMode) {

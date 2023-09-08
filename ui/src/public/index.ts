@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {Disposable} from '../base/disposable';
+import {Hotkey} from '../base/hotkeys';
 import {EngineProxy} from '../common/engine';
 import {TrackControllerFactory} from '../controller/track_controller';
 import {Store} from '../frontend/store';
@@ -29,6 +30,7 @@ export {
 } from '../common/query_result';
 export {Store} from '../frontend/store';
 
+
 // An imperative API for plugins to change the UI.
 export interface Viewer {
   // Control of the sidebar.
@@ -40,15 +42,68 @@ export interface Viewer {
     // Returns true if the sidebar is visble.
     isVisible(): boolean;
   }
+
+  // Tracks
+  tracks: {
+    pin(predicate: TrackPredicate): void;
+    unpin(predicate: TrackPredicate): void;
+  }
+
+  // Control over the bottom details pane.
+  tabs: {
+    // Creates a new tab running the provided query.
+    openQuery(query: string, title: string): void;
+  }
 }
 
 export interface Command {
   // A unique id for this command.
   id: string;
-  // A friendly human name for the command.
+  // A human-friendly name for this command.
   name: string;
   // Callback is called when the command is invoked.
   callback: (...args: any[]) => void;
+  // Default hotkey for this command.
+  // Note: this is just the default and may be changed by the user.
+  // Examples:
+  // - 'P'
+  // - 'Shift+P'
+  // - '!Mod+Shift+P'
+  // See hotkeys.ts for guidance on hotkey syntax.
+  defaultHotkey?: Hotkey;
+}
+
+export interface MetricVisualisation {
+  // The name of the metric e.g. 'android_camera'
+  metric: string;
+
+  // A vega or vega-lite visualisation spec.
+  // The data from the metric under path will be exposed as a
+  // datasource named "metric" in Vega(-Lite)
+  spec: string;
+
+  // A path index into the metric.
+  // For example if the metric returns the folowing protobuf:
+  // {
+  //   foo {
+  //     bar {
+  //       baz: { name: "a" }
+  //       baz: { name: "b" }
+  //       baz: { name: "c" }
+  //     }
+  //   }
+  // }
+  // That becomes the following json:
+  // { "foo": { "bar": { "baz": [
+  //  {"name": "a"},
+  //  {"name": "b"},
+  //  {"name": "c"},
+  // ]}}}
+  // And given path = ["foo", "bar", "baz"]
+  // We extract:
+  // [ {"name": "a"}, {"name": "b"}, {"name": "c"} ]
+  // And pass that to the vega(-lite) visualisation.
+  path: string[];
 }
 
 export interface MetricVisualisation {
@@ -127,6 +182,20 @@ export interface TrackInfo {
 
   // An opaque config for the track.
   config: {};
+}
+
+// A predicate for selecting a groups of tracks.
+export type TrackPredicate = (info: TrackTags) => boolean;
+
+// An set of key/value pairs describing a given track. These
+// are used for selecting tracks to pin/unpin and (in future) the
+// sorting and grouping of tracks. The values are always strings.
+export interface TrackTags {
+  // A human readable name for this specific track.
+  name?: string;
+
+  // There may be arbitrary other key/value pairs.
+  [key: string]: string|undefined;
 }
 
 // The public API plugins use to extend the UI. This is passed to each

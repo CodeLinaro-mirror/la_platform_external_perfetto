@@ -20,7 +20,6 @@ import {FuzzyFinder} from '../base/fuzzy';
 import {assertExists} from '../base/logging';
 import {undoCommonChatAppReplacements} from '../base/string_utils';
 import {Actions} from '../common/actions';
-import {CommandWithMatchInfo} from '../common/commands';
 import {setTimestampFormat, TimestampFormat} from '../common/time';
 import {raf} from '../core/raf_scheduler';
 import {Command} from '../public';
@@ -29,6 +28,7 @@ import {addTab} from './bottom_tab';
 import {onClickCopy} from './clipboard';
 import {CookieConsent} from './cookie_consent';
 import {globals} from './globals';
+import {toggleHelp} from './help_modal';
 import {fullscreenModalContainer} from './modal';
 import {Omnibox, OmniboxOption} from './omnibox';
 import {runQueryInNewTab} from './query_result_tab';
@@ -39,6 +39,7 @@ import {SqlTables} from './sql_table/well_known_tables';
 import {Topbar} from './topbar';
 import {shareTrace} from './trace_attrs';
 import {HotkeyConfig, HotkeyContext} from './widgets/hotkey_context';
+import {HotkeyGlyphs} from './widgets/hotkey_glyphs';
 
 function renderPermalink(): m.Children {
   const permalink = globals.state.permalink;
@@ -168,38 +169,7 @@ export class App implements m.ClassComponent {
     this.enterSearchMode(false);
   }
 
-  private hotkeys: HotkeyConfig[] = [
-    {
-      key: 'p',
-      mods: ['Mod', 'Shift'],
-      allowInEditable: true,
-      callback: () => this.enterCommandMode(),
-    },
-    {
-      key: 'o',
-      mods: ['Mod'],
-      allowInEditable: true,
-      callback: () => this.enterQueryMode(),
-    },
-    {
-      key: 's',
-      mods: ['Mod'],
-      allowInEditable: true,
-      callback: () => this.enterSearchMode(true),
-    },
-    {
-      key: 'b',
-      mods: ['Mod'],
-      allowInEditable: true,
-      callback:
-          () => {
-            globals.commandManager.runCommand(
-                'dev.perfetto.CoreCommands.ToggleLeftSidebar');
-          },
-    },
-  ];
-
-  private cmds = [
+  private cmds: Command[] = [
     {
       id: 'perfetto.SetTimestampFormat',
       name: 'Set timestamp format',
@@ -259,6 +229,7 @@ export class App implements m.ClassComponent {
           () => {
             executeSearch();
           },
+      defaultHotkey: 'Enter',
     },
     {
       id: 'perfetto.SearchPrev',
@@ -267,53 +238,31 @@ export class App implements m.ClassComponent {
           () => {
             executeSearch(true);
           },
+      defaultHotkey: 'Shift+Enter',
     },
     {
       id: 'perfetto.OpenCommandPalette',
       name: 'Open Command Palette',
       callback: () => this.enterCommandMode(),
+      defaultHotkey: '!Mod+Shift+P',
     },
     {
       id: 'perfetto.RunQuery',
       name: 'Run Query',
       callback: () => this.enterQueryMode(),
+      defaultHotkey: '!Mod+O',
     },
     {
       id: 'perfetto.Search',
       name: 'Search',
       callback: () => this.enterSearchMode(true),
+      defaultHotkey: '!Mod+S',
     },
     {
-      id: 'perfetto.binder.system_server.Incoming',
-      name: 'Run query: system_server incoming binder graph',
-      callback: () => runQueryInNewTab(
-          `SELECT IMPORT('android.binder');
-           SELECT * FROM android_binder_incoming_graph((SELECT utid FROM thread WHERE name = 'system_server'))`,
-          'system_server incoming binder graph'),
-    },
-    {
-      id: 'perfetto.binder.system_server.Outgoing',
-      name: 'Run query: system_server outgoing binder graph',
-      callback: () => runQueryInNewTab(
-          `SELECT IMPORT('android.binder');
-           SELECT * FROM android_binder_outgoing_graph((SELECT utid FROM thread WHERE name = 'system_server'))`,
-          'system_server outgoing binder graph'),
-    },
-    {
-      id: 'perfetto.monitor_contention.system_server',
-      name: 'Run query: system_server monitor_contention graph',
-      callback: () => runQueryInNewTab(
-          `SELECT IMPORT('android.monitor_contention');
-           SELECT * FROM android_monitor_contention_graph((SELECT upid FROM process WHERE name = 'system_server'))`,
-          'system_server monitor_contention graph'),
-    },
-    {
-      id: 'perfetto.binder.all',
-      name: 'Run query: all process binder graph',
-      callback: () => runQueryInNewTab(
-          `SELECT IMPORT('android.binder');
-           SELECT * FROM android_binder_graph(-1000, 1000, -1000, 1000)`,
-          'all process binder graph'),
+      id: 'perfetto.ShowHelp',
+      name: 'Show help',
+      callback: () => toggleHelp(),
+      defaultHotkey: '?',
     },
   ];
 
@@ -386,7 +335,7 @@ export class App implements m.ClassComponent {
       inputRef: App.OMNIBOX_INPUT_REF,
       extraClasses: 'prompt-mode',
       closeOnOutsideClick: true,
-      options: options && [{options}],
+      options,
       selectedOptionIndex: this.omniboxSelectionIndex,
       onSelectedOptionChanged: (index) => {
         this.omniboxSelectionIndex = index;
@@ -412,38 +361,40 @@ export class App implements m.ClassComponent {
     // Fuzzy-filter commands by the filter string.
     const filteredCmds = cmdMgr.fuzzyFilterCommands(this.omniboxText);
 
-    // Sort commands alphabetically
-    const sortedFilteredCommands =
-        filteredCmds.sort((a, b) => a.name.localeCompare(b.name));
+    // Create an array of commands with attached heuristics from the recent
+    // command register.
+    const commandsWithHeuristics = filteredCmds.map((cmd) => {
+      return {
+        recentsIndex: this.recentCommands.findIndex((id) => id === cmd.id),
+        cmd,
+      };
+    });
 
-    // Look up recent comands
-    const recents = this.findRecentCommands(filteredCmds);
+    // Sort by recentsIndex then by alphabetical order
+    const sorted = commandsWithHeuristics.sort((a, b) => {
+      if (b.recentsIndex === a.recentsIndex) {
+        return a.cmd.name.localeCompare(b.cmd.name);
+      } else {
+        return b.recentsIndex - a.recentsIndex;
+      }
+    });
 
-    const cmdToOpt = ({segments, id}: CommandWithMatchInfo): OmniboxOption => {
+    const options = sorted.map(({recentsIndex, cmd}): OmniboxOption => {
+      const {segments, id, defaultHotkey} = cmd;
       return {
         key: id,
         displayName: segments,
+        tag: recentsIndex !== -1 ? 'recently used' : undefined,
+        rightContent: defaultHotkey && m(HotkeyGlyphs, {hotkey: defaultHotkey}),
       };
-    };
-
-    const recentOptions = recents.map(cmdToOpt);
-    const allOptions = sortedFilteredCommands.map(cmdToOpt);
-
-    const optionCategories = recentOptions.length > 0 ?
-        [
-          {name: 'Recent Commands', options: recentOptions},
-          {name: 'All Commands', options: allOptions},
-        ] :
-        [
-          {name: 'All Commands', options: allOptions},
-        ];
+    });
 
     return m(Omnibox, {
       value: this.omniboxText,
       placeholder: 'Filter commands...',
       inputRef: App.OMNIBOX_INPUT_REF,
       extraClasses: 'command-mode',
-      options: optionCategories,
+      options,
       closeOnSubmit: true,
       closeOnOutsideClick: true,
       selectedOptionIndex: this.omniboxSelectionIndex,
@@ -470,22 +421,12 @@ export class App implements m.ClassComponent {
     });
   }
 
-  // Locates all recent commands within a given list of commands.
-  private findRecentCommands<T extends Command>(cmds: T[]): T[] {
-    const recents: T[] = [];
-    for (const recentCmdId of this.recentCommands) {
-      const cmd = cmds.find(({id}) => id === recentCmdId);
-      if (cmd) {
-        recents.push(cmd);
-      }
-    }
-    return recents;
-  }
-
   private addRecentCommand(id: string): void {
     this.recentCommands = this.recentCommands.filter((x) => x !== id);
-    this.recentCommands.unshift(id);
-    this.recentCommands.length = Math.min(this.recentCommands.length, 6);
+    this.recentCommands.push(id);
+    while (this.recentCommands.length > 6) {
+      this.recentCommands.shift();
+    }
   }
 
   renderQueryOmnibox(): m.Children {
@@ -580,9 +521,22 @@ export class App implements m.ClassComponent {
   }
 
   view({children}: m.Vnode): m.Children {
+    const hotkeys: HotkeyConfig[] = [];
+    const commands = globals.commandManager.commands;
+    for (const {id, defaultHotkey} of commands) {
+      if (defaultHotkey) {
+        hotkeys.push({
+          callback: () => {
+            globals.commandManager.runCommand(id);
+          },
+          hotkey: defaultHotkey,
+        });
+      }
+    }
+
     return m(
         HotkeyContext,
-        {hotkeys: this.hotkeys},
+        {hotkeys},
         m(
             'main',
             m(Sidebar),

@@ -22,7 +22,7 @@ import {
   record,
   runValidator,
   ValidatedType,
-} from '../controller/validators';
+} from '../base/validators';
 
 import {PageAttrs} from './pages';
 
@@ -79,6 +79,8 @@ const routeArgs = record({
   tid: optStr,
   pid: optStr,
   query: optStr,
+  visStart: optStr,
+  visEnd: optStr,
 });
 type RouteArgs = ValidatedType<typeof routeArgs>;
 
@@ -245,8 +247,7 @@ export class Router {
   }
 
   private static parseQueryString(query: string) {
-    // TODO(hjd): Use replaceAll when we have updated to es2021.
-    query = query.replace(/\+/g, ' ');
+    query = query.replaceAll('+', ' ');
     return m.parseQueryString(query);
   }
 

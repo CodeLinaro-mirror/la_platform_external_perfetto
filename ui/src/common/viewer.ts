@@ -14,7 +14,8 @@
 
 import {Disposable} from '../base/disposable';
 import {globals} from '../frontend/globals';
-import {Viewer} from '../public';
+import {runQueryInNewTab} from '../frontend/query_result_tab';
+import {TrackPredicate, Viewer} from '../public';
 
 import {Actions} from './actions';
 
@@ -22,22 +23,60 @@ export class ViewerImpl implements Viewer {
   sidebar = {
     hide: () => {
       globals.dispatch(Actions.setSidebar({
-        visible: true,
+        visible: false,
       }));
     },
     show:
         () => {
           globals.dispatch(Actions.setSidebar({
-            visible: false,
+            visible: true,
           }));
         },
     isVisible: () => globals.state.sidebarVisible,
+  };
+
+  tracks = {
+    pin: (predicate: TrackPredicate) => {
+      const tracks = Object.values(globals.state.tracks);
+      for (const track of tracks) {
+        const tags = {
+          name: track.name,
+        };
+        if (predicate(tags) && !this.isPinned(track.id)) {
+          globals.dispatch(Actions.toggleTrackPinned({
+            trackId: track.id,
+          }));
+        }
+      }
+    },
+    unpin:
+        (predicate: TrackPredicate) => {
+          const tracks = Object.values(globals.state.tracks);
+          for (const track of tracks) {
+            const tags = {
+              name: track.name,
+            };
+            if (predicate(tags) && this.isPinned(track.id)) {
+              globals.dispatch(Actions.toggleTrackPinned({
+                trackId: track.id,
+              }));
+            }
+          }
+        },
+  };
+
+  tabs = {
+    openQuery: runQueryInNewTab,
   };
 
   constructor() {}
 
   getProxy(pluginId: string): ViewerProxy {
     return new ViewerProxy(this, pluginId);
+  }
+
+  private isPinned(trackId: string) {
+    return globals.state.pinnedTracks.includes(trackId);
   }
 }
 
@@ -70,6 +109,8 @@ export class ViewerProxy implements Viewer, Disposable {
 
   // ViewerImpl:
   sidebar: Viewer['sidebar'];
+  tracks: Viewer['tracks'];
+  tabs: Viewer['tabs'];
 
   // ViewerProxy:
   constructor(parent: ViewerImpl, pluginId: string) {
@@ -83,6 +124,15 @@ export class ViewerProxy implements Viewer, Disposable {
       show: wrapVoid(allow, parent.sidebar.show.bind(parent.sidebar)),
       isVisible:
           wrap(allow, parent.sidebar.isVisible.bind(parent.sidebar), false),
+    };
+
+    this.tracks = {
+      pin: wrapVoid(allow, parent.tracks.pin.bind(parent.tracks)),
+      unpin: wrapVoid(allow, parent.tracks.unpin.bind(parent.tracks)),
+    };
+
+    this.tabs = {
+      openQuery: wrapVoid(allow, parent.tabs.openQuery.bind(parent.tabs)),
     };
   }
 
