@@ -12,9 +12,8 @@
 -- See the License for the specific language governing permissions and
 -- limitations under the License.
 
--- TODO(b/286187288): Move this dependency to stdlib.
 SELECT IMPORT('chrome.chrome_scrolls');
-SELECT RUN_METRIC('chrome/chrome_scroll_jank_v3.sql');
+SELECT IMPORT('chrome.scroll_jank.scroll_jank_v3');
 SELECT IMPORT('common.slices');
 
 -- Selects EventLatency slices that correspond with janks in a scroll. This is
@@ -106,7 +105,7 @@ frame_stats AS (
     num_frames AS presented_frame_count,
     IFNULL(num_janky_frames, 0) AS janky_frame_count,
     ROUND(IFNULL(scroll_jank_percentage, 0), 2) AS janky_frame_percent
-  FROM frames_per_scroll
+  FROM chrome_frames_per_scroll
 )
 SELECT
   vsyncs.scroll_id,
