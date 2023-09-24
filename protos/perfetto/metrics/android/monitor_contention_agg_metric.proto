@@ -18,16 +18,17 @@ syntax = "proto2";
 
 package perfetto.protos;
 
-enum TracePoolType {
-  TYPE_UNKNOWN = 0;
-
-  // Indicates that the trace pool can be accessed by more than one user. This
-  // implies the pool is "stateless" (i.e. TraceProcessor instances do not
-  // retain state between RPCs).
-  SHARED = 1;
-
-  // Indicates that the trace pool is only accessible by a single user at a
-  // time. This implies the pool is "stateful" (i.e. TraceProcessor instances
-  // retain state across RPCs).
-  DEDICATED = 2;
+ // This metric provides aggregated information about monitor contention graph
+ // in a trace
+message AndroidMonitorContentionAggMetric {
+  // Next id: 2
+  // Stats for Monitor contention aggregated by process.
+  message ProcessAggregation {
+    optional string name = 1;
+    optional int64 total_contention_count = 2;
+    optional int64 total_contention_dur = 3;
+    optional int64 main_thread_contention_count = 4;
+    optional int64 main_thread_contention_dur = 5;
+  }
+  repeated ProcessAggregation process_aggregation = 1;
 }
