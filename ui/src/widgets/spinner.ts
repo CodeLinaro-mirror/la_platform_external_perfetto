@@ -1,4 +1,4 @@
-// Copyright (C) 2020 The Android Open Source Project
+// Copyright (C) 2023 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export const BLANK_CHECKBOX = 'check_box_outline_blank';
-export const CHECKBOX = 'check_box';
-export const INDETERMINATE_CHECKBOX = 'indeterminate_check_box';
+import m from 'mithril';
 
-export const EXPAND_DOWN = 'expand_more';
-export const EXPAND_UP = 'expand_less';
+import {classNames} from '../base/classnames';
 
-export const PIN = 'push_pin';
+interface SpinnerAttrs {
+  // Whether to use an ease-in-ease-out animation rather than a linear one.
+  // Defaults to false.
+  easing: boolean;
+}
 
-export const LIBRARY_ADD_CHECK = 'library_add_check';
-
-export const SELECT_ALL = 'select_all';
-export const DESELECT = 'deselect';
-
-export const STAR = 'star';
+export class Spinner implements m.ClassComponent<SpinnerAttrs> {
+  view({attrs}: m.Vnode<SpinnerAttrs, this>): void|m.Children {
+    const {
+      easing = false,
+    } = attrs;
+    const classes = classNames(easing && 'easing');
+    return m('.pf-spinner', {class: classes});
+  }
+}

@@ -16,6 +16,7 @@ import m from 'mithril';
 
 import {findRef} from '../base/dom_utils';
 import {assertExists, assertTrue} from '../base/logging';
+import {Time} from '../base/time';
 import {Actions} from '../common/actions';
 import {
   ALLOC_SPACE_MEMORY_ALLOCATED_KEY,
@@ -29,20 +30,19 @@ import {
   FlamegraphStateViewingOption,
   ProfileType,
 } from '../common/state';
-import {Time} from '../common/time';
 import {profileType} from '../controller/flamegraph_controller';
 import {raf} from '../core/raf_scheduler';
+import {Button} from '../widgets/button';
+import {DurationWidget} from '../widgets/duration';
 
 import {Flamegraph, NodeRendering} from './flamegraph';
 import {globals} from './globals';
 import {Modal, ModalDefinition} from './modal';
-import {Panel, PanelSize} from './panel';
+import {PanelSize} from './panel';
 import {debounce} from './rate_limiters';
 import {Router} from './router';
 import {getCurrentTrace} from './sidebar';
 import {convertTraceToPprofAndDownload} from './trace_converter';
-import {Button} from './widgets/button';
-import {DurationWidget} from './widgets/duration';
 
 interface FlamegraphDetailsPanelAttrs {}
 
@@ -64,7 +64,8 @@ const RENDER_OBJ_COUNT: NodeRendering = {
   totalSize: 'Subtree objects',
 };
 
-export class FlamegraphDetailsPanel extends Panel<FlamegraphDetailsPanelAttrs> {
+export class FlamegraphDetailsPanel implements
+    m.ClassComponent<FlamegraphDetailsPanelAttrs> {
   private profileType?: ProfileType = undefined;
   private ts = Time.ZERO;
   private pids: number[] = [];
@@ -295,10 +296,6 @@ export class FlamegraphDetailsPanel extends Panel<FlamegraphDetailsPanelAttrs> {
       }
     }
   };
-
-  renderCanvas() {
-    // No-op
-  }
 
   private renderLocalCanvas(ctx: CanvasRenderingContext2D, size: PanelSize) {
     this.changeFlamegraphData();
