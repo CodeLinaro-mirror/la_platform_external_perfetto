@@ -30,6 +30,8 @@ import {
   TracePluginContext,
 } from '../../public';
 
+export const ANDROID_LOGS_TRACK_KIND = 'AndroidLogTrack';
+
 export interface Data extends TrackData {
   // Total number of log events within [start, end], before any quantization.
   numEvents: number;
@@ -155,7 +157,7 @@ class AndroidLog implements Plugin {
       ctx.addTrack({
         uri: 'perfetto.AndroidLog',
         displayName: 'Android logs',
-        tags: {type: 'counter'},
+        kind: ANDROID_LOGS_TRACK_KIND,
         trackFactory: ({trackInstanceId}) => {
           return new TrackWithControllerAdapter<Config, Data>(
               ctx.engine,

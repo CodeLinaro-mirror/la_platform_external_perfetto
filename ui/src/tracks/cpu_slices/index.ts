@@ -43,6 +43,8 @@ import {
   TracePluginContext,
 } from '../../public';
 
+export const CPU_SLICE_TRACK_KIND = 'CpuSliceTrack';
+
 export interface Data extends TrackData {
   // Slices are stored in a columnar fashion. All fields have the same length.
   ids: Float64Array;
@@ -482,10 +484,8 @@ class CpuSlices implements Plugin {
       ctx.addTrack({
         uri,
         displayName: name,
-        tags: {
-          cpu: `${cpu}`,
-          type: 'cpu_sched',
-        },
+        kind: CPU_SLICE_TRACK_KIND,
+        cpu,
         trackFactory: ({trackInstanceId}) => {
           return new TrackWithControllerAdapter<Config, Data>(
               ctx.engine,
@@ -501,7 +501,7 @@ class CpuSlices implements Plugin {
   async guessCpuSizes(engine: EngineProxy): Promise<Map<number, string>> {
     const cpuToSize = new Map<number, string>();
     await engine.query(`
-      SELECT IMPORT('common.cpus');
+      INCLUDE PERFETTO MODULE common.cpus;
     `);
     const result = await engine.query(`
       SELECT cpu, GUESS_CPU_SIZE(cpu) as size FROM cpu_counter_track;

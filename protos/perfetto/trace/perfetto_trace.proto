@@ -5231,6 +5231,34 @@ message DescriptorProto {
   repeated string reserved_name = 10;
 }
 
+// A message representing a option the parser does not recognize. This only
+// appears in options protos created by the compiler::Parser class.
+// DescriptorPool resolves these when building Descriptor objects. Therefore,
+// options protos in descriptor objects (e.g. returned by Descriptor::options(),
+// or produced by Descriptor::CopyTo()) will never have UninterpretedOptions
+// in them.
+message UninterpretedOption {
+  // The name of the uninterpreted option.  Each string represents a segment in
+  // a dot-separated name.  is_extension is true iff a segment represents an
+  // extension (denoted with parentheses in options specs in .proto files).
+  // E.g.,{ ["foo", false], ["bar.baz", true], ["moo", false] } represents
+  // "foo.(bar.baz).moo".
+  message NamePart {
+    optional string name_part = 1;
+    optional bool is_extension = 2;
+  }
+  repeated NamePart name = 2;
+
+  // The value of the uninterpreted option, in whatever type the tokenizer
+  // identified it as during parsing. Exactly one of these should be set.
+  optional string identifier_value = 3;
+  optional uint64 positive_int_value = 4;
+  optional int64 negative_int_value = 5;
+  optional double double_value = 6;
+  optional bytes string_value = 7;
+  optional string aggregate_value = 8;
+}
+
 message FieldOptions {
   // The packed option can be enabled for repeated primitive fields to enable
   // a more efficient representation on the wire. Rather than repeatedly
@@ -5238,6 +5266,9 @@ message FieldOptions {
   // a single length-delimited blob. In proto3, only explicit setting it to
   // false will avoid using packed encoding.
   optional bool packed = 2;
+
+  // The parser stores options it doesn't recognize here. See above.
+  repeated UninterpretedOption uninterpreted_option = 999;
 }
 
 // Describes a field within a message.
@@ -10688,6 +10719,14 @@ message ChromeWindowHandleEventInfo {
 
 // End of protos/perfetto/trace/track_event/chrome_window_handle_event_info.proto
 
+// Begin of protos/perfetto/trace/track_event/screenshot.proto
+
+message Screenshot {
+  optional bytes jpg_image = 1;
+}
+
+// End of protos/perfetto/trace/track_event/screenshot.proto
+
 // Begin of protos/perfetto/trace/track_event/task_execution.proto
 
 // TrackEvent arguments describing the execution of a task.
@@ -10765,7 +10804,7 @@ message TaskExecution {
 // their default track association) can be emitted as part of a
 // TrackEventDefaults message.
 //
-// Next reserved id: 13 (up to 15). Next id: 50.
+// Next reserved id: 13 (up to 15). Next id: 51.
 message TrackEvent {
   // Names of categories of the event. In the client library, categories are a
   // way to turn groups of individual events on or off.
@@ -10918,6 +10957,7 @@ message TrackEvent {
   optional ChromeContentSettingsEventInfo chrome_content_settings_event_info =
       43;
   optional ChromeActiveProcesses chrome_active_processes = 49;
+  optional Screenshot screenshot = 50;
 
   // This field is used only if the source location represents the function that
   // executes during this event.
