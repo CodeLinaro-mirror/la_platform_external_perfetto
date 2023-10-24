@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import m from 'mithril';
+
 import {Hotkey} from '../base/hotkeys';
+import {duration, Span, time} from '../base/time';
 import {EngineProxy} from '../common/engine';
 import {TrackControllerFactory} from '../controller/track_controller';
 import {Store} from '../frontend/store';
-import {TrackCreator} from '../frontend/track';
+import {PxSpan, TimeScale} from '../frontend/time_scale';
+import {SliceRect, TrackCreator} from '../frontend/track';
+import {TrackButtonAttrs} from '../frontend/track_panel';
 
 export {EngineProxy} from '../common/engine';
 export {
@@ -53,6 +58,8 @@ export interface Viewer {
     // Creates a new tab running the provided query.
     openQuery(query: string, title: string): void;
   }
+
+  commands: {run(name: string, ...args: any[]): void;}
 }
 
 export interface Command {
@@ -158,6 +165,105 @@ export interface PluginContext {
   // could be registered in dev.perfetto.CounterTrack - a whole
   // different plugin.
   registerTrack(track: TrackCreator): void;
+
+  // Add a command.
+  addCommand(command: Command): void;
+}
+
+export type Migrate<State> = (init: unknown) => State;
+
+export interface TrackContext {
+  // The ID of this track instance.
+  trackInstanceId: string;
+
+  // Creates a new store overlaying the track instance's state object.
+  // A migrate function must be passed to convert any existing state to a
+  // compatible format.
+  // When opening a fresh trace, the value of |init| will be undefined, and
+  // state should be updated to an appropriate default value.
+  // When loading a permalink, the value of |init| will be whatever was saved
+  // when the permalink was shared, which might be from an old version of this
+  // track.
+  mountStore<State>(migrate: Migrate<State>): Store<State>;
+}
+
+// TODO(stevegolton): Rename `Track` to `BaseTrack` (or similar) and rename this
+// interface to `Track`.
+export interface TrackLike {
+  onCreate(): Promise<void>;
+  render(ctx: CanvasRenderingContext2D): void;
+  onFullRedraw(): void;
+  getSliceRect(
+      visibleTimeScale: TimeScale, visibleWindow: Span<time, duration>,
+      windowSpan: PxSpan, tStart: time, tEnd: time, depth: number): SliceRect
+      |undefined;
+  getHeight(): number;
+  getTrackShellButtons(): Array<m.Vnode<TrackButtonAttrs>>;
+  getContextMenu(): m.Vnode<any>|null;
+  onMouseMove(position: {x: number, y: number}): void;
+  onMouseClick(position: {x: number, y: number}): boolean;
+  onMouseOut(): void;
+  onDestroy(): Promise<void>;
+}
+
+export interface PluginTrackInfo {
+  // A unique identifier for the track. This must be unique within all tracks.
+  uri: string;
+
+  // A human friendly name for this track. Used when displaying the list of
+  // tracks to the user. E.g. when adding a new track to the workspace.
+  displayName: string;
+
+  // A factory function returning the track object.
+  trackFactory: (ctx: TrackContext) => TrackLike;
+
+  // The track "kind" Uued by various subsystems e.g. aggregation controllers.
+  // This is where "XXX_TRACK_KIND" values should be placed.
+  // TODO(stevegolton): This will be deprecated once we handle group selections
+  // in a more generic way - i.e. EventSet.
+  kind: string;
+
+  // An optional list of track IDs represented by this trace.
+  // This list is used for participation in track indexing by track ID.
+  // This index is used by various subsystems to find links between tracks based
+  // on the track IDs used by trace processor.
+  trackIds?: number[];
+
+  // Optional: The CPU number associated with this track.
+  cpu?: number;
+
+  // Optional: A list of tags used for sorting, grouping and "chips".
+  tags?: TrackTags;
+}
+
+// Tracks within track groups (usually corresponding to processes) are sorted.
+// As we want to group all tracks related to a given thread together, we use
+// two keys:
+// - Primary key corresponds to a priority of a track block (all tracks related
+//   to a given thread or a single track if it's not thread-associated).
+// - Secondary key corresponds to a priority of a given thread-associated track
+//   within its thread track block.
+// Each track will have a sort key, which either a primary sort key
+// (for non-thread tracks) or a tid and secondary sort key (mapping of tid to
+// primary sort key is done independently).
+export enum PrimaryTrackSortKey {
+  DEBUG_SLICE_TRACK,
+  NULL_TRACK,
+  PROCESS_SCHEDULING_TRACK,
+  PROCESS_SUMMARY_TRACK,
+  EXPECTED_FRAMES_SLICE_TRACK,
+  ACTUAL_FRAMES_SLICE_TRACK,
+  PERF_SAMPLES_PROFILE_TRACK,
+  HEAP_PROFILE_TRACK,
+  MAIN_THREAD,
+  RENDER_THREAD,
+  GPU_COMPLETION_THREAD,
+  CHROME_IO_THREAD,
+  CHROME_COMPOSITOR_THREAD,
+  ORDINARY_THREAD,
+  COUNTER_TRACK,
+  ASYNC_SLICE_TRACK,
+  ORDINARY_TRACK,
 }
 
 // Similar to PluginContext but with additional properties to operate on the
@@ -166,6 +272,15 @@ export interface PluginContext {
 export interface TracePluginContext<T = undefined> extends PluginContext {
   readonly engine: EngineProxy;
   readonly store: Store<T>;
+
+  // Add a new track from this plugin. The track is just made available here,
+  // it's not automatically shown until it's added to a workspace.
+  addTrack(trackDetails: PluginTrackInfo): void;
+
+  // Suggest a track be added to the workspace on a fresh trace load.
+  // Supersedes `findPotentialTracks()` which has been removed.
+  // Note: this API will be deprecated soon.
+  suggestTrack(trackInfo: TrackInfo): void;
 }
 
 export interface BasePlugin<State> {
@@ -176,10 +291,7 @@ export interface BasePlugin<State> {
   onDeactivate?(ctx: PluginContext): void;
 
   // Extension points.
-  commands?(ctx: PluginContext): Command[];
-  traceCommands?(ctx: TracePluginContext<State>): Command[];
   metricVisualisations?(ctx: PluginContext): MetricVisualisation[];
-  findPotentialTracks?(ctx: TracePluginContext<State>): Promise<TrackInfo[]>;
 }
 
 export interface StatefulPlugin<State> extends BasePlugin<State> {
@@ -209,30 +321,40 @@ export interface PluginClass<T> {
 }
 
 export interface TrackInfo {
-  // The id of this 'type' of track. This id is used to select the
-  // correct |TrackCreator| to construct the track.
-  trackKind: string;
-
   // A human readable name for this specific track. It will normally be
   // displayed on the left-hand-side of the track.
   name: string;
 
-  // An opaque config for the track.
-  config: {};
+  // Used to define default sort order for new traces.
+  // Note: sortKey will be deprecated soon in favour of tags.
+  sortKey: PrimaryTrackSortKey;
+
+  // URI of the suggested track.
+  uri: string;
 }
 
 // A predicate for selecting a groups of tracks.
 export type TrackPredicate = (info: TrackTags) => boolean;
 
-// An set of key/value pairs describing a given track. These
-// are used for selecting tracks to pin/unpin and (in future) the
-// sorting and grouping of tracks. The values are always strings.
-export interface TrackTags {
+interface WellKnownTrackTags {
   // A human readable name for this specific track.
-  name?: string;
+  name: string;
 
+  // Controls whether to show the "metric" chip.
+  metric: boolean;
+
+  // Controls whether to show the "debuggable" chip.
+  debuggable: boolean;
+}
+
+// An set of key/value pairs describing a given track. These are used for
+// selecting tracks to pin/unpin, diplsaying "chips" in the track shell, and
+// (in future) the sorting and grouping of tracks.
+// We define a handful of well known fields, and the rest are arbitrary key-
+// value pairs.
+export type TrackTags = Partial<WellKnownTrackTags>&{
   // There may be arbitrary other key/value pairs.
-  [key: string]: string|undefined;
+  [key: string]: string|number|boolean|undefined;
 }
 
 // Plugins can be passed as class refs, factory functions, or concrete plugin

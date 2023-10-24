@@ -91,6 +91,11 @@ base::Status AddTracebackIfNeeded(base::Status status,
   return status;
 }
 
+SqlSource RewriteToDummySql(const SqlSource& source) {
+  return source.RewriteAllIgnoreExisting(
+      SqlSource::FromTraceProcessorImplementation("SELECT 0 WHERE 0"));
+}
+
 }  // namespace
 
 PerfettoSqlEngine::PerfettoSqlEngine(StringPool* pool)
@@ -192,24 +197,30 @@ PerfettoSqlEngine::ExecuteUntilLastStatement(SqlSource sql_source) {
     std::optional<SqlSource> source;
     if (auto* cf = std::get_if<PerfettoSqlParser::CreateFunction>(
             &parser.statement())) {
-      auto source_or = ExecuteCreateFunction(*cf);
-      RETURN_IF_ERROR(AddTracebackIfNeeded(source_or.status(), cf->sql));
+      auto source_or = ExecuteCreateFunction(*cf, parser);
+      RETURN_IF_ERROR(
+          AddTracebackIfNeeded(source_or.status(), parser.statement_sql()));
       source = std::move(source_or.value());
     } else if (auto* cst = std::get_if<PerfettoSqlParser::CreateTable>(
                    &parser.statement())) {
       RETURN_IF_ERROR(AddTracebackIfNeeded(
-          RegisterRuntimeTable(cst->name, cst->sql), cst->sql));
+          RegisterRuntimeTable(cst->name, cst->sql), parser.statement_sql()));
       // Since the rest of the code requires a statement, just use a no-value
       // dummy statement.
-      source = cst->sql.FullRewrite(
-          SqlSource::FromTraceProcessorImplementation("SELECT 0 WHERE 0"));
+      source = RewriteToDummySql(parser.statement_sql());
+    } else if (auto* include = std::get_if<PerfettoSqlParser::Include>(
+                   &parser.statement())) {
+      RETURN_IF_ERROR(ExecuteInclude(*include, parser));
+      // Since the rest of the code requires a statement, just use a no-value
+      // dummy statement.
+      source = RewriteToDummySql(parser.statement_sql());
     } else {
       // If none of the above matched, this must just be an SQL statement
       // directly executable by SQLite.
       auto* sql =
           std::get_if<PerfettoSqlParser::SqliteSql>(&parser.statement());
       PERFETTO_CHECK(sql);
-      source = std::move(sql->sql);
+      source = parser.statement_sql();
     }
 
     // Try to get SQLite to prepare the statement.
@@ -399,16 +410,50 @@ base::Status PerfettoSqlEngine::EnableSqlFunctionMemoization(
   return CreatedFunction::EnableMemoization(ctx);
 }
 
+base::Status PerfettoSqlEngine::ExecuteInclude(
+    const PerfettoSqlParser::Include& include,
+    const PerfettoSqlParser& parser) {
+  std::string key = include.key;
+  PERFETTO_TP_TRACE(metatrace::Category::TOPLEVEL, "Import",
+                    [key](metatrace::Record* r) { r->AddArg("Import", key); });
+  std::string module_name = sql_modules::GetModuleName(key);
+  auto module = FindModule(module_name);
+  if (!module)
+    return base::ErrStatus("INCLUDE: Unknown module name provided - %s",
+                           key.c_str());
+
+  auto module_file = module->include_key_to_file.Find(key);
+  if (!module_file) {
+    return base::ErrStatus("INCLUDE: Unknown filename provided - %s",
+                           key.c_str());
+  }
+  // INCLUDE is noop for already included files.
+  if (module_file->included) {
+    return base::OkStatus();
+  }
+
+  auto it = Execute(SqlSource::FromModuleInclude(module_file->sql, key));
+  if (!it.status().ok()) {
+    return base::ErrStatus("%s%s",
+                           parser.statement_sql().AsTraceback(0).c_str(),
+                           it.status().c_message());
+  }
+  if (it->statement_count_with_output > 0)
+    return base::ErrStatus("INCLUDE: Included module returning values.");
+  module_file->included = true;
+  return base::OkStatus();
+}
+
 base::StatusOr<SqlSource> PerfettoSqlEngine::ExecuteCreateFunction(
-    const PerfettoSqlParser::CreateFunction& cf) {
+    const PerfettoSqlParser::CreateFunction& cf,
+    const PerfettoSqlParser& parser) {
   if (!cf.is_table) {
     RETURN_IF_ERROR(
         RegisterSqlFunction(cf.replace, cf.prototype, cf.returns, cf.sql));
 
     // Since the rest of the code requires a statement, just use a no-value
     // dummy statement.
-    return cf.sql.FullRewrite(
-        SqlSource::FromTraceProcessorImplementation("SELECT 0 WHERE 0"));
+    return RewriteToDummySql(parser.statement_sql());
   }
 
   RuntimeTableFunction::State state{cf.prototype, cf.sql, {}, {}, std::nullopt};
@@ -522,7 +567,7 @@ base::StatusOr<SqlSource> PerfettoSqlEngine::ExecuteCreateFunction(
 
   base::StackString<1024> create(
       "CREATE VIRTUAL TABLE %s USING runtime_table_function", fn_name.c_str());
-  return cf.sql.FullRewrite(
+  return cf.sql.RewriteAllIgnoreExisting(
       SqlSource::FromTraceProcessorImplementation(create.ToStdString()));
 }
 

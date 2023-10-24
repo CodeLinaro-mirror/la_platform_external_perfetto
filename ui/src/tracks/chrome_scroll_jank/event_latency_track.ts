@@ -21,12 +21,13 @@ import {Engine} from '../../common/engine';
 import {
   generateSqlWithInternalLayout,
 } from '../../common/internal_layout_utils';
-import {PrimaryTrackSortKey, SCROLLING_TRACK_GROUP} from '../../common/state';
+import {SCROLLING_TRACK_GROUP} from '../../common/state';
 import {globals} from '../../frontend/globals';
 import {
   NamedSliceTrackTypes,
 } from '../../frontend/named_slice_track';
 import {NewTrackArgs, Track} from '../../frontend/track';
+import {PrimaryTrackSortKey} from '../../public';
 import {
   CustomSqlDetailsPanelConfig,
   CustomSqlTableDefConfig,
@@ -64,8 +65,8 @@ export class EventLatencyTrack extends
     });
   }
 
-  onDestroy() {
-    super.onDestroy();
+  async onDestroy() {
+    await super.onDestroy();
     ScrollJankPluginState.getInstance().unregisterTrack(EventLatencyTrack.kind);
   }
 
@@ -183,7 +184,7 @@ export async function addLatencyTracks(engine: Engine):
     FROM latency_stages ls;`;
 
   await engine.query(
-      `SELECT IMPORT('chrome.scroll_jank.scroll_jank_intervals')`);
+      `INCLUDE PERFETTO MODULE chrome.scroll_jank.scroll_jank_intervals`);
   await engine.query(tableDefSql);
 
   result.tracksToAdd.push({

@@ -23,6 +23,7 @@
 #include <list>
 #include <mutex>
 #include <regex>
+#include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -3257,7 +3258,8 @@ TEST_P(PerfettoApiTest, TrackEventDebugAnnotations) {
   TRACE_EVENT_BEGIN("test", "E", "float_arg", 3.14159262f);
   TRACE_EVENT_BEGIN("test", "E", "double_arg", 6.22);
   TRACE_EVENT_BEGIN("test", "E", "str_arg", "hello", "str_arg2",
-                    std::string("tracing"));
+                    std::string("tracing"), "str_arg3",
+                    std::string_view("view"));
   TRACE_EVENT_BEGIN("test", "E", "ptr_arg",
                     reinterpret_cast<void*>(static_cast<intptr_t>(0xbaadf00d)));
   TRACE_EVENT_BEGIN("test", "E", "size_t_arg", size_t{42});
@@ -3279,7 +3281,8 @@ TEST_P(PerfettoApiTest, TrackEventDebugAnnotations) {
           "B:test.E(bool_arg=(bool)0)", "B:test.E(int_arg=(int)-123)",
           "B:test.E(uint_arg=(uint)456)", "B:test.E(float_arg=(double)3.14159)",
           "B:test.E(double_arg=(double)6.22)",
-          "B:test.E(str_arg=(string)hello,str_arg2=(string)tracing)",
+          "B:test.E(str_arg=(string)hello,str_arg2=(string)tracing,"
+          "str_arg3=(string)view)",
           "B:test.E(ptr_arg=(pointer)baadf00d)",
           "B:test.E(size_t_arg=(uint)42)", "B:test.E(ptrdiff_t_arg=(int)-7)",
           "B:test.E(enum_arg=(uint)1)", "B:test.E(signed_enum_arg=(int)-1)",
@@ -4206,6 +4209,58 @@ TEST_P(PerfettoApiTest, CustomIncrementalState) {
   tracing_session->get()->StopBlocking();
   perfetto::test::TracingMuxerImplInternalsForTest::
       ClearDataSourceTlsStateOnReset<TestIncrementalDataSource>();
+}
+
+const void* const kKey1 = &kKey1;
+const void* const kKey2 = &kKey2;
+
+TEST_P(PerfettoApiTest, TrackEventUserData) {
+  // Create a new trace session.
+  auto* tracing_session = NewTraceWithCategories({"foo"});
+  tracing_session->get()->StartBlocking();
+  perfetto::TrackEventTlsStateUserData* data_1_ptr = nullptr;
+  perfetto::TrackEventTlsStateUserData* data_2_ptr = nullptr;
+
+  TRACE_EVENT_BEGIN(
+      "foo", "E", [&data_1_ptr, &data_2_ptr](perfetto::EventContext& ctx) {
+        EXPECT_EQ(nullptr, ctx.GetTlsUserData(kKey1));
+        EXPECT_EQ(nullptr, ctx.GetTlsUserData(kKey2));
+        std::unique_ptr<perfetto::TrackEventTlsStateUserData> data_1 =
+            std::make_unique<perfetto::TrackEventTlsStateUserData>();
+        data_1_ptr = data_1.get();
+        std::unique_ptr<perfetto::TrackEventTlsStateUserData> data_2 =
+            std::make_unique<perfetto::TrackEventTlsStateUserData>();
+        data_2_ptr = data_2.get();
+        ctx.SetTlsUserData(kKey1, std::move(data_1));
+        ctx.SetTlsUserData(kKey2, std::move(data_2));
+        EXPECT_EQ(data_1_ptr, ctx.GetTlsUserData(kKey1));
+        EXPECT_EQ(data_2_ptr, ctx.GetTlsUserData(kKey2));
+      });
+  TRACE_EVENT_END("foo");
+  TRACE_EVENT_BEGIN("foo", "F",
+                    [&data_1_ptr, &data_2_ptr](perfetto::EventContext& ctx) {
+                      EXPECT_EQ(data_1_ptr, ctx.GetTlsUserData(kKey1));
+                      EXPECT_EQ(data_2_ptr, ctx.GetTlsUserData(kKey2));
+                    });
+  TRACE_EVENT_END("foo");
+
+  std::vector<char> raw_trace = StopSessionAndReturnBytes(tracing_session);
+
+  EXPECT_THAT(ReadSlicesFromTrace(raw_trace),
+              ElementsAre("B:foo.E", "E", "B:foo.F", "E"));
+
+  // Expect that the TLS User Data is cleared between tracing sessions.
+  tracing_session = NewTraceWithCategories({"foo"});
+  tracing_session->get()->StartBlocking();
+
+  TRACE_EVENT_BEGIN("foo", "E", [](perfetto::EventContext& ctx) {
+    EXPECT_EQ(nullptr, ctx.GetTlsUserData(kKey1));
+    EXPECT_EQ(nullptr, ctx.GetTlsUserData(kKey2));
+  });
+  TRACE_EVENT_END("foo");
+
+  raw_trace = StopSessionAndReturnBytes(tracing_session);
+  EXPECT_THAT(ReadSlicesFromTrace(raw_trace), ElementsAre("B:foo.E", "E"));
 }
 
 TEST_P(PerfettoApiTest, OnFlush) {
