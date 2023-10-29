@@ -19,8 +19,7 @@ import {raf} from '../core/raf_scheduler';
 import {globals} from '../frontend/globals';
 import {PxSpan, TimeScale} from '../frontend/time_scale';
 import {SliceRect} from '../frontend/track';
-import {TrackButtonAttrs} from '../frontend/track_panel';
-import {TrackLike} from '../public';
+import {Track} from '../public';
 
 import {TrackData} from './track_data';
 
@@ -40,15 +39,15 @@ export {
 // This provides the logic to perform data reloads at appropriate times as the
 // window is panned and zoomed about.
 // The extending class need only define renderCanvas() and onBoundsChange().
-export abstract class BasicAsyncTrack<Data> implements TrackLike {
+export abstract class BasicAsyncTrack<Data> implements Track {
   private requestingData = false;
   private queuedRequest = false;
   private currentState?: TrackData;
   protected data?: Data;
 
-  async onCreate(): Promise<void> {}
+  onCreate(): void {}
 
-  async onDestroy(): Promise<void> {
+  onDestroy(): void {
     this.queuedRequest = false;
     this.currentState = undefined;
     this.data = undefined;
@@ -67,12 +66,8 @@ export abstract class BasicAsyncTrack<Data> implements TrackLike {
 
   abstract getHeight(): number;
 
-  getTrackShellButtons(): m.Vnode<TrackButtonAttrs, {}>[] {
+  getTrackShellButtons(): m.Children {
     return [];
-  }
-
-  getContextMenu(): m.Vnode<any, {}>|null {
-    return null;
   }
 
   onMouseMove(_position: {x: number; y: number;}): void {}
