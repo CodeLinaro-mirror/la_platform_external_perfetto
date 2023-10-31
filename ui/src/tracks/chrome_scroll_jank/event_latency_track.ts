@@ -21,12 +21,11 @@ import {Engine} from '../../common/engine';
 import {
   generateSqlWithInternalLayout,
 } from '../../common/internal_layout_utils';
-import {SCROLLING_TRACK_GROUP} from '../../common/state';
 import {globals} from '../../frontend/globals';
 import {
   NamedSliceTrackTypes,
 } from '../../frontend/named_slice_track';
-import {NewTrackArgs, Track} from '../../frontend/track';
+import {NewTrackArgs, TrackBase} from '../../frontend/track';
 import {PrimaryTrackSortKey} from '../../public';
 import {
   CustomSqlDetailsPanelConfig,
@@ -36,6 +35,7 @@ import {
 
 import {EventLatencySliceDetailsPanel} from './event_latency_details_panel';
 import {
+  SCROLL_JANK_GROUP_ID,
   ScrollJankPluginState,
   ScrollJankTracks as DecideTracksResult,
 } from './index';
@@ -51,7 +51,7 @@ export class EventLatencyTrack extends
     CustomSqlTableSliceTrack<EventLatencyTrackTypes> {
   static readonly kind = 'org.chromium.ScrollJank.event_latencies';
 
-  static create(args: NewTrackArgs): Track {
+  static create(args: NewTrackArgs): TrackBase {
     return new EventLatencyTrack(args);
   }
 
@@ -65,8 +65,8 @@ export class EventLatencyTrack extends
     });
   }
 
-  async onDestroy() {
-    await super.onDestroy();
+  onDestroy() {
+    super.onDestroy();
     ScrollJankPluginState.getInstance().unregisterTrack(EventLatencyTrack.kind);
   }
 
@@ -194,7 +194,7 @@ export async function addLatencyTracks(engine: Engine):
     trackSortKey: PrimaryTrackSortKey.ASYNC_SLICE_TRACK,
     name: 'Chrome Scroll Input Latencies',
     config: {baseTable: baseTable},
-    trackGroup: SCROLLING_TRACK_GROUP,
+    trackGroup: SCROLL_JANK_GROUP_ID,
   });
 
   return result;

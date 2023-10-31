@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Plugin, PluginContext, PluginInfo} from '../../public';
+import {Plugin, PluginContext, PluginDescriptor} from '../../public';
 
+import {DebugCounterTrack} from './counter_track';
 import {DebugTrackV2} from './slice_track';
 
 class DebugTrackPlugin implements Plugin {
   onActivate(ctx: PluginContext): void {
-    ctx.registerTrack(DebugTrackV2);
+    ctx.LEGACY_registerTrack(DebugTrackV2);
+    ctx.LEGACY_registerTrack(DebugCounterTrack);
   }
 }
 
-export const plugin: PluginInfo = {
+export const plugin: PluginDescriptor = {
   pluginId: 'perfetto.DebugSlices',
   plugin: DebugTrackPlugin,
 };
