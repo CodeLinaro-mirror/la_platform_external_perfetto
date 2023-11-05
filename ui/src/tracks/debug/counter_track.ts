@@ -13,13 +13,18 @@
 // limitations under the License.
 
 import m from 'mithril';
+import {v4 as uuidv4} from 'uuid';
 
 import {Actions, DEBUG_COUNTER_TRACK_KIND} from '../../common/actions';
 import {EngineProxy} from '../../common/engine';
+import {SCROLLING_TRACK_GROUP} from '../../common/state';
 import {BaseCounterTrack} from '../../frontend/base_counter_track';
 import {globals} from '../../frontend/globals';
 import {NewTrackArgs} from '../../frontend/track';
 import {TrackButton} from '../../frontend/track_panel';
+import {PrimaryTrackSortKey} from '../../public';
+
+import {DEBUG_COUNTER_TRACK_URI} from '.';
 
 // Names of the columns of the underlying view to be used as ts / dur / name.
 export interface CounterColumns {
@@ -49,7 +54,8 @@ export class DebugCounterTrack extends
       this.getCounterContextMenu(),
       m(TrackButton, {
         action: () => {
-          globals.dispatch(Actions.removeDebugTrack({trackId: this.trackId}));
+          globals.dispatch(
+              Actions.removeTracks({trackInstanceIds: [this.trackId]}));
         },
         i: 'close',
         tooltip: 'Close',
@@ -98,12 +104,19 @@ export async function addDebugCounterTrack(
       from data
       order by ts;`);
 
-  globals.dispatch(Actions.addDebugCounterTrack({
-    engineId: engine.engineId,
-    name: trackName.trim() || `Debug Track ${debugTrackId}`,
-    config: {
-      sqlTableName,
-      columns,
-    },
-  }));
+  const trackInstanceId = uuidv4();
+  globals.dispatchMultiple([
+    Actions.addTrack({
+      id: trackInstanceId,
+      uri: DEBUG_COUNTER_TRACK_URI,
+      name: trackName.trim() || `Debug Track ${debugTrackId}`,
+      trackSortKey: PrimaryTrackSortKey.DEBUG_TRACK,
+      trackGroup: SCROLLING_TRACK_GROUP,
+      initialState: {
+        sqlTableName,
+        columns,
+      },
+    }),
+    Actions.toggleTrackPinned({trackId: trackInstanceId}),
+  ]);
 }
