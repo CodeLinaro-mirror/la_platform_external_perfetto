@@ -93,7 +93,6 @@ export abstract class BaseCounterTrack<Config> extends TrackBase<Config> {
 
   constructor(args: NewTrackArgs) {
     super(args);
-    this.frontendOnly = true;  // Disable auto checkerboarding.
     this.tableName = `track_${this.trackId}`.replace(/[^a-zA-Z0-9_]+/g, '_');
   }
 
@@ -132,9 +131,7 @@ export abstract class BaseCounterTrack<Config> extends TrackBase<Config> {
   }
 
   getTrackShellButtons(): m.Children {
-    return [
-      this.getCounterContextMenu(),
-    ];
+    return this.getCounterContextMenu();
   }
 
   renderCanvas(ctx: CanvasRenderingContext2D) {
