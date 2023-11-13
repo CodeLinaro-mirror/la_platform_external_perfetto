@@ -15,6 +15,7 @@
 import m from 'mithril';
 import {v4 as uuidv4} from 'uuid';
 
+import {isString} from '../base/object_utils';
 import {Icons} from '../base/semantic_icons';
 import {sqliteString} from '../base/string_utils';
 import {exists} from '../base/utils';
@@ -161,28 +162,28 @@ async function addVisualisedArg(engine: EngineProxy, argName: string) {
 
   const tracksToAdd: AddTrackArgs[] = [];
   const it = result.iter({'trackId': NUM, 'maxDepth': NUM});
-  const addedTrackIds: string[] = [];
+  const addedTrackKeys: string[] = [];
   for (; it.valid(); it.next()) {
     const track =
-        globals.state.tracks[globals.state.uiTrackIdByTraceTrackId[it.trackId]];
+        globals.state.tracks[globals.state.trackKeyByTrackId[it.trackId]];
     const utid = (track.trackSortKey as {utid?: number}).utid;
-    const id = uuidv4();
-    addedTrackIds.push(id);
+    const key = uuidv4();
+    addedTrackKeys.push(key);
 
-    const initialState: VisualisedArgsState = {
+    const params: VisualisedArgsState = {
       maxDepth: it.maxDepth,
       trackId: it.trackId,
       argName: argName,
     };
 
     tracksToAdd.push({
-      id,
+      key,
       trackGroup: track.trackGroup,
       name: argName,
       trackSortKey: utid === undefined ?
           track.trackSortKey :
           {utid, priority: InThreadTrackSortKey.VISUALISED_ARGS_TRACK},
-      initialState,
+      params,
       uri: VISUALISED_ARGS_SLICE_TRACK_URI,
     });
   }
@@ -224,7 +225,7 @@ function stringifyKey(...key: Key[]): string {
 }
 
 function isWebLink(value: unknown): value is string {
-  return typeof value === 'string' &&
+  return isString(value) &&
       (value.startsWith('http://') || value.startsWith('https://'));
 }
 
