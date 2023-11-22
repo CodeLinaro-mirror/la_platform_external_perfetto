@@ -267,21 +267,19 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
                                    const std::vector<Constraint>& c_vec) {
   RowMap rm(0, table->row_count());
   for (const auto& c : c_vec) {
+    if (rm.size() == 0) {
+      return rm;
+    }
     const Column& col = table->columns()[c.col_idx];
     uint32_t column_size =
         col.IsId() ? col.overlay().row_map().Max() : col.storage_base().size();
 
-    // RowMap size
-    bool use_legacy = rm.size() <= 1;
+    // RowMap size is 1.
+    bool use_legacy = rm.size() == 1;
 
-    // Rare cases where we have a range which doesn't match the size of the
-    // column.
+    // Storage has different size than Range overlay.
     use_legacy = use_legacy || (col.overlay().size() != column_size &&
                                 col.overlay().row_map().IsRange());
-
-    // Rare cases where string columns can be sorted.
-    use_legacy =
-        use_legacy || (col.IsSorted() && col.col_type() == ColumnType::kString);
 
     // Mismatched types
     use_legacy = use_legacy || (overlays::FilterOpToOverlayOp(c.op) ==
@@ -320,7 +318,7 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
         storage.reset(new storage::StringStorage(
             table->string_pool(),
             static_cast<const StringPool::Id*>(col.storage_base().data()),
-            col.storage_base().non_null_size()));
+            col.storage_base().non_null_size(), col.IsSorted()));
         break;
       case ColumnType::kInt64:
       case ColumnType::kUint32:
@@ -332,7 +330,7 @@ RowMap QueryExecutor::FilterLegacy(const Table* table,
     }
     s_col.storage = storage.get();
 
-    // Create cDBv2 overlays based on col.overlay()
+    // Create cEngine overlays based on col.overlay()
     overlays::SelectorOverlay selector_overlay(
         col.overlay().row_map().GetIfBitVector());
     if (col.overlay().size() != column_size &&
