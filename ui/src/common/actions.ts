@@ -22,7 +22,6 @@ import {
   GenericSliceDetailsTabConfig,
   GenericSliceDetailsTabConfigBase,
 } from '../frontend/generic_slice_details_tab';
-import {globals} from '../frontend/globals';
 import {
   Aggregation,
   AggregationFunction,
@@ -39,7 +38,7 @@ import {
   performReordering,
 } from './dragndrop_logic';
 import {createEmptyState} from './empty_state';
-import {DEFAULT_VIEWING_OPTION, PERF_SAMPLES_KEY} from './flamegraph_util';
+import {defaultViewingOption} from './flamegraph_util';
 import {
   MetatraceTrackId,
   traceEvent,
@@ -677,7 +676,7 @@ export const StateActions = {
           time,  // TODO(stevegolton): Avoid type assertion here.
       end: args.ts,
       upids: [args.upid],
-      viewingOption: DEFAULT_VIEWING_OPTION,
+      viewingOption: defaultViewingOption(args.type),
     });
   },
 
@@ -701,7 +700,7 @@ export const StateActions = {
       start: args.leftTs,
       end: args.rightTs,
       upids: [args.upid],
-      viewingOption: PERF_SAMPLES_KEY,
+      viewingOption: defaultViewingOption(args.type),
     });
   },
 
@@ -1027,7 +1026,7 @@ export const StateActions = {
   togglePivotTable(state: StateDraft, args: {areaId: string|null}) {
     state.nonSerializableState.pivotTable.selectionArea = args.areaId === null ?
         undefined :
-        {areaId: args.areaId, tracks: globals.state.areas[args.areaId].tracks};
+        {areaId: args.areaId, tracks: state.areas[args.areaId].tracks};
     if (args.areaId !==
         state.nonSerializableState.pivotTable.selectionArea?.areaId) {
       state.nonSerializableState.pivotTable.queryResult = null;

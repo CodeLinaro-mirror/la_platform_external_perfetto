@@ -88,9 +88,10 @@ class FileMd:
                        f'''**{data['name']}**, {data['type']}\n\n'''
                        f'''{data['desc']}\n''')
 
-      self.objs.append('Column | Description\n------ | -----------')
-      for name, desc in data['cols'].items():
-        self.objs.append(f'{name} | {desc}')
+      self.objs.append(
+          'Column | Type | Description\n------ | --- | -----------')
+      for name, info in data['cols'].items():
+        self.objs.append(f'{name} | {info["type"]} | {info["desc"]}')
 
       self.objs.append('\n\n')
 
@@ -137,9 +138,10 @@ class FileMd:
           self.view_funs.append(
               f'''{name} | {arg_dict['type']} | {arg_dict['desc']}''')
         self.view_funs.append('\n')
-      self.view_funs.append('Column | Description\n' '------ | -----------')
-      for name, desc in data['cols'].items():
-        self.view_funs.append(f'{name} | {desc}')
+      self.view_funs.append('Column | Type | Description\n'
+                            '------ | -- | -----------')
+      for name, column in data['cols'].items():
+        self.view_funs.append(f'{name} | {column["type"]} | {column["desc"]}')
 
       self.view_funs.append('\n\n')
 
