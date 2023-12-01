@@ -132,6 +132,7 @@ class PerfettoSqlEngine {
   // Makes new SQL module available to import.
   void RegisterModule(const std::string& name,
                       sql_modules::RegisteredModule module) {
+    modules_.Erase(name);
     modules_.Insert(name, std::move(module));
   }
 
@@ -177,6 +178,8 @@ class PerfettoSqlEngine {
       int argc,
       std::unique_ptr<typename Function::Context> ctx,
       bool deterministic = true);
+
+  base::Status UnregisterFunctionWithSqlite(const char* name, int argc);
 
   // Get the column names from a statement.
   // |operator_name| is used in the error message if the statement is invalid.

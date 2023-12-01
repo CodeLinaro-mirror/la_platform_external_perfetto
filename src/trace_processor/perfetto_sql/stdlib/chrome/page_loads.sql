@@ -1,16 +1,6 @@
--- Copyright 2023 The Android Open Source Project
---
--- Licensed under the Apache License, Version 2.0 (the "License");
--- you may not use this file except in compliance with the License.
--- You may obtain a copy of the License at
---
---     https://www.apache.org/licenses/LICENSE-2.0
---
--- Unless required by applicable law or agreed to in writing, software
--- distributed under the License is distributed on an "AS IS" BASIS,
--- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
--- See the License for the specific language governing permissions and
--- limitations under the License.
+-- Copyright 2023 The Chromium Authors
+-- Use of this source code is governed by a BSD-style license that can be
+-- found in the LICENSE file.
 
 -- TODO(b/306300843): The recorded navigation ids are not guaranteed to be
 -- unique within a trace; they are only guaranteed to be unique within a single
@@ -33,18 +23,23 @@ CREATE PERFETTO FUNCTION internal_page_load_metrics(event_name STRING)
 RETURNS TABLE(
   ts LONG,
   dur LONG,
-  navigation_id INT
+  navigation_id INT,
+  browser_upid INT
 ) AS
 SELECT
   ts,
   dur,
   EXTRACT_ARG(arg_set_id, 'page_load.navigation_id')
-    AS navigation_id
-FROM slice
+    AS navigation_id,
+  upid AS browser_upid
+FROM process_slice
 WHERE name = $event_name;
 
 -- Chrome page loads, including associated high-level metrics and properties.
 CREATE PERFETTO TABLE chrome_page_loads(
+  -- ID of the navigation and Chrome browser process; this combination is
+  -- unique to every individual navigation.
+  id INT,
   -- ID of the navigation associated with the page load (i.e. the cross-document
   -- navigation in primary main frame which created this page's main document).
   -- Also note that navigation_id is specific to a given Chrome browser process,
@@ -83,6 +78,7 @@ CREATE PERFETTO TABLE chrome_page_loads(
   browser_upid INT
 ) AS
 SELECT
+  ROW_NUMBER() OVER(ORDER BY fcp.ts) AS id,
   fcp.navigation_id,
   fcp.ts AS navigation_start_ts,
   fcp.dur AS fcp,
@@ -99,19 +95,19 @@ SELECT
 FROM internal_fcp_metrics fcp
 LEFT JOIN
   internal_page_load_metrics('PageLoadMetrics.NavigationToLargestContentfulPaint') lcp
-    USING (navigation_id)
+    USING (navigation_id, browser_upid)
 LEFT JOIN
   internal_page_load_metrics('PageLoadMetrics.NavigationToDOMContentLoadedEventFired') load_fired
-    using (navigation_id)
+    USING (navigation_id, browser_upid)
 LEFT JOIN
   internal_page_load_metrics('PageLoadMetrics.NavigationToMainFrameOnLoad') start_load
-    using (navigation_id)
+    USING (navigation_id, browser_upid)
 LEFT JOIN
   internal_page_load_metrics('PageLoadMetrics.UserTimingMarkFullyLoaded') timing_loaded
-    using (navigation_id)
+    USING (navigation_id, browser_upid)
 LEFT JOIN
   internal_page_load_metrics('PageLoadMetrics.UserTimingMarkFullyVisible') timing_visible
-    using (navigation_id)
+    USING (navigation_id, browser_upid)
 LEFT JOIN
   internal_page_load_metrics('PageLoadMetrics.UserTimingMarkInteractive') timing_interactive
-    using (navigation_id);
+    USING (navigation_id, browser_upid);
