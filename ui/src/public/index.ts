@@ -16,9 +16,9 @@ import m from 'mithril';
 
 import {Hotkey} from '../base/hotkeys';
 import {duration, Span, time} from '../base/time';
+import {ColorScheme} from '../common/colorizer';
 import {Store} from '../frontend/store';
 import {PxSpan, TimeScale} from '../frontend/time_scale';
-import {SliceRect} from '../frontend/track';
 import {EngineProxy} from '../trace_processor/engine';
 
 export {createStore, Store} from '../frontend/store';
@@ -31,6 +31,37 @@ export {
   STR,
   STR_NULL,
 } from '../trace_processor/query_result';
+
+export interface Slice {
+  // These properties are updated only once per query result when the Slice
+  // object is created and don't change afterwards.
+  readonly id: number;
+  readonly startNsQ: time;
+  readonly endNsQ: time;
+  readonly durNsQ: duration;
+  readonly ts: time;
+  readonly dur: duration;
+  readonly depth: number;
+  readonly flags: number;
+
+  // Each slice can represent some extra numerical information by rendering a
+  // portion of the slice with a lighter tint.
+  // |fillRatio\ describes the ratio of the normal area to the tinted area
+  // width of the slice, normalized between 0.0 -> 1.0.
+  // 0.0 means the whole slice is tinted.
+  // 1.0 means none of the slice is tinted.
+  // E.g. If |fillRatio| = 0.65 the slice will be rendered like this:
+  // [############|*******]
+  // ^------------^-------^
+  //     Normal     Light
+  readonly fillRatio: number;
+
+  // These can be changed by the Impl.
+  title: string;
+  subTitle: string;
+  colorScheme: ColorScheme;
+  isHighlighted: boolean;
+}
 
 export interface Command {
   // A unique id for this command.
@@ -130,6 +161,14 @@ export interface TrackContext {
   // when the permalink was shared, which might be from an old version of this
   // track.
   mountStore<State>(migrate: Migrate<State>): Store<State>;
+}
+
+export interface SliceRect {
+  left: number;
+  width: number;
+  top: number;
+  height: number;
+  visible: boolean;
 }
 
 export interface Track {

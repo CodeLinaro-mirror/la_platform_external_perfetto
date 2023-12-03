@@ -27,7 +27,6 @@ import {
   DeferredAction,
 } from '../common/actions';
 import {cacheTrace} from '../common/cache_manager';
-import {featureFlags, Flag, PERF_SAMPLE_FLAG} from '../common/feature_flags';
 import {
   HighPrecisionTime,
   HighPrecisionTimeSpan,
@@ -44,6 +43,7 @@ import {
   PendingDeeplinkState,
   ProfileType,
 } from '../common/state';
+import {featureFlags, Flag, PERF_SAMPLE_FLAG} from '../core/feature_flags';
 import {BottomTabList} from '../frontend/bottom_tab';
 import {
   FtraceStat,
@@ -780,39 +780,43 @@ export class TraceController extends Controller<States> {
 
   private async loadTimelineOverview(trace: Span<time, duration>) {
     clearOverviewData();
-
     const engine = assertExists<Engine>(this.engine);
     const stepSize = Duration.max(1n, trace.duration / 100n);
-    let hasSchedOverview = false;
-    for (let start = trace.start; start < trace.end;
-         start = Time.add(start, stepSize)) {
-      const progress = start - trace.start;
-      const ratio = Number(progress) / Number(trace.duration);
-      this.updateStatus(
-          'Loading overview ' +
-          `${Math.round(ratio * 100)}%`);
-      const end = Time.add(start, stepSize);
-
-      // Sched overview.
-      const schedResult = await engine.query(
-          `select cast(sum(dur) as float)/${
-              stepSize} as load, cpu from sched ` +
-          `where ts >= ${start} and ts < ${end} and utid != 0 ` +
-          'group by cpu order by cpu');
-      const schedData: {[key: string]: QuantizedLoad} = {};
-      const it = schedResult.iter({load: NUM, cpu: NUM});
-      for (; it.valid(); it.next()) {
-        const load = it.load;
-        const cpu = it.cpu;
-        schedData[cpu] = {start, end, load};
-        hasSchedOverview = true;
-      }
-      publishOverviewData(schedData);
-    }
-
+    const hasSchedSql = 'select ts from sched limit 1';
+    const hasSchedOverview = (await engine.query(hasSchedSql)).numRows() > 0;
     if (hasSchedOverview) {
+      const stepPromises = [];
+      for (let start = trace.start; start < trace.end;
+           start = Time.add(start, stepSize)) {
+        const progress = start - trace.start;
+        const ratio = Number(progress) / Number(trace.duration);
+        this.updateStatus(
+            'Loading overview ' +
+            `${Math.round(ratio * 100)}%`);
+        const end = Time.add(start, stepSize);
+        // The (async() => {})() queues all the 100 async promises in one batch.
+        // Without that, we would wait for each step to be rendered before
+        // kicking off the next one. That would interleave an animation frame
+        // between each step, slowing down significantly the overall process.
+        stepPromises.push((async () => {
+          const schedResult = await engine.query(
+              `select cast(sum(dur) as float)/${
+                  stepSize} as load, cpu from sched ` +
+              `where ts >= ${start} and ts < ${end} and utid != 0 ` +
+              'group by cpu order by cpu');
+          const schedData: {[key: string]: QuantizedLoad} = {};
+          const it = schedResult.iter({load: NUM, cpu: NUM});
+          for (; it.valid(); it.next()) {
+            const load = it.load;
+            const cpu = it.cpu;
+            schedData[cpu] = {start, end, load};
+          }
+          publishOverviewData(schedData);
+        })());
+      }  // for(start = ...)
+      await Promise.all(stepPromises);
       return;
-    }
+    }  // if (hasSchedOverview)
 
     // Slices overview.
     const sliceResult = await engine.query(`select

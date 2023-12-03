@@ -14,12 +14,10 @@
 
 import m from 'mithril';
 
-import {assertExists} from '../base/logging';
 import {duration, Span, time} from '../base/time';
-import {Track, TrackContext} from '../public';
+import {SliceRect, Track, TrackContext} from '../public';
 import {EngineProxy} from '../trace_processor/engine';
 
-import {globals} from './globals';
 import {PxSpan, TimeScale} from './time_scale';
 
 // Args passed to the track constructors when creating a new track.
@@ -28,40 +26,10 @@ export interface NewTrackArgs {
   engine: EngineProxy;
 }
 
-// This interface forces track implementations to have some static properties.
-// Typescript does not have abstract static members, which is why this needs to
-// be in a separate interface.
-export interface TrackCreator {
-  // Store the kind explicitly as a string as opposed to using class.kind in
-  // case we ever minify our code.
-  readonly kind: string;
-
-  // We need the |create| method because the stored value in the registry can be
-  // an abstract class, and we cannot call 'new' on an abstract class.
-  create(args: NewTrackArgs): TrackBase;
-}
-
-export interface SliceRect {
-  left: number;
-  width: number;
-  top: number;
-  height: number;
-  visible: boolean;
-}
-
 // The abstract class that needs to be implemented by all tracks.
-export abstract class TrackBase<Config = {}> implements Track {
+export abstract class TrackBase implements Track {
   protected readonly trackKey: string;
   protected readonly engine: EngineProxy;
-  private _config?: Config;
-
-  get config(): Config {
-    return assertExists(this._config);
-  }
-
-  set config(x: Config) {
-    this._config = x;
-  }
 
   constructor(args: NewTrackArgs) {
     this.trackKey = args.trackKey;
@@ -97,7 +65,6 @@ export abstract class TrackBase<Config = {}> implements Track {
   onFullRedraw(): void {}
 
   render(ctx: CanvasRenderingContext2D) {
-    globals.frontendLocalState.addVisibleTrack(this.trackKey);
     this.renderCanvas(ctx);
   }
 

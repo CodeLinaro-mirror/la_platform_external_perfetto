@@ -14,6 +14,7 @@
 
 import {Disposable, NullDisposable} from '../base/disposable';
 import {assertExists} from '../base/logging';
+import {clamp, floatEqual} from '../base/math_utils';
 import {
   duration,
   Span,
@@ -26,22 +27,19 @@ import {
   drawIncompleteSlice,
   drawTrackHoverTooltip,
 } from '../common/canvas_utils';
-import {
-  colorCompare,
-  UNEXPECTED_PINK_COLOR,
-} from '../common/colorizer';
+import {colorCompare} from '../common/color';
+import {UNEXPECTED_PINK} from '../common/colorizer';
 import {Selection, SelectionKind} from '../common/state';
 import {raf} from '../core/raf_scheduler';
+import {Slice, SliceRect} from '../public';
 import {LONG, NUM} from '../trace_processor/query_result';
 
 import {checkerboardExcept} from './checkerboard';
 import {globals} from './globals';
-import {cachedHsluvToHex} from './hsluv_cache';
-import {Slice} from './slice';
 import {DEFAULT_SLICE_LAYOUT, SliceLayout} from './slice_layout';
 import {constraintsToQuerySuffix} from './sql_utils';
 import {PxSpan, TimeScale} from './time_scale';
-import {NewTrackArgs, SliceRect, TrackBase} from './track';
+import {NewTrackArgs, TrackBase} from './track';
 import {BUCKETS_PER_PIXEL, CacheKey, TrackCache} from './track_cache';
 
 // The common class that underpins all tracks drawing slices.
@@ -53,7 +51,7 @@ export const SLICE_FLAGS_INSTANT = 2;
 const SLICE_MIN_WIDTH_FOR_TEXT_PX = 5;
 const SLICE_MIN_WIDTH_PX = 1 / BUCKETS_PER_PIXEL;
 const CHEVRON_WIDTH_PX = 10;
-const DEFAULT_SLICE_COLOR = UNEXPECTED_PINK_COLOR;
+const DEFAULT_SLICE_COLOR = UNEXPECTED_PINK;
 
 // Exposed and standalone to allow for testing without making this
 // visible to subclasses.
@@ -144,7 +142,7 @@ export const filterVisibleSlicesForTesting = filterVisibleSlices;
 //   slices at depth 0..N.
 // If you need temporally overlapping slices, look at AsyncSliceTrack, which
 // merges several tracks into one visual track.
-export const BASE_SLICE_ROW = {
+export const BASE_ROW = {
   id: NUM,     // The slice ID, for selection / lookups.
   ts: LONG,    // Start time in nanoseconds.
   dur: LONG,   // Duration in nanoseconds. -1 = incomplete, 0 = instant.
@@ -155,7 +153,7 @@ export const BASE_SLICE_ROW = {
   tsqEnd: LONG,  // Quantized |ts+dur|. The end bucket.
 };
 
-export type BaseSliceRow = typeof BASE_SLICE_ROW;
+export type BaseRow = typeof BASE_ROW;
 
 // These properties change @ 60FPS and shouldn't be touched by the subclass.
 // since the Impl doesn't see every frame attempting to reason on them in a
@@ -176,13 +174,11 @@ type CastInternal<S extends Slice> = S&SliceInternal;
 // Derived classes can extend this interface to override these types if needed.
 export interface BaseSliceTrackTypes {
   slice: Slice;
-  row: BaseSliceRow;
-  config: {};
+  row: BaseRow;
 }
 
-export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
-                                                   BaseSliceTrackTypes> extends
-    TrackBase<T['config']> {
+export abstract class BaseSliceTrack<
+    T extends BaseSliceTrackTypes = BaseSliceTrackTypes> extends TrackBase {
   protected sliceLayout: SliceLayout = {...DEFAULT_SLICE_LAYOUT};
 
   // This is the over-skirted cached bounds:
@@ -254,7 +250,7 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
   abstract getSqlSource(): string;
 
   getRowSpec(): T['row'] {
-    return BASE_SLICE_ROW;
+    return BASE_ROW;
   }
   onSliceOver(_args: OnSliceOverArgs<T['slice']>): void {}
   onSliceOut(_args: OnSliceOutArgs<T['slice']>): void {}
@@ -281,7 +277,7 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
     // This is the union of the embedder-defined columns and the base columns
     // we know about (ts, dur, ...).
     const allCols = Object.keys(this.getRowSpec());
-    const baseCols = Object.keys(BASE_SLICE_ROW);
+    const baseCols = Object.keys(BASE_ROW);
     this.extraSqlColumns = allCols.filter((key) => !baseCols.includes(key));
   }
 
@@ -419,12 +415,15 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
 
     // Second pass: fill slices by color.
     const vizSlicesByColor = vizSlices.slice();
-    vizSlicesByColor.sort((a, b) => colorCompare(a.color, b.color));
+    vizSlicesByColor.sort(
+        (a, b) => colorCompare(a.colorScheme.base, b.colorScheme.base));
     let lastColor = undefined;
     for (const slice of vizSlicesByColor) {
-      if (slice.color !== lastColor) {
-        lastColor = slice.color;
-        ctx.fillStyle = slice.color.c;
+      const color = slice.isHighlighted ? slice.colorScheme.variant.cssString :
+                                          slice.colorScheme.base.cssString;
+      if (color !== lastColor) {
+        lastColor = color;
+        ctx.fillStyle = color;
       }
       const y = padding + slice.depth * (sliceHeight + rowSpacing);
       if (slice.flags & SLICE_FLAGS_INSTANT) {
@@ -438,8 +437,37 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
       }
     }
 
+    // Pass 2.5: Draw fillRatio light section.
+    ctx.fillStyle = `#FFFFFF50`;
+    for (const slice of vizSlicesByColor) {
+      // Can't draw fill ratio on incomplete or instant slices.
+      if (slice.flags & (SLICE_FLAGS_INCOMPLETE | SLICE_FLAGS_INSTANT)) {
+        continue;
+      }
+
+      // Clamp fillRatio between 0.0 -> 1.0
+      const fillRatio = clamp(slice.fillRatio, 0, 1);
+
+      // Don't draw anything if the fill ratio is 1.0ish
+      if (floatEqual(fillRatio, 1)) {
+        continue;
+      }
+
+      // Work out the width of the light section
+      const sliceDrawWidth = Math.max(slice.w, SLICE_MIN_WIDTH_PX);
+      const lightSectionDrawWidth = sliceDrawWidth * (1 - fillRatio);
+
+      // Don't draw anything if the light section is smaller than 1 px
+      if (lightSectionDrawWidth < 1) {
+        continue;
+      }
+
+      const y = padding + slice.depth * (sliceHeight + rowSpacing);
+      const x = slice.x + (sliceDrawWidth - lightSectionDrawWidth);
+      ctx.fillRect(x, y, lightSectionDrawWidth, sliceHeight);
+    }
+
     // Third pass, draw the titles (e.g., process name for sched slices).
-    ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.font = this.getTitleFont();
     ctx.textBaseline = 'middle';
@@ -449,6 +477,10 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
         continue;
       }
 
+      // Change the title color dynamically depending on contrast.
+      const textColor = slice.isHighlighted ? slice.colorScheme.textVariant :
+                                              slice.colorScheme.textBase;
+      ctx.fillStyle = textColor.cssString;
       const title = cropText(slice.title, charWidth, slice.w);
       const rectXCenter = slice.x + slice.w / 2;
       const y = padding + slice.depth * (sliceHeight + rowSpacing);
@@ -480,9 +512,9 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
 
       // Draw a thicker border around the selected slice (or chevron).
       const slice = discoveredSelection;
-      const color = slice.color;
+      const color = slice.colorScheme;
       const y = padding + slice.depth * (sliceHeight + rowSpacing);
-      ctx.strokeStyle = cachedHsluvToHex(color.h, 100, 10);
+      ctx.strokeStyle = color.base.setHSL({s: 100, l: 10}).cssString;
       ctx.beginPath();
       const THICKNESS = 3;
       ctx.lineWidth = THICKNESS;
@@ -734,12 +766,13 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
       depth: row.depth,
       title: '',
       subTitle: '',
+      fillRatio: 1,
 
       // The derived class doesn't need to initialize these. They are
       // rewritten on every renderCanvas() call. We just need to initialize
       // them to something.
-      baseColor: DEFAULT_SLICE_COLOR,
-      color: DEFAULT_SLICE_COLOR,
+      colorScheme: DEFAULT_SLICE_COLOR,
+      isHighlighted: false,
     };
   }
 
@@ -898,16 +931,7 @@ export abstract class BaseSliceTrack<T extends BaseSliceTrackTypes =
     for (const slice of slices) {
       const isHovering = globals.state.highlightedSliceId === slice.id ||
           (this.hoveredSlice && this.hoveredSlice.title === slice.title);
-      if (isHovering) {
-        slice.color = {
-          c: slice.baseColor.c,
-          h: slice.baseColor.h,
-          s: slice.baseColor.s,
-          l: 30,
-        };
-      } else {
-        slice.color = slice.baseColor;
-      }
+      slice.isHighlighted = !!isHovering;
     }
   }
 
