@@ -25,14 +25,11 @@
 #include "src/trace_processor/db/storage/types.h"
 
 namespace perfetto {
-
-namespace protos::pbzero {
-class SerializedColumn_Storage;
-}
-
 namespace trace_processor {
 namespace storage {
 
+// Storage which introduces the layer of nullability. Specifically, spreads out
+// the storage with nulls using a BitVector.
 class NullStorage : public Storage {
  public:
   NullStorage(std::unique_ptr<Storage> storage, const BitVector* non_null);
