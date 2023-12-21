@@ -38,7 +38,6 @@ import {
   STR,
   STR_NULL,
 } from '../trace_processor/query_result';
-import {ACTUAL_FRAMES_SLICE_TRACK_KIND} from '../tracks/actual_frames';
 import {ASYNC_SLICE_TRACK_KIND} from '../tracks/async_slices/async_slice_track';
 import {
   ENABLE_SCROLL_JANK_PLUGIN_V2,
@@ -49,7 +48,10 @@ import {
 } from '../tracks/chrome_scroll_jank/chrome_tasks_scroll_jank_track';
 import {SLICE_TRACK_KIND} from '../tracks/chrome_slices';
 import {COUNTER_TRACK_KIND} from '../tracks/counter';
-import {EXPECTED_FRAMES_SLICE_TRACK_KIND} from '../tracks/expected_frames';
+import {
+  ACTUAL_FRAMES_SLICE_TRACK_KIND,
+  EXPECTED_FRAMES_SLICE_TRACK_KIND,
+} from '../tracks/frames';
 import {NULL_TRACK_URI} from '../tracks/null_track';
 import {
   decideTracks as screenshotDecideTracks,
@@ -1656,7 +1658,7 @@ class TrackDecider {
 
   async decideTracks(): Promise<DeferredAction[]> {
     {
-      const result = screenshotDecideTracks();
+      const result = screenshotDecideTracks(this.engine);
       if (result !== null) {
         const {tracksToAdd} = await result;
         this.tracksToAdd.push(...tracksToAdd);
