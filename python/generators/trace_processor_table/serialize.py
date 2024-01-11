@@ -216,7 +216,7 @@ class ColumnSerializer:
       return None
     return f'''
       static_assert(
-        ColumnLegacy::IsFlagsAndTypeValid<ColumnType::{self.name}::stored_type>(
+        Column::IsFlagsAndTypeValid<ColumnType::{self.name}::stored_type>(
           ColumnFlag::{self.name}),
         "Column type and flag combination is not valid");
     '''
@@ -633,11 +633,11 @@ def to_cpp_flags(raw_flag: ColumnFlag) -> str:
   assert raw_flag != ColumnFlag.NONE
   flags = []
   if ColumnFlag.SORTED in raw_flag:
-    flags.append('ColumnLegacy::Flag::kSorted')
+    flags.append('Column::Flag::kSorted')
   if ColumnFlag.HIDDEN in raw_flag:
-    flags.append('ColumnLegacy::Flag::kHidden')
+    flags.append('Column::Flag::kHidden')
   if ColumnFlag.DENSE in raw_flag:
-    flags.append('ColumnLegacy::Flag::kDense')
+    flags.append('Column::Flag::kDense')
   if ColumnFlag.SET_ID in raw_flag:
-    flags.append('ColumnLegacy::Flag::kSetId')
+    flags.append('Column::Flag::kSetId')
   return ' | '.join(flags)

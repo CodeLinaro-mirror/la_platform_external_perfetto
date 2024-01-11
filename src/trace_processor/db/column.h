@@ -24,10 +24,10 @@
 #include "perfetto/trace_processor/basic_types.h"
 #include "src/trace_processor/containers/row_map.h"
 #include "src/trace_processor/containers/string_pool.h"
-#include "src/trace_processor/db/column/types.h"
 #include "src/trace_processor/db/column_storage.h"
 #include "src/trace_processor/db/column_storage_overlay.h"
 #include "src/trace_processor/db/compare.h"
+#include "src/trace_processor/db/storage/types.h"
 #include "src/trace_processor/db/typed_column_internal.h"
 
 namespace perfetto {
@@ -62,7 +62,7 @@ struct ColumnTypeHelper<std::optional<T>> : public ColumnTypeHelper<T> {};
 class Table;
 
 // Represents a named, strongly typed list of data.
-class ColumnLegacy {
+class Column {
  public:
   // Flags which indicate properties of the data in the column. These features
   // are used to speed up column methods like filtering/sorting.
@@ -134,7 +134,7 @@ class ColumnLegacy {
     using pointer = uint32_t*;
     using reference = uint32_t&;
 
-    Iterator(const ColumnLegacy* col, uint32_t row) : col_(col), row_(row) {}
+    Iterator(const Column* col, uint32_t row) : col_(col), row_(row) {}
 
     Iterator(const Iterator&) = default;
     Iterator& operator=(const Iterator&) = default;
@@ -167,7 +167,7 @@ class ColumnLegacy {
     uint32_t row() const { return row_; }
 
    private:
-    const ColumnLegacy* col_ = nullptr;
+    const Column* col_ = nullptr;
     uint32_t row_ = 0;
   };
 
@@ -176,47 +176,46 @@ class ColumnLegacy {
 
   // Flags which should *not* be inherited implicitly when a column is
   // assocaited to another table.
-  static constexpr uint32_t kNoCrossTableInheritFlags =
-      ColumnLegacy::Flag::kSetId;
+  static constexpr uint32_t kNoCrossTableInheritFlags = Column::Flag::kSetId;
 
   template <typename T>
-  ColumnLegacy(const char* name,
-               ColumnStorage<T>* storage,
-               /* Flag */ uint32_t flags,
-               Table* table,
-               uint32_t col_idx_in_table,
-               uint32_t row_map_idx)
-      : ColumnLegacy(name,
-                     ColumnTypeHelper<stored_type<T>>::ToColumnType(),
-                     flags,
-                     table,
-                     col_idx_in_table,
-                     row_map_idx,
-                     storage) {}
+  Column(const char* name,
+         ColumnStorage<T>* storage,
+         /* Flag */ uint32_t flags,
+         Table* table,
+         uint32_t col_idx_in_table,
+         uint32_t row_map_idx)
+      : Column(name,
+               ColumnTypeHelper<stored_type<T>>::ToColumnType(),
+               flags,
+               table,
+               col_idx_in_table,
+               row_map_idx,
+               storage) {}
 
   // Create a Column backed by the same data as |column| but is associated to a
   // different table and, optionally, having a different name.
-  ColumnLegacy(const ColumnLegacy& column,
-               Table* table,
-               uint32_t col_idx_in_table,
-               uint32_t row_map_idx,
-               const char* name = nullptr);
+  Column(const Column& column,
+         Table* table,
+         uint32_t col_idx_in_table,
+         uint32_t row_map_idx,
+         const char* name = nullptr);
 
   // Columns are movable but not copyable.
-  ColumnLegacy(ColumnLegacy&&) noexcept = default;
-  ColumnLegacy& operator=(ColumnLegacy&&) = default;
+  Column(Column&&) noexcept = default;
+  Column& operator=(Column&&) = default;
 
   // Creates a Column which does not have any data backing it.
-  static ColumnLegacy DummyColumn(const char* name,
-                                  Table* table,
-                                  uint32_t col_idx_in_table);
+  static Column DummyColumn(const char* name,
+                            Table* table,
+                            uint32_t col_idx_in_table);
 
   // Creates a Column which returns the index as the value of the row.
-  static ColumnLegacy IdColumn(Table* table,
-                               uint32_t col_idx_in_table,
-                               uint32_t row_map_idx,
-                               const char* name = "id",
-                               uint32_t flags = kIdFlags);
+  static Column IdColumn(Table* table,
+                         uint32_t col_idx_in_table,
+                         uint32_t row_map_idx,
+                         const char* name = "id",
+                         uint32_t flags = kIdFlags);
 
   // Gets the value of the Column at the given |row|.
   SqlValue Get(uint32_t row) const { return GetAtIdx(overlay().Get(row)); }
@@ -460,16 +459,16 @@ class ColumnLegacy {
   friend class View;
 
   // Base constructor for this class which all other constructors call into.
-  ColumnLegacy(const char* name,
-               ColumnType type,
-               uint32_t flags,
-               Table* table,
-               uint32_t col_idx_in_table,
-               uint32_t overlay_index,
-               ColumnStorageBase* nullable_vector);
+  Column(const char* name,
+         ColumnType type,
+         uint32_t flags,
+         Table* table,
+         uint32_t col_idx_in_table,
+         uint32_t overlay_index,
+         ColumnStorageBase* nullable_vector);
 
-  ColumnLegacy(const ColumnLegacy&) = delete;
-  ColumnLegacy& operator=(const ColumnLegacy&) = delete;
+  Column(const Column&) = delete;
+  Column& operator=(const Column&) = delete;
 
   // Gets the value of the Column at the given |idx|.
   SqlValue GetAtIdx(uint32_t idx) const {

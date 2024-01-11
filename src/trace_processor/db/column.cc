@@ -16,8 +16,8 @@
 #include "src/trace_processor/db/column.h"
 
 #include "perfetto/base/logging.h"
-#include "src/trace_processor/db/column/utils.h"
 #include "src/trace_processor/db/compare.h"
+#include "src/trace_processor/db/storage/utils.h"
 #include "src/trace_processor/db/table.h"
 #include "src/trace_processor/util/glob.h"
 #include "src/trace_processor/util/regex.h"
@@ -25,26 +25,26 @@
 namespace perfetto {
 namespace trace_processor {
 
-ColumnLegacy::ColumnLegacy(const ColumnLegacy& column,
-                           Table* table,
-                           uint32_t col_idx,
-                           uint32_t overlay_idx,
-                           const char* name)
-    : ColumnLegacy(name ? name : column.name_,
-                   column.type_,
-                   column.flags_ & ~kNoCrossTableInheritFlags,
-                   table,
-                   col_idx,
-                   overlay_idx,
-                   column.storage_) {}
+Column::Column(const Column& column,
+               Table* table,
+               uint32_t col_idx,
+               uint32_t overlay_idx,
+               const char* name)
+    : Column(name ? name : column.name_,
+             column.type_,
+             column.flags_ & ~kNoCrossTableInheritFlags,
+             table,
+             col_idx,
+             overlay_idx,
+             column.storage_) {}
 
-ColumnLegacy::ColumnLegacy(const char* name,
-                           ColumnType type,
-                           uint32_t flags,
-                           Table* table,
-                           uint32_t index_in_table,
-                           uint32_t overlay_index,
-                           ColumnStorageBase* st)
+Column::Column(const char* name,
+               ColumnType type,
+               uint32_t flags,
+               Table* table,
+               uint32_t index_in_table,
+               uint32_t overlay_index,
+               ColumnStorageBase* st)
     : type_(type),
       storage_(st),
       name_(name),
@@ -81,24 +81,24 @@ ColumnLegacy::ColumnLegacy(const char* name,
   PERFETTO_DCHECK(IsFlagsAndTypeValid(flags_, type_));
 }
 
-ColumnLegacy ColumnLegacy::DummyColumn(const char* name,
-                                       Table* table,
-                                       uint32_t col_idx_in_table) {
-  return ColumnLegacy(name, ColumnType::kDummy, Flag::kNoFlag, table,
-                      col_idx_in_table, std::numeric_limits<uint32_t>::max(),
-                      nullptr);
+Column Column::DummyColumn(const char* name,
+                           Table* table,
+                           uint32_t col_idx_in_table) {
+  return Column(name, ColumnType::kDummy, Flag::kNoFlag, table,
+                col_idx_in_table, std::numeric_limits<uint32_t>::max(),
+                nullptr);
 }
 
-ColumnLegacy ColumnLegacy::IdColumn(Table* table,
-                                    uint32_t col_idx,
-                                    uint32_t overlay_idx,
-                                    const char* name,
-                                    uint32_t flags) {
-  return ColumnLegacy(name, ColumnType::kId, flags, table, col_idx, overlay_idx,
-                      nullptr);
+Column Column::IdColumn(Table* table,
+                        uint32_t col_idx,
+                        uint32_t overlay_idx,
+                        const char* name,
+                        uint32_t flags) {
+  return Column(name, ColumnType::kId, flags, table, col_idx, overlay_idx,
+                nullptr);
 }
 
-void ColumnLegacy::StableSort(bool desc, std::vector<uint32_t>* idx) const {
+void Column::StableSort(bool desc, std::vector<uint32_t>* idx) const {
   if (desc) {
     StableSort<true /* desc */>(idx);
   } else {
@@ -106,9 +106,7 @@ void ColumnLegacy::StableSort(bool desc, std::vector<uint32_t>* idx) const {
   }
 }
 
-void ColumnLegacy::FilterIntoSlow(FilterOp op,
-                                  SqlValue value,
-                                  RowMap* rm) const {
+void Column::FilterIntoSlow(FilterOp op, SqlValue value, RowMap* rm) const {
   switch (type_) {
     case ColumnType::kInt32: {
       if (IsNullable()) {
@@ -156,9 +154,9 @@ void ColumnLegacy::FilterIntoSlow(FilterOp op,
 }
 
 template <typename T, bool is_nullable>
-void ColumnLegacy::FilterIntoNumericSlow(FilterOp op,
-                                         SqlValue value,
-                                         RowMap* rm) const {
+void Column::FilterIntoNumericSlow(FilterOp op,
+                                   SqlValue value,
+                                   RowMap* rm) const {
   PERFETTO_DCHECK(IsNullable() == is_nullable);
   PERFETTO_DCHECK(type_ == ColumnTypeHelper<T>::ToColumnType());
   PERFETTO_DCHECK(std::is_arithmetic<T>::value);
@@ -228,9 +226,9 @@ void ColumnLegacy::FilterIntoNumericSlow(FilterOp op,
 }
 
 template <typename T, bool is_nullable, typename Comparator>
-void ColumnLegacy::FilterIntoNumericWithComparatorSlow(FilterOp op,
-                                                       RowMap* rm,
-                                                       Comparator cmp) const {
+void Column::FilterIntoNumericWithComparatorSlow(FilterOp op,
+                                                 RowMap* rm,
+                                                 Comparator cmp) const {
   switch (op) {
     case FilterOp::kLt:
       overlay().FilterInto(rm, [this, &cmp](uint32_t idx) {
@@ -296,9 +294,9 @@ void ColumnLegacy::FilterIntoNumericWithComparatorSlow(FilterOp op,
   }
 }
 
-void ColumnLegacy::FilterIntoStringSlow(FilterOp op,
-                                        SqlValue value,
-                                        RowMap* rm) const {
+void Column::FilterIntoStringSlow(FilterOp op,
+                                  SqlValue value,
+                                  RowMap* rm) const {
   PERFETTO_DCHECK(type_ == ColumnType::kString);
 
   if (op == FilterOp::kIsNull) {
@@ -390,9 +388,7 @@ void ColumnLegacy::FilterIntoStringSlow(FilterOp op,
   }
 }
 
-void ColumnLegacy::FilterIntoIdSlow(FilterOp op,
-                                    SqlValue value,
-                                    RowMap* rm) const {
+void Column::FilterIntoIdSlow(FilterOp op, SqlValue value, RowMap* rm) const {
   PERFETTO_DCHECK(type_ == ColumnType::kId);
 
   if (op == FilterOp::kIsNull) {
@@ -452,7 +448,7 @@ void ColumnLegacy::FilterIntoIdSlow(FilterOp op,
 }
 
 template <bool desc>
-void ColumnLegacy::StableSort(std::vector<uint32_t>* out) const {
+void Column::StableSort(std::vector<uint32_t>* out) const {
   switch (type_) {
     case ColumnType::kInt32: {
       if (IsNullable()) {
@@ -508,7 +504,7 @@ void ColumnLegacy::StableSort(std::vector<uint32_t>* out) const {
 }
 
 template <bool desc, typename T, bool is_nullable>
-void ColumnLegacy::StableSortNumeric(std::vector<uint32_t>* out) const {
+void Column::StableSortNumeric(std::vector<uint32_t>* out) const {
   PERFETTO_DCHECK(IsNullable() == is_nullable);
   PERFETTO_DCHECK(ColumnTypeHelper<T>::ToColumnType() == type_);
 
@@ -528,7 +524,7 @@ void ColumnLegacy::StableSortNumeric(std::vector<uint32_t>* out) const {
   });
 }
 
-const ColumnStorageOverlay& ColumnLegacy::overlay() const {
+const ColumnStorageOverlay& Column::overlay() const {
   PERFETTO_DCHECK(type_ != ColumnType::kDummy);
   return table_->overlays_[overlay_index()];
 }

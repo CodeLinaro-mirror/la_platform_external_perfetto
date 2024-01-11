@@ -206,8 +206,7 @@ class AndroidMetrics(TestSuite):
         out=TextProto(r"""
          ad_services_metric {
            ui_metric {
-             consent_manager_initialization_latency: 0.0003
-             consent_manager_read_latency: 0.00015
+             latency: 0.0003
            }
            app_set_id_metric {
              latency: 0.0001
