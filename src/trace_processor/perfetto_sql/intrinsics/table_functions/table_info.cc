@@ -40,11 +40,10 @@ namespace {
 
 using TableInfoTable = tables::PerfettoTableInfoTable;
 
-std::vector<TableInfoTable::Row> GetColInfoRows(
-    const std::vector<ColumnLegacy>& cols,
-    StringPool* pool) {
+std::vector<TableInfoTable::Row> GetColInfoRows(const std::vector<Column>& cols,
+                                                StringPool* pool) {
   std::vector<TableInfoTable::Row> rows;
-  for (const ColumnLegacy& col : cols) {
+  for (const Column& col : cols) {
     if (col.IsHidden()) {
       continue;
     }

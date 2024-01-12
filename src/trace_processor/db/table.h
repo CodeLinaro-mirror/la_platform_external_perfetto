@@ -152,7 +152,7 @@ class Table {
     // Pretty much any application of a RowMap will break the requirements on
     // kSetId so remove it.
     for (auto& col : table.columns_) {
-      col.flags_ &= ~ColumnLegacy::Flag::kSetId;
+      col.flags_ &= ~Column::Flag::kSetId;
     }
     return table;
   }
@@ -161,21 +161,20 @@ class Table {
   Table Sort(const std::vector<Order>& od) const;
 
   // Returns the column at index |idx| in the Table.
-  const ColumnLegacy& GetColumn(uint32_t idx) const { return columns_[idx]; }
+  const Column& GetColumn(uint32_t idx) const { return columns_[idx]; }
 
   // Returns the column index with the given name or std::nullopt otherwise.
   std::optional<uint32_t> GetColumnIndexByName(const char* name) const {
-    auto it = std::find_if(columns_.begin(), columns_.end(),
-                           [name](const ColumnLegacy& col) {
-                             return strcmp(col.name(), name) == 0;
-                           });
+    auto it = std::find_if(
+        columns_.begin(), columns_.end(),
+        [name](const Column& col) { return strcmp(col.name(), name) == 0; });
     if (it == columns_.end())
       return std::nullopt;
     return static_cast<uint32_t>(std::distance(columns_.begin(), it));
   }
 
   // Returns the column with the given name or nullptr otherwise.
-  const ColumnLegacy* GetColumnByName(const char* name) const {
+  const Column* GetColumnByName(const char* name) const {
     std::optional<uint32_t> opt_idx = GetColumnIndexByName(name);
     if (!opt_idx)
       return nullptr;
@@ -220,7 +219,7 @@ class Table {
   const std::vector<ColumnStorageOverlay>& overlays() const {
     return overlays_;
   }
-  const std::vector<ColumnLegacy>& columns() const { return columns_; }
+  const std::vector<Column>& columns() const { return columns_; }
 
  protected:
   explicit Table(StringPool* pool);
@@ -234,13 +233,13 @@ class Table {
   }
 
   std::vector<ColumnStorageOverlay> overlays_;
-  std::vector<ColumnLegacy> columns_;
+  std::vector<Column> columns_;
   uint32_t row_count_ = 0;
 
   StringPool* string_pool_ = nullptr;
 
  private:
-  friend class ColumnLegacy;
+  friend class Column;
   friend class View;
 
   Table CopyExceptOverlays() const;

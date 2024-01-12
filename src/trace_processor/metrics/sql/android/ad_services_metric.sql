@@ -14,46 +14,46 @@
 -- limitations under the License.
 --
 
-CREATE OR REPLACE PERFETTO FUNCTION GET_LATENCY(tag STRING)
-RETURNS DOUBLE AS
-SELECT dur/1e6 FROM slices WHERE name = $tag ORDER BY dur DESC LIMIT 1;
+CREATE OR REPLACE PERFETTO FUNCTION GET_EVENT_LATENCY_TABLE(event_name STRING)
+RETURNS TABLE (latency LONG) AS
+SELECT
+  dur / 1e6 as latency
+FROM
+  slices
+WHERE
+  name = $event_name;
 
 DROP VIEW IF EXISTS ad_services_metric_output;
-
-CREATE PERFETTO VIEW ad_services_metric_output
-AS
+CREATE PERFETTO VIEW ad_services_metric_output AS
 SELECT
   AdServicesMetric(
     'ui_metric',
     (
       SELECT
         RepeatedField(
-          AdServicesUiMetric(
-            'main_actitivity_creation_latency', (
-              GET_LATENCY('AdServicesSettingsMainActivity#OnCreate')
-            ),
-            'consent_manager_read_latency', (
-              GET_LATENCY('ConsentManager#ReadOperation')
-            ),
-            'consent_manager_write_latency', (
-              GET_LATENCY('ConsentManager#WriteOperation')
-            ),
-            'consent_manager_initialization_latency', (
-              GET_LATENCY('ConsentManager#Initialization')
-            )
-          )
+          AdServicesUiMetric('latency', latency)
         )
+      FROM
+        GET_EVENT_LATENCY_TABLE("NotificationTriggerEvent")
     ),
     'app_set_id_metric',
     (
       SELECT
         RepeatedField(
           AdServicesAppSetIdMetric(
-            'latency', GET_LATENCY('AdIdCacheEvent')))
+            'latency', latency
+          )
+        )
+      FROM
+        GET_EVENT_LATENCY_TABLE("AdIdCacheEvent")
     ),
     'ad_id_metric',
     (
       SELECT
         RepeatedField(
-          AdServicesAdIdMetric('latency', GET_LATENCY('AppSetIdEvent')))
-    ));
+          AdServicesAdIdMetric('latency', latency)
+        )
+      FROM
+        GET_EVENT_LATENCY_TABLE("AppSetIdEvent")
+    )
+);
