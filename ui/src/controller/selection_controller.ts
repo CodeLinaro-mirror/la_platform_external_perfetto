@@ -15,17 +15,7 @@
 import {assertTrue} from '../base/logging';
 import {Time, time} from '../base/time';
 import {Args, ArgValue} from '../common/arg_types';
-import {Engine} from '../common/engine';
 import {pluginManager} from '../common/plugins';
-import {
-  durationFromSql,
-  LONG,
-  NUM,
-  NUM_NULL,
-  STR,
-  STR_NULL,
-  timeFromSql,
-} from '../common/query_result';
 import {ChromeSliceSelection} from '../common/state';
 import {
   CounterDetails,
@@ -38,6 +28,16 @@ import {
   publishSliceDetails,
   publishThreadStateDetails,
 } from '../frontend/publish';
+import {Engine} from '../trace_processor/engine';
+import {
+  durationFromSql,
+  LONG,
+  NUM,
+  NUM_NULL,
+  STR,
+  STR_NULL,
+  timeFromSql,
+} from '../trace_processor/query_result';
 import {SLICE_TRACK_KIND} from '../tracks/chrome_slices';
 
 import {Controller} from './controller';
@@ -309,14 +309,12 @@ export class SelectionController extends Controller<'main'> {
     // UI track id for slice tracks this would be unnecessary.
     let trackKey = '';
     for (const track of Object.values(globals.state.tracks)) {
-      if (track.uri) {
-        const trackInfo = pluginManager.resolveTrackInfo(track.uri);
-        if (trackInfo?.kind === SLICE_TRACK_KIND) {
-          const trackIds = trackInfo?.trackIds;
-          if (trackIds && trackIds.length > 0 && trackIds[0] === trackId) {
-            trackKey = track.key;
-            break;
-          }
+      const trackInfo = pluginManager.resolveTrackInfo(track.uri);
+      if (trackInfo?.kind === SLICE_TRACK_KIND) {
+        const trackIds = trackInfo?.trackIds;
+        if (trackIds && trackIds.length > 0 && trackIds[0] === trackId) {
+          trackKey = track.key;
+          break;
         }
       }
     }

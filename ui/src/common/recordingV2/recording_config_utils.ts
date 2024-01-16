@@ -37,7 +37,7 @@ import {
   TraceConfig,
   TrackEventConfig,
   VmstatCounters,
-} from '../../core/protos';
+} from '../../protos';
 
 import {TargetInfo} from './recording_interfaces_v2';
 
@@ -154,12 +154,14 @@ export function genTraceConfig(
     protoCfg.dataSources.push(ds);
   }
 
+  let ftrace = false;
+  let symbolizeKsyms = false;
   if (uiCfg.cpuSched) {
     procThreadAssociationPolling = true;
     procThreadAssociationFtrace = true;
-    uiCfg.ftrace = true;
+    ftrace = true;
     if (enableSchedBlockedReason(androidApiLevel)) {
-      uiCfg.symbolizeKsyms = true;
+      symbolizeKsyms = true;
     }
     ftraceEvents.add('sched/sched_switch');
     ftraceEvents.add('power/suspend_resume');
@@ -262,6 +264,7 @@ export function genTraceConfig(
     if (sysStatsCfg === undefined) sysStatsCfg = new SysStatsConfig();
     sysStatsCfg.meminfoPeriodMs = uiCfg.meminfoPeriodMs;
     sysStatsCfg.meminfoCounters = uiCfg.meminfoCounters.map((name) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return MeminfoCounters[name as any as number] as any as number;
     });
   }
@@ -270,6 +273,7 @@ export function genTraceConfig(
     if (sysStatsCfg === undefined) sysStatsCfg = new SysStatsConfig();
     sysStatsCfg.vmstatPeriodMs = uiCfg.vmstatPeriodMs;
     sysStatsCfg.vmstatCounters = uiCfg.vmstatCounters.map((name) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return VmstatCounters[name as any as number] as any as number;
     });
   }
@@ -366,6 +370,7 @@ export function genTraceConfig(
     ds.config.name = 'android.log';
     ds.config.androidLogConfig = new AndroidLogConfig();
     ds.config.androidLogConfig.logIds = uiCfg.androidLogBuffers.map((name) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return AndroidLogId[name as any as number] as any as number;
     });
 
@@ -609,7 +614,7 @@ export function genTraceConfig(
     protoCfg.dataSources.push(ds);
   }
 
-  if (uiCfg.ftrace || uiCfg.atrace || ftraceEvents.size > 0 ||
+  if (uiCfg.ftrace || ftrace || uiCfg.atrace || ftraceEvents.size > 0 ||
       atraceCats.size > 0 || atraceApps.size > 0) {
     const ds = new TraceConfig.DataSource();
     ds.config = new DataSourceConfig();
@@ -617,14 +622,14 @@ export function genTraceConfig(
     ds.config.ftraceConfig = new FtraceConfig();
     // Override the advanced ftrace parameters only if the user has ticked the
     // "Advanced ftrace config" tab.
-    if (uiCfg.ftrace) {
+    if (uiCfg.ftrace || ftrace) {
       if (uiCfg.ftraceBufferSizeKb) {
         ds.config.ftraceConfig.bufferSizeKb = uiCfg.ftraceBufferSizeKb;
       }
       if (uiCfg.ftraceDrainPeriodMs) {
         ds.config.ftraceConfig.drainPeriodMs = uiCfg.ftraceDrainPeriodMs;
       }
-      if (uiCfg.symbolizeKsyms) {
+      if (uiCfg.symbolizeKsyms || symbolizeKsyms) {
         ds.config.ftraceConfig.symbolizeKsyms = true;
         ftraceEvents.add('sched/sched_blocked_reason');
       }
