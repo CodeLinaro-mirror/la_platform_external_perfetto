@@ -18,6 +18,7 @@
 #define SRC_TRACE_PROCESSOR_DB_COLUMN_FAKE_STORAGE_H_
 
 #include <memory>
+#include "src/trace_processor/containers/bit_vector.h"
 #include "src/trace_processor/containers/row_map.h"
 #include "src/trace_processor/db/column/column.h"
 #include "src/trace_processor/db/column/types.h"
@@ -34,7 +35,7 @@ class FakeStorage final : public Column {
 
   RangeOrBitVector Search(FilterOp op,
                           SqlValue value,
-                          RowMap::Range range) const override;
+                          Range range) const override;
 
   RangeOrBitVector IndexSearch(FilterOp op,
                                SqlValue value,
@@ -57,7 +58,7 @@ class FakeStorage final : public Column {
         new FakeStorage(size, SearchStrategy::kNone));
   }
 
-  static std::unique_ptr<Column> SearchSubset(uint32_t size, RowMap::Range r) {
+  static std::unique_ptr<Column> SearchSubset(uint32_t size, Range r) {
     std::unique_ptr<FakeStorage> storage(
         new FakeStorage(size, SearchStrategy::kRange));
     storage->range_ = r;
@@ -71,6 +72,18 @@ class FakeStorage final : public Column {
     return std::move(storage);
   }
 
+  static std::unique_ptr<Column> SearchSubset(uint32_t size,
+                                              std::vector<uint32_t> index_vec) {
+    std::unique_ptr<FakeStorage> storage(
+        new FakeStorage(size, SearchStrategy::kBitVector));
+    BitVector bv(size);
+    for (const uint32_t& i : index_vec) {
+      bv.Set(i);
+    }
+    storage->bit_vector_ = std::move(bv);
+    return std::move(storage);
+  }
+
   uint32_t size() const override { return size_; }
 
  private:
@@ -79,7 +92,7 @@ class FakeStorage final : public Column {
 
   uint32_t size_ = 0;
   SearchStrategy strategy_ = SearchStrategy::kNone;
-  RowMap::Range range_;
+  Range range_;
   BitVector bit_vector_;
 };
 

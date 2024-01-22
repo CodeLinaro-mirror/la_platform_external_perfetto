@@ -192,6 +192,8 @@ TraceWriterImpl::TracePacketHandle TraceWriterImpl::NewTracePacket() {
     first_packet_on_sequence_ = false;
   }
 
+  handle.set_finalization_listener(this);
+
   return handle;
 }
 
@@ -213,6 +215,8 @@ protozero::ContiguousMemoryRange TraceWriterImpl::GetNewBuffer() {
     // |fragmenting_packet_| is false, we try to acquire a valid chunk because
     // the SMB exhaustion might be resolved.
     retry_new_chunk_after_packet_ = true;
+    cur_fragment_size_field_ = nullptr;
+    cur_fragment_start_ = &g_garbage_chunk[0];
     return protozero::ContiguousMemoryRange{
         &g_garbage_chunk[0], &g_garbage_chunk[0] + sizeof(g_garbage_chunk)};
   }
@@ -308,6 +312,7 @@ protozero::ContiguousMemoryRange TraceWriterImpl::GetNewBuffer() {
     reached_max_packets_per_chunk_ = false;
     retry_new_chunk_after_packet_ = false;
     cur_fragment_size_field_ = nullptr;
+    cur_fragment_start_ = &g_garbage_chunk[0];
 
     PERFETTO_ANNOTATE_BENIGN_RACE_SIZED(&g_garbage_chunk,
                                         sizeof(g_garbage_chunk),
@@ -461,6 +466,10 @@ uint8_t* TraceWriterImpl::AnnotatePatch(uint8_t* to_patch) {
     cur_chunk_.SetFlag(ChunkHeader::kChunkNeedsPatching);
   }
   return &patch->size_field[0];
+}
+
+void TraceWriterImpl::OnMessageFinalized(protozero::Message*) {
+  TraceWriterImpl::FinishTracePacket();
 }
 
 WriterID TraceWriterImpl::writer_id() const {
