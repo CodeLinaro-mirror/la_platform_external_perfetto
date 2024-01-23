@@ -39,32 +39,31 @@ namespace trace_processor {
 namespace column {
 
 namespace {
-using Range = RowMap::Range;
 
 struct Greater {
   bool operator()(StringPool::Id lhs, NullTermStringView rhs) const {
-    return pool_->Get(lhs) > rhs;
+    return lhs != StringPool::Id::Null() && pool_->Get(lhs) > rhs;
   }
   const StringPool* pool_;
 };
 
 struct GreaterEqual {
   bool operator()(StringPool::Id lhs, NullTermStringView rhs) const {
-    return pool_->Get(lhs) >= rhs;
+    return lhs != StringPool::Id::Null() && pool_->Get(lhs) >= rhs;
   }
   const StringPool* pool_;
 };
 
 struct Less {
   bool operator()(StringPool::Id lhs, NullTermStringView rhs) const {
-    return pool_->Get(lhs) < rhs;
+    return lhs != StringPool::Id::Null() && pool_->Get(lhs) < rhs;
   }
   const StringPool* pool_;
 };
 
 struct LessEqual {
   bool operator()(StringPool::Id lhs, NullTermStringView rhs) const {
-    return pool_->Get(lhs) <= rhs;
+    return lhs != StringPool::Id::Null() && pool_->Get(lhs) <= rhs;
   }
   const StringPool* pool_;
 };
@@ -76,8 +75,8 @@ struct NotEqual {
 };
 
 struct Glob {
-  bool operator()(StringPool::Id rhs, util::GlobMatcher& matcher) const {
-    return rhs != StringPool::Id::Null() && matcher.Matches(pool_->Get(rhs));
+  bool operator()(StringPool::Id lhs, util::GlobMatcher& matcher) const {
+    return lhs != StringPool::Id::Null() && matcher.Matches(pool_->Get(lhs));
   }
   const StringPool* pool_;
 };
@@ -91,17 +90,17 @@ struct GlobFullStringPool {
       matches_[id.raw_id()] = matcher.Matches(pool->Get(id));
     }
   }
-  bool operator()(StringPool::Id rhs, StringPool::Id) {
-    return matches_[rhs.raw_id()];
+  bool operator()(StringPool::Id lhs, StringPool::Id) {
+    return lhs != StringPool::Id::Null() && matches_[lhs.raw_id()];
   }
   StringPool* pool_;
   std::vector<uint8_t> matches_;
 };
 
 struct Regex {
-  bool operator()(StringPool::Id rhs, regex::Regex& pattern) const {
-    return rhs != StringPool::Id::Null() &&
-           pattern.Search(pool_->Get(rhs).c_str());
+  bool operator()(StringPool::Id lhs, regex::Regex& pattern) const {
+    return lhs != StringPool::Id::Null() &&
+           pattern.Search(pool_->Get(lhs).c_str());
   }
   const StringPool* pool_;
 };
@@ -116,29 +115,29 @@ struct RegexFullStringPool {
           id != StringPool::Id::Null() && regex.Search(pool_->Get(id).c_str());
     }
   }
-  bool operator()(StringPool::Id rhs, StringPool::Id) {
-    return matches_[rhs.raw_id()];
+  bool operator()(StringPool::Id lhs, StringPool::Id) {
+    return matches_[lhs.raw_id()];
   }
   StringPool* pool_;
   std::vector<uint8_t> matches_;
 };
 
 struct IsNull {
-  bool operator()(StringPool::Id rhs, StringPool::Id) const {
-    return rhs == StringPool::Id::Null();
+  bool operator()(StringPool::Id lhs, StringPool::Id) const {
+    return lhs == StringPool::Id::Null();
   }
 };
 
 struct IsNotNull {
-  bool operator()(StringPool::Id rhs, StringPool::Id) const {
-    return rhs != StringPool::Id::Null();
+  bool operator()(StringPool::Id lhs, StringPool::Id) const {
+    return lhs != StringPool::Id::Null();
   }
 };
 
 uint32_t LowerBoundIntrinsic(StringPool* pool,
                              const StringPool::Id* data,
                              NullTermStringView val,
-                             RowMap::Range search_range) {
+                             Range search_range) {
   Less comp{pool};
   auto lower =
       std::lower_bound(data + search_range.start, data + search_range.end, val,
@@ -151,7 +150,7 @@ uint32_t LowerBoundIntrinsic(StringPool* pool,
 uint32_t UpperBoundIntrinsic(StringPool* pool,
                              const StringPool::Id* data,
                              NullTermStringView val,
-                             RowMap::Range search_range) {
+                             Range search_range) {
   Greater comp{pool};
   auto upper =
       std::upper_bound(data + search_range.start, data + search_range.end, val,
@@ -197,16 +196,32 @@ RangeOrBitVector StringStorage::Search(FilterOp op,
                     });
 
   if (is_sorted_) {
-    if (op != FilterOp::kNe) {
-      return RangeOrBitVector(BinarySearchIntrinsic(op, sql_val, search_range));
+    switch (op) {
+      case FilterOp::kEq:
+      case FilterOp::kGe:
+      case FilterOp::kGt:
+      case FilterOp::kLe:
+      case FilterOp::kLt:
+        return RangeOrBitVector(
+            BinarySearchIntrinsic(op, sql_val, search_range));
+      case FilterOp::kNe: {
+        // Not equal is a special operation on binary search, as it doesn't
+        // define a range, and rather just `not` range returned with `equal`
+        // operation.
+        Range r = BinarySearchIntrinsic(FilterOp::kEq, sql_val, search_range);
+        BitVector bv(r.start, true);
+        bv.Resize(r.end);
+        bv.Resize(search_range.end, true);
+        return RangeOrBitVector(std::move(bv));
+      }
+      case FilterOp::kGlob:
+      case FilterOp::kRegex:
+      case FilterOp::kIsNull:
+      case FilterOp::kIsNotNull:
+        // Those operations can't be binary searched so we fall back on not
+        // sorted algorithm.
+        break;
     }
-    // Not equal is a special operation on binary search, as it doesn't define
-    // a range, and rather just `not` range returned with `equal` operation.
-    Range r = BinarySearchIntrinsic(FilterOp::kEq, sql_val, search_range);
-    BitVector bv(r.start, true);
-    bv.Resize(r.end);
-    bv.Resize(search_range.end, true);
-    return RangeOrBitVector(std::move(bv));
   }
   return RangeOrBitVector(LinearSearch(op, sql_val, search_range));
 }
@@ -233,7 +248,7 @@ RangeOrBitVector StringStorage::IndexSearch(FilterOp op,
 
 BitVector StringStorage::LinearSearch(FilterOp op,
                                       SqlValue sql_val,
-                                      RowMap::Range range) const {
+                                      Range range) const {
   if (sql_val.is_null() &&
       (op != FilterOp::kIsNotNull && op != FilterOp::kIsNull)) {
     return BitVector(range.end, false);
@@ -412,22 +427,13 @@ RangeOrBitVector StringStorage::IndexSearchInternal(
   return RangeOrBitVector(std::move(builder).Build());
 }
 
-RowMap::Range StringStorage::BinarySearchIntrinsic(
-    FilterOp op,
-    SqlValue sql_val,
-    RowMap::Range search_range) const {
-  if (sql_val.is_null() &&
-      (op != FilterOp::kIsNotNull && op != FilterOp::kIsNull)) {
-    return Range();
-  }
-
+Range StringStorage::BinarySearchIntrinsic(FilterOp op,
+                                           SqlValue sql_val,
+                                           Range search_range) const {
   if (sql_val.type != SqlValue::kString &&
       (op == FilterOp::kGlob || op == FilterOp::kRegex)) {
     return Range();
   }
-
-  if (op == FilterOp::kIsNotNull)
-    return search_range;
 
   StringPool::Id val =
       (op == FilterOp::kIsNull || op == FilterOp::kIsNotNull)
@@ -437,43 +443,41 @@ RowMap::Range StringStorage::BinarySearchIntrinsic(
 
   switch (op) {
     case FilterOp::kEq:
-      return RowMap::Range(LowerBoundIntrinsic(string_pool_, values_->data(),
-                                               val_str, search_range),
-                           UpperBoundIntrinsic(string_pool_, values_->data(),
-                                               val_str, search_range));
-    case FilterOp::kLe: {
-      return RowMap::Range(search_range.start,
-                           UpperBoundIntrinsic(string_pool_, values_->data(),
-                                               val_str, search_range));
-    }
+      return Range(LowerBoundIntrinsic(string_pool_, values_->data(), val_str,
+                                       search_range),
+                   UpperBoundIntrinsic(string_pool_, values_->data(), val_str,
+                                       search_range));
+    case FilterOp::kLe:
+      return Range(search_range.start,
+                   UpperBoundIntrinsic(string_pool_, values_->data(), val_str,
+                                       search_range));
     case FilterOp::kLt:
-      return RowMap::Range(search_range.start,
-                           LowerBoundIntrinsic(string_pool_, values_->data(),
-                                               val_str, search_range));
+      return Range(search_range.start,
+                   LowerBoundIntrinsic(string_pool_, values_->data(), val_str,
+                                       search_range));
     case FilterOp::kGe:
-      return RowMap::Range(LowerBoundIntrinsic(string_pool_, values_->data(),
-                                               val_str, search_range),
-                           search_range.end);
+      return Range(LowerBoundIntrinsic(string_pool_, values_->data(), val_str,
+                                       search_range),
+                   search_range.end);
     case FilterOp::kGt:
-      return RowMap::Range(UpperBoundIntrinsic(string_pool_, values_->data(),
-                                               val_str, search_range),
-                           search_range.end);
+      return Range(UpperBoundIntrinsic(string_pool_, values_->data(), val_str,
+                                       search_range),
+                   search_range.end);
 
     case FilterOp::kNe:
-      PERFETTO_FATAL("Shouldn't be called");
     case FilterOp::kIsNull:
     case FilterOp::kIsNotNull:
     case FilterOp::kGlob:
     case FilterOp::kRegex:
-      return RowMap::Range();
+      PERFETTO_FATAL("Shouldn't be called");
   }
-  return RowMap::Range();
+  PERFETTO_FATAL("For gcc");
 }
 
-RowMap::Range StringStorage::BinarySearchExtrinsic(FilterOp,
-                                                   SqlValue,
-                                                   uint32_t*,
-                                                   uint32_t) const {
+Range StringStorage::BinarySearchExtrinsic(FilterOp,
+                                           SqlValue,
+                                           uint32_t*,
+                                           uint32_t) const {
   PERFETTO_FATAL("Not implemented");
 }
 void StringStorage::StableSort(uint32_t* indices, uint32_t indices_size) const {

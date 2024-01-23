@@ -561,17 +561,18 @@ TEST_P(TraceWriterImplTest, MessageHandleDestroyedPacketScrapable) {
   EXPECT_EQ(chunk.header()->packets.load().count, 1);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
             SharedMemoryABI::ChunkState::kChunkBeingWritten);
+
   packet = protozero::MessageHandle<protos::pbzero::TracePacket>();
 
-  // Without calling FinshTracePacket explicitly, the packet will not be visible
-  // to the scraper.
-  EXPECT_EQ(chunk.header()->packets.load().count, 1);
+  // After destroying the message handle, the chunk header should have an
+  // inflated packet count.
+  EXPECT_EQ(chunk.header()->packets.load().count, 2);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
             SharedMemoryABI::ChunkState::kChunkBeingWritten);
 
   writer.reset();
 
-  EXPECT_EQ(chunk.header()->packets.load().count, 1);
+  EXPECT_EQ(chunk.header()->packets.load().count, 2);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
             SharedMemoryABI::ChunkState::kChunkComplete);
   EXPECT_THAT(GetChunkFragments(1, chunk.payload_begin(), chunk.payload_size()),
@@ -661,16 +662,15 @@ TEST_P(TraceWriterImplTest,
             SharedMemoryABI::ChunkState::kChunkBeingWritten);
   packet = protozero::MessageHandle<protos::pbzero::TracePacket>();
 
-  // Without calling FinshTracePacket explicitly, the packet will not be visible
-  // to the scraper.
-  EXPECT_EQ(chunk.header()->packets.load().count, 1);
+  // After destroying the message handle, the chunk header should have an
+  // inflated packet count.
+  EXPECT_EQ(chunk.header()->packets.load().count, 2);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
             SharedMemoryABI::ChunkState::kChunkBeingWritten);
 
   writer->FinishTracePacket();
 
-  // After a call to FinishTracePacket, the chunk header should have an inflated
-  // packet count.
+  // An extra call to FinishTracePacket should have no effect.
   EXPECT_EQ(chunk.header()->packets.load().count, 2);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
             SharedMemoryABI::ChunkState::kChunkBeingWritten);
@@ -709,13 +709,13 @@ TEST_P(TraceWriterImplTest, MessageHandleDestroyedPacketFullChunk) {
   EXPECT_EQ(chunk.header()->packets.load().count, 1);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
             SharedMemoryABI::ChunkState::kChunkBeingWritten);
+  // Finish the TracePacket: since there's no space for an empty packet, the
+  // trace writer should immediately mark the chunk as completed.
   packet = protozero::MessageHandle<protos::pbzero::TracePacket>();
 
-  // Without calling FinshTracePacket explicitly, the packet will not be visible
-  // to the scraper.
   EXPECT_EQ(chunk.header()->packets.load().count, 1);
   EXPECT_EQ(abi->GetChunkState(chunk_in_abi->page_idx, chunk_in_abi->chunk_idx),
-            SharedMemoryABI::ChunkState::kChunkBeingWritten);
+            SharedMemoryABI::ChunkState::kChunkComplete);
 
   writer.reset();
 
@@ -1148,6 +1148,49 @@ TEST_P(TraceWriterImplTest, FlushAfterFragmentingPacketWhileBufferExhausted) {
   // writer's patch list.
   packet2->Finalize();
   writer->Flush();
+}
+
+TEST_P(TraceWriterImplTest, GarbageChunkWrap) {
+  const BufferID kBufId = 42;
+
+  // Grab all chunks in the SMB in new writers.
+  std::array<std::unique_ptr<TraceWriter>, kNumPages * 4> other_writers;
+  for (size_t i = 0; i < other_writers.size(); i++) {
+    other_writers[i] =
+        arbiter_->CreateTraceWriter(kBufId, BufferExhaustedPolicy::kDrop);
+    auto other_writer_packet = other_writers[i]->NewTracePacket();
+    EXPECT_FALSE(reinterpret_cast<TraceWriterImpl*>(other_writers[i].get())
+                     ->drop_packets_for_testing());
+  }
+
+  // `writer` will only get garbage chunks, since the SMB is exhausted.
+  std::unique_ptr<TraceWriter> writer =
+      arbiter_->CreateTraceWriter(kBufId, BufferExhaustedPolicy::kDrop);
+
+  const size_t chunk_size = page_size() / 4;
+  std::string half_chunk_string(chunk_size / 2, 'x');
+
+  // Fill the first half of the garbage chunk.
+  {
+    auto packet = writer->NewTracePacket();
+    EXPECT_TRUE(reinterpret_cast<TraceWriterImpl*>(writer.get())
+                    ->drop_packets_for_testing());
+    packet->set_for_testing()->set_str(half_chunk_string);
+  }
+
+  // Fill the second half of the garbage chunk and more. This will call
+  // GetNewBuffer() and restart from the beginning of the garbage chunk.
+  {
+    auto packet = writer->NewTracePacket();
+    packet->set_for_testing()->set_str(half_chunk_string);
+  }
+
+  // Check that TraceWriterImpl can write at the beginning of the garbage chunk
+  // without any problems.
+  {
+    auto packet = writer->NewTracePacket();
+    packet->set_for_testing()->set_str("str");
+  }
 }
 
 TEST_P(TraceWriterImplTest, AnnotatePatchWhileBufferExhausted) {
