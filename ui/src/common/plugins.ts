@@ -20,6 +20,7 @@ import {time} from '../base/time';
 import {globals} from '../frontend/globals';
 import {
   Command,
+  CurrentSelectionSection,
   EngineProxy,
   MetricVisualisation,
   Migrate,
@@ -30,6 +31,7 @@ import {
   PluginDescriptor,
   PrimaryTrackSortKey,
   Store,
+  TabDescriptor,
   TrackDescriptor,
   TrackPredicate,
   TrackRef,
@@ -108,8 +110,6 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
 
   constructor(
       private ctx: PluginContext, readonly engine: EngineProxy,
-      readonly trackRegistry: Map<string, TrackDescriptor>,
-      private defaultTracks: Set<TrackRef>,
       private commandRegistry: Map<string, Command>) {
     this.trash.add(engine);
   }
@@ -132,13 +132,15 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
   registerTrack(trackDesc: TrackDescriptor): void {
     // Silently ignore if context is dead.
     if (!this.alive) return;
-    this.trackRegistry.set(trackDesc.uri, trackDesc);
-    this.trash.addCallback(() => this.trackRegistry.delete(trackDesc.uri));
+    globals.trackManager.registerTrack(trackDesc);
+    this.trash.addCallback(
+      () => globals.trackManager.unregisterTrack(trackDesc.uri));
   }
 
   addDefaultTrack(track: TrackRef): void {
-    this.defaultTracks.add(track);
-    this.trash.addCallback(() => this.defaultTracks.delete(track));
+    globals.trackManager.addDefaultTrack(track);
+    this.trash.addCallback(
+      () => globals.trackManager.removeDefaultTrack(track));
   }
 
   registerStaticTrack(track: TrackDescriptor&TrackRef): void {
@@ -155,6 +157,22 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
     return this.ctx.runCommand(id, ...args);
   }
 
+  registerTab(desc: TabDescriptor): void {
+    if (!this.alive) return;
+
+    globals.tabManager.registerTab(desc);
+    this.trash.addCallback(() => globals.tabManager.unregisterTab(desc.uri));
+  }
+
+  registerCurrentSelectionSection(section: CurrentSelectionSection): void {
+    if (!this.alive) return;
+
+    const tabMan = globals.tabManager;
+    tabMan.registerCurrentSelectionSection(section);
+    this.trash.addCallback(
+      () => tabMan.unregisterCurrentSelectionSection(section));
+  }
+
   get sidebar() {
     return this.ctx.sidebar;
   }
@@ -162,6 +180,16 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
   readonly tabs = {
     openQuery: (query: string, title: string) => {
       globals.openQuery(query, title);
+    },
+
+    showTab(uri: string):
+        void {
+      globals.dispatch(Actions.showTab({uri}));
+    },
+
+    hideTab(uri: string):
+        void {
+      globals.dispatch(Actions.hideTab({uri}));
     },
   };
 
@@ -186,8 +214,8 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
 
     removeTrack(key: string):
         void {
-          globals.dispatch(Actions.removeTracks({trackKeys: [key]}));
-        },
+      globals.dispatch(Actions.removeTracks({trackKeys: [key]}));
+    },
 
     pinTrack(key: string) {
       if (!isPinned(key)) {
@@ -231,32 +259,32 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
 
     removeTracksByPredicate(predicate: TrackPredicate) {
       const trackKeysToRemove = Object.values(globals.state.tracks)
-                                    .filter((track) => {
-                                      const tags = {
-                                        name: track.name,
-                                      };
-                                      return predicate(tags);
-                                    })
-                                    .map((trackState) => trackState.key);
+        .filter((track) => {
+          const tags = {
+            name: track.name,
+          };
+          return predicate(tags);
+        })
+        .map((trackState) => trackState.key);
 
       globals.dispatch(Actions.removeTracks({trackKeys: trackKeysToRemove}));
     },
 
     get tracks():
         TrackRef[] {
-          return Object.values(globals.state.tracks).map((trackState) => {
-            return {
-              displayName: trackState.name,
-              uri: trackState.uri,
-              params: trackState.params,
-            };
-          });
-        },
+      return Object.values(globals.state.tracks).map((trackState) => {
+        return {
+          displayName: trackState.name,
+          uri: trackState.uri,
+          params: trackState.params,
+        };
+      });
+    },
 
     panToTimestamp(ts: time):
         void {
-          globals.panToTimestamp(ts);
-        },
+      globals.panToTimestamp(ts);
+    },
   };
 
   dispose(): void {
@@ -309,9 +337,7 @@ export class PluginManager {
   private registry: PluginRegistry;
   private plugins: Map<string, PluginDetails>;
   private engine?: Engine;
-  readonly trackRegistry = new Map<string, TrackDescriptor>();
   readonly commandRegistry = new Map<string, Command>();
-  readonly defaultTracks = new Set<TrackRef>();
 
   constructor(registry: PluginRegistry) {
     this.registry = registry;
@@ -367,15 +393,13 @@ export class PluginManager {
     return this.plugins.get(pluginId);
   }
 
-  findPotentialTracks(): TrackRef[] {
-    return Array.from(this.defaultTracks);
-  }
-
-  onTraceLoad(engine: Engine): void {
+  async onTraceLoad(engine: Engine): Promise<void> {
     this.engine = engine;
-    for (const [id, pluginDetails] of this.plugins) {
-      this.doPluginTraceLoad(pluginDetails, engine, id);
-    }
+    const plugins = Array.from(this.plugins.entries());
+    const promises = plugins.map(([id, pluginDetails]) => {
+      return this.doPluginTraceLoad(pluginDetails, engine, id);
+    });
+    await Promise.all(promises);
   }
 
   onTraceClose() {
@@ -400,28 +424,19 @@ export class PluginManager {
     });
   }
 
-  // Look up track into for a given track's URI.
-  // Returns |undefined| if no track can be found.
-  resolveTrackInfo(uri: string): TrackDescriptor|undefined {
-    return this.trackRegistry.get(uri);
-  }
-
-  private doPluginTraceLoad(
-      pluginDetails: PluginDetails, engine: Engine, pluginId: string): void {
+  private async doPluginTraceLoad(
+    pluginDetails: PluginDetails, engine: Engine,
+    pluginId: string): Promise<void> {
     const {plugin, context} = pluginDetails;
 
     const engineProxy = engine.getProxy(pluginId);
 
-    const traceCtx = new PluginContextTraceImpl(
-        context,
-        engineProxy,
-        this.trackRegistry,
-        this.defaultTracks,
-        this.commandRegistry);
+    const traceCtx =
+        new PluginContextTraceImpl(context, engineProxy, this.commandRegistry);
     pluginDetails.traceContext = traceCtx;
 
-    // TODO(stevegolton): Await onTraceLoad.
-    plugin.onTraceLoad && plugin.onTraceLoad(traceCtx);
+    const result = plugin.onTraceLoad?.(traceCtx);
+    return Promise.resolve(result);
   }
 }
 

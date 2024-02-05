@@ -38,14 +38,14 @@ export class SqlTableTab extends BottomTab<SqlTableTabConfig> {
 
   private state: SqlTableState;
 
-  constructor(args: NewBottomTabArgs) {
+  constructor(args: NewBottomTabArgs<SqlTableTabConfig>) {
     super(args);
 
     this.state =
         new SqlTableState(this.engine, this.config.table, this.config.filters);
   }
 
-  static create(args: NewBottomTabArgs): SqlTableTab {
+  static create(args: NewBottomTabArgs<SqlTableTabConfig>): SqlTableTab {
     return new SqlTableTab(args);
   }
 
@@ -84,27 +84,27 @@ export class SqlTableTab extends BottomTab<SqlTableTabConfig> {
           }));
 
     return m(
-        DetailsShell,
-        {
-          title: 'Table',
-          description: this.getDisplayName(),
-          buttons: [
-            ...navigation,
-            addDebugTrack,
-            m(Button, {
-              label: 'Copy SQL query',
-              onclick: () =>
-                  copyToClipboard(this.state.getNonPaginatedSQLQuery()),
-            }),
-            m(Button, {
-              label: 'Close',
-              onclick: () => this.close(),
-            }),
-          ],
-        },
-        m(SqlTable, {
-          state: this.state,
-        }));
+      DetailsShell,
+      {
+        title: 'Table',
+        description: this.getDisplayName(),
+        buttons: [
+          ...navigation,
+          addDebugTrack,
+          m(Button, {
+            label: 'Copy SQL query',
+            onclick: () =>
+              copyToClipboard(this.state.getNonPaginatedSQLQuery()),
+          }),
+          m(Button, {
+            label: 'Close',
+            onclick: () => this.close(),
+          }),
+        ],
+      },
+      m(SqlTable, {
+        state: this.state,
+      }));
   }
 
   getTitle(): string {
