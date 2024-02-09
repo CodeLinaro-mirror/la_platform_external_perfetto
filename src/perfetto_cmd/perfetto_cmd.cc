@@ -60,11 +60,11 @@
 #include "perfetto/ext/traced/traced.h"
 #include "perfetto/ext/tracing/core/basic_types.h"
 #include "perfetto/ext/tracing/core/trace_packet.h"
-#include "perfetto/ext/tracing/ipc/default_socket.h"
 #include "perfetto/protozero/proto_utils.h"
 #include "perfetto/tracing/core/data_source_descriptor.h"
 #include "perfetto/tracing/core/trace_config.h"
 #include "perfetto/tracing/core/tracing_service_state.h"
+#include "perfetto/tracing/default_socket.h"
 #include "src/android_stats/statsd_logging_helper.h"
 #include "src/perfetto_cmd/bugreport_path.h"
 #include "src/perfetto_cmd/config.h"
@@ -587,6 +587,7 @@ std::optional<int> PerfettoCmd::ParseCmdlineAndMaybeDaemonize(int argc,
   // --save-for-bugreport is the equivalent of:
   // --clone kBugreportSessionId -o /data/misc/perfetto-traces/bugreport/...
   if (bugreport_ && trace_out_path_.empty()) {
+    PERFETTO_LOG("Invoked perfetto with --save-for-bugreport");
     clone_tsid_ = kBugreportSessionId;
     trace_out_path_ = GetBugreportTracePath();
   }
