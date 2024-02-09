@@ -24,9 +24,9 @@ import {
   PrimaryTrackSortKey,
 } from '../../public';
 import {EngineProxy} from '../../trace_processor/engine';
-import {createDebugCounterTrackActions} from '../../tracks/debug/counter_track';
 import {NULL_TRACK_URI} from '../../tracks/null_track';
 import {createDebugSliceTrackActions} from '../../public';
+import {createDebugCounterTrackActions} from '../../frontend/debug_tracks';
 
 const DEFAULT_NETWORK = `
   with base as (
@@ -215,8 +215,6 @@ const MODEM_RIL_STRENGTH = `
   USING SPAN_JOIN(RilSignalStrength PARTITIONED track_id, ScreenOn)`;
 
 const MODEM_RIL_CHANNELS_PREAMBLE = `
-  SELECT IMPORT('android.battery_stats');
-
   CREATE OR REPLACE PERFETTO FUNCTION EXTRACT_KEY_VALUE(source STRING, key_name STRING) RETURNS STRING AS
   SELECT SUBSTR(trimmed, INSTR(trimmed, "=")+1, INSTR(trimmed, ",") - INSTR(trimmed, "=") - 1)
   FROM (SELECT SUBSTR($source, INSTR($source, $key_name)) AS trimmed);`;
@@ -932,17 +930,21 @@ class AndroidLongBatteryTracing implements Plugin {
     return action;
   }
 
-  async addBatteryStatsEvents(e: EngineProxy, groupId: string):
-      Promise<DeferredAction<{}>[]> {
+  async addBatteryStatsEvents(
+    e: EngineProxy, features: Set<string>,
+    groupId: string): Promise<DeferredAction<{}>[]> {
+    if (!features.has('track.battery_stats')) {
+      return [];
+    }
+
     const query = (name: string, track: string): Promise<DeferredAction<{}>> =>
       this.addSliceTrack(
-        e,
-        name,
-        `SELECT ts, dur, str_value AS name
+        e, name, `SELECT ts, dur, str_value AS name
             FROM android_battery_stats_event_slices
             WHERE track_name = "${track}"`,
         groupId);
 
+    await e.query(`SELECT IMPORT('android.battery_stats');`);
     return flatten([
       query('Top App', 'battery_stats.top'),
       this.addSliceTrack(
@@ -1205,13 +1207,13 @@ class AndroidLongBatteryTracing implements Plugin {
     ]);
   }
 
-  findGroupId(name: string) {
+  findGroupId(name: string): string|undefined {
     for (const group of Object.values(globals.state.trackGroups)) {
       if (group.name === name) {
         return group.id;
       }
     }
-    throw new Error(`No group ${name} found`);
+    return undefined;
   }
 
   addGroup(groupName: string):
@@ -1268,6 +1270,10 @@ class AndroidLongBatteryTracing implements Plugin {
       select distinct 'track.' || lower(name) as feature
       from track where name in ('RIL', 'suspend_backoff')`);
 
+    await addFeatures(`
+      select distinct 'track.battery_stats' as feature
+      from track where name like 'battery_stats.%'`);
+
     return features;
   }
 
@@ -1276,14 +1282,16 @@ class AndroidLongBatteryTracing implements Plugin {
     const features: Set<string> = await this.findFeatures(ctx.engine);
 
     const miscGroupId = this.findGroupId('Misc Global Tracks');
-
-    if (features.has('atom.thermal_throttling_severity_state_changed')) {
-      actions.push(this.addSliceTrack(
-        ctx.engine, 'Thermal throttling', THERMAL_THROTTLING, miscGroupId));
+    if (miscGroupId) {
+      if (features.has('atom.thermal_throttling_severity_state_changed')) {
+        actions.push(this.addSliceTrack(
+          ctx.engine, 'Thermal throttling', THERMAL_THROTTLING, miscGroupId));
+      }
+      actions.push(
+        this.addBatteryStatsEvents(ctx.engine, features, miscGroupId));
     }
 
     actions.push(
-      this.addBatteryStatsEvents(ctx.engine, miscGroupId),
       this.addNetworkSummary(ctx.engine, features),
       this.addModemDetail(ctx.engine, features),
       this.addKernelWakelocks(ctx.engine, features),

@@ -27,7 +27,10 @@ import {TimelineFetcher} from '../../common/track_helper';
 import {checkerboardExcept} from '../../frontend/checkerboard';
 import {globals} from '../../frontend/globals';
 import {PanelSize} from '../../frontend/panel';
+import {asThreadStateSqlId} from '../../frontend/sql_types';
+import {ThreadStateTab} from '../../frontend/thread_state_tab';
 import {
+  BottomTabToSCSAdapter,
   EngineProxy,
   Plugin,
   PluginContext,
@@ -345,7 +348,7 @@ class ThreadState implements Plugin {
         displayName,
         kind: THREAD_STATE_TRACK_KIND,
         utid: utid,
-        track: ({trackKey}) => {
+        trackFactory: ({trackKey}) => {
           return new ThreadStateTrack(trackKey, ctx.engine, utid);
         },
       });
@@ -355,7 +358,7 @@ class ThreadState implements Plugin {
         displayName,
         kind: THREAD_STATE_TRACK_KIND,
         utid,
-        track: ({trackKey}) => {
+        trackFactory: ({trackKey}) => {
           return new ThreadStateTrackV2(
             {
               engine: ctx.engine,
@@ -365,6 +368,21 @@ class ThreadState implements Plugin {
         },
       });
     }
+
+    ctx.registerDetailsPanel(new BottomTabToSCSAdapter({
+      tabFactory: (sel) => {
+        if (sel.kind !== 'THREAD_STATE') {
+          return undefined;
+        }
+        return new ThreadStateTab({
+          config: {
+            id: asThreadStateSqlId(sel.id),
+          },
+          engine: ctx.engine,
+          uuid: uuidv4(),
+        });
+      },
+    }));
   }
 }
 

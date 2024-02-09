@@ -17,7 +17,7 @@ import m from 'mithril';
 import {Selection} from '../common/state';
 import {BottomTab} from '../frontend/bottom_tab';
 
-import {CurrentSelectionSection, Tab} from '.';
+import {DetailsPanel, Tab} from '.';
 
 export function getTrackName(args: Partial<{
   name: string | null,
@@ -127,7 +127,7 @@ export interface BottomTabAdapterAttrs {
       },
     })
  */
-export class BottomTabToSCSAdapter implements CurrentSelectionSection {
+export class BottomTabToSCSAdapter implements DetailsPanel {
   private oldSelection?: Selection;
   private bottomTab?: BottomTab;
   private attrs: BottomTabAdapterAttrs;
@@ -144,6 +144,11 @@ export class BottomTabToSCSAdapter implements CurrentSelectionSection {
     }
 
     return this.bottomTab?.renderPanel();
+  }
+
+  // Note: Must be called after render()
+  isLoading(): boolean {
+    return this.bottomTab?.isLoading() ?? false;
   }
 }
 

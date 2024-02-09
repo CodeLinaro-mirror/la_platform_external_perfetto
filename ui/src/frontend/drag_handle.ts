@@ -47,6 +47,9 @@ export interface TabDropdownEntry {
 
   // Called when tab dropdown entry is clicked.
   onClick: () => void;
+
+  // Whether this tab is checked or not
+  checked: boolean;
 }
 
 export interface DragHandleAttrs {
@@ -73,19 +76,19 @@ export interface DragHandleAttrs {
   onTabClose?: (key: string) => void;
 }
 
-export function getDetailsHeight() {
+export function getDefaultDetailsHeight() {
   // This needs to be a function instead of a const to ensure the CSS constants
   // have been initialized by the time we perform this calculation;
-  return DEFAULT_DETAILS_CONTENT_HEIGHT + DRAG_HANDLE_HEIGHT_PX;
+  return DRAG_HANDLE_HEIGHT_PX + DEFAULT_DETAILS_CONTENT_HEIGHT;
 }
 
 function getFullScreenHeight() {
-  const panelContainer =
-      document.querySelector('.pan-and-zoom-content') as HTMLElement;
-  if (panelContainer !== null) {
-    return panelContainer.clientHeight;
+  const page = document.querySelector('.page') as HTMLElement;
+  if (page === null) {
+    // Fall back to at least partially open.
+    return getDefaultDetailsHeight();
   } else {
-    return getDetailsHeight();
+    return page.clientHeight;
   }
 }
 
@@ -96,8 +99,9 @@ export class DragHandle implements m.ClassComponent<DragHandleAttrs> {
   private resize: (height: number) => void = () => {};
   private isClosed = this.height <= 0;
   private isFullscreen = false;
-  // We can't get real fullscreen height until the pan_and_zoom_handler exists.
-  private fullscreenHeight = getDetailsHeight();
+  // We can't get real fullscreen height until the pan_and_zoom_handler
+  // exists.
+  private fullscreenHeight = 0;
   private trash: Trash = new Trash();
 
   oncreate({dom, attrs}: m.CVnodeDOM<DragHandleAttrs>) {
@@ -164,6 +168,12 @@ export class DragHandle implements m.ClassComponent<DragHandleAttrs> {
               onTabClick(key);
             }
           },
+          // Middle click to close
+          onauxclick: (event: MouseEvent) => {
+            if (!event.defaultPrevented) {
+              onTabClose(key);
+            }
+          },
         },
         m('span.pf-tab-title', tab.title),
         hasCloseButton && m(Button, {
@@ -188,6 +198,8 @@ export class DragHandle implements m.ClassComponent<DragHandleAttrs> {
             onclick: () => {
               this.isClosed = false;
               this.isFullscreen = true;
+              // Ensure fullscreenHeight is up to date.
+              this.fullscreenHeight = getFullScreenHeight();
               this.resize(this.fullscreenHeight);
               raf.scheduleFullRedraw();
             },
@@ -205,7 +217,7 @@ export class DragHandle implements m.ClassComponent<DragHandleAttrs> {
               if (this.height === 0) {
                 this.isClosed = false;
                 if (this.previousHeight === 0) {
-                  this.previousHeight = getDetailsHeight();
+                  this.previousHeight = getDefaultDetailsHeight();
                 }
                 this.resize(this.previousHeight);
               } else {
@@ -241,6 +253,7 @@ export class DragHandle implements m.ClassComponent<DragHandleAttrs> {
           key: entry.key,
           label: entry.title,
           onclick: () => entry.onClick(),
+          icon: entry.checked ? 'check_box' : 'check_box_outline_blank',
         });
       }),
     );

@@ -131,9 +131,6 @@ export interface PluginContext {
   // Register command against this plugin context.
   registerCommand(command: Command): void;
 
-  // Retrieve a list of all commands.
-  commands: Command[];
-
   // Run a command, optionally passing some args.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   runCommand(id: string, ...args: any[]): any;
@@ -218,8 +215,8 @@ export interface TrackDescriptor {
   // A unique identifier for this track.
   uri: string;
 
-  // A factory function returning the track object.
-  track: (ctx: TrackContext) => Track;
+  // A factory function returning a new track instance.
+  trackFactory: (ctx: TrackContext) => Track;
 
   // The track "kind", used by various subsystems e.g. aggregation controllers.
   // This is where "XXX_TRACK_KIND" values should be placed.
@@ -327,8 +324,9 @@ export interface TabDescriptor {
   onShow?(): void;
 }
 
-export interface CurrentSelectionSection {
+export interface DetailsPanel {
   render(selection: Selection): m.Children;
+  isLoading?(): boolean;
 }
 
 // Similar to PluginContext but with additional methods to operate on the
@@ -402,8 +400,9 @@ export interface PluginContextTrace extends PluginContext {
   // is deactivated or when the trace is unloaded.
   registerTab(tab: TabDescriptor): void;
 
-  // Register a current selection handler.
-  registerCurrentSelectionSection(sel: CurrentSelectionSection): void;
+  // Register a hook into the current selection tab rendering logic that allows
+  // customization of the current selection tab content.
+  registerDetailsPanel(sel: DetailsPanel): void;
 
   // Create a store mounted over the top of this plugin's persistent state.
   mountStore<T>(migrate: Migrate<T>): Store<T>;
