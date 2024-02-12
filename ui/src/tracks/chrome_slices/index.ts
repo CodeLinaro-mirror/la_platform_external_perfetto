@@ -15,6 +15,8 @@
 import {BigintMath as BIMath} from '../../base/bigint_math';
 import {clamp} from '../../base/math_utils';
 import {Duration, duration, time} from '../../base/time';
+import {uuidv4} from '../../base/uuid';
+import {ChromeSliceDetailsTab} from '../../frontend/chrome_slice_details_tab';
 import {
   NAMED_ROW,
   NamedSliceTrack,
@@ -27,6 +29,7 @@ import {
 } from '../../frontend/slice_track';
 import {NewTrackArgs} from '../../frontend/track';
 import {
+  BottomTabToSCSAdapter,
   EngineProxy,
   Plugin,
   PluginContext,
@@ -266,7 +269,7 @@ class ChromeSlicesPlugin implements Plugin {
         displayName,
         trackIds: [trackId],
         kind: SLICE_TRACK_KIND,
-        track: ({trackKey}) => {
+        trackFactory: ({trackKey}) => {
           return new ChromeSliceTrack(
             engine,
             maxDepth,
@@ -283,7 +286,7 @@ class ChromeSlicesPlugin implements Plugin {
         displayName,
         trackIds: [trackId],
         kind: SLICE_TRACK_KIND,
-        track: ({trackKey}) => {
+        trackFactory: ({trackKey}) => {
           const newTrackArgs = {
             engine: ctx.engine,
             trackKey,
@@ -292,6 +295,22 @@ class ChromeSlicesPlugin implements Plugin {
         },
       });
     }
+
+    ctx.registerDetailsPanel(new BottomTabToSCSAdapter({
+      tabFactory: (sel) => {
+        if (sel.kind !== 'CHROME_SLICE') {
+          return undefined;
+        }
+        return new ChromeSliceDetailsTab({
+          config: {
+            table: sel.table ?? 'slice',
+            id: sel.id,
+          },
+          engine: ctx.engine,
+          uuid: uuidv4(),
+        });
+      },
+    }));
   }
 }
 

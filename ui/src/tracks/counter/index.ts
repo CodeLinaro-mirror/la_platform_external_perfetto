@@ -28,6 +28,7 @@ import {
   TimelineFetcher,
 } from '../../common/track_helper';
 import {checkerboardExcept} from '../../frontend/checkerboard';
+import {CounterDetailsPanel} from '../../frontend/counter_panel';
 import {globals} from '../../frontend/globals';
 import {PanelSize} from '../../frontend/panel';
 import {
@@ -630,6 +631,16 @@ class CounterPlugin implements Plugin {
     await this.addCpuPerfCounterTracks(ctx);
     await this.addThreadCounterTracks(ctx);
     await this.addProcessCounterTracks(ctx);
+
+    ctx.registerDetailsPanel({
+      render: (sel) => {
+        if (sel.kind === 'COUNTER') {
+          return m(CounterDetailsPanel);
+        } else {
+          return undefined;
+        }
+      },
+    });
   }
 
   private async addCounterTracks(ctx: PluginContextTrace) {
@@ -642,7 +653,7 @@ class CounterPlugin implements Plugin {
         displayName: name,
         kind: COUNTER_TRACK_KIND,
         trackIds: [trackId],
-        track: (trackCtx) => {
+        trackFactory: (trackCtx) => {
           return new CounterTrack(trackCtx, config, ctx.engine);
         },
         sortKey: PrimaryTrackSortKey.COUNTER_TRACK,
@@ -717,7 +728,7 @@ class CounterPlugin implements Plugin {
           displayName: name,
           kind: COUNTER_TRACK_KIND,
           trackIds: [trackId],
-          track: (trackCtx) => {
+          trackFactory: (trackCtx) => {
             return new CounterTrack(trackCtx, config, ctx.engine);
           },
         });
@@ -773,7 +784,7 @@ class CounterPlugin implements Plugin {
         displayName: name,
         kind: COUNTER_TRACK_KIND,
         trackIds: [trackId],
-        track: (trackCtx) => {
+        trackFactory: (trackCtx) => {
           return new CounterTrack(trackCtx, config, ctx.engine);
         },
       });
@@ -836,7 +847,7 @@ class CounterPlugin implements Plugin {
         displayName: name,
         kind,
         trackIds: [trackId],
-        track: (trackCtx) => {
+        trackFactory: (trackCtx) => {
           return new CounterTrack(trackCtx, config, ctx.engine);
         },
       });
@@ -893,7 +904,7 @@ class CounterPlugin implements Plugin {
         displayName: name,
         kind: COUNTER_TRACK_KIND,
         trackIds: [trackId],
-        track: (trackCtx) => {
+        trackFactory: (trackCtx) => {
           return new CounterTrack(trackCtx, config, ctx.engine);
         },
       });

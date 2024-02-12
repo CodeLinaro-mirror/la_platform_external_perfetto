@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Disposable} from '../base/disposable';
-import {CurrentSelectionSection, TabDescriptor} from '../public';
+import {Disposable, DisposableCallback} from '../base/disposable';
+import {DetailsPanel, TabDescriptor} from '../public';
 
 export interface ResolvedTab {
   uri: string;
@@ -26,7 +26,7 @@ export interface ResolvedTab {
  */
 export class TabManager implements Disposable {
   private _registry = new Map<string, TabDescriptor>();
-  private _currentSelectionSectionReg = new Set<CurrentSelectionSection>();
+  private _detailsPanelsRegistry = new Set<DetailsPanel>();
   private _currentTabs = new Map<string, TabDescriptor>();
 
   dispose(): void {
@@ -37,20 +37,18 @@ export class TabManager implements Disposable {
     this._currentTabs.clear();
   }
 
-  registerTab(desc: TabDescriptor): void {
+  registerTab(desc: TabDescriptor): Disposable {
     this._registry.set(desc.uri, desc);
+    return new DisposableCallback(() => {
+      this._registry.delete(desc.uri);
+    });
   }
 
-  unregisterTab(uri: string): void {
-    this._registry.delete(uri);
-  }
-
-  registerCurrentSelectionSection(section: CurrentSelectionSection): void {
-    this._currentSelectionSectionReg.add(section);
-  }
-
-  unregisterCurrentSelectionSection(section: CurrentSelectionSection): void {
-    this._currentSelectionSectionReg.delete(section);
+  registerDetailsPanel(section: DetailsPanel): Disposable {
+    this._detailsPanelsRegistry.add(section);
+    return new DisposableCallback(() => {
+      this._detailsPanelsRegistry.delete(section);
+    });
   }
 
   resolveTab(uri: string): TabDescriptor|undefined {
@@ -61,8 +59,8 @@ export class TabManager implements Disposable {
     return Array.from(this._registry.values());
   }
 
-  get currentSelectionSections(): CurrentSelectionSection[] {
-    return Array.from(this._currentSelectionSectionReg);
+  get detailsPanels(): DetailsPanel[] {
+    return Array.from(this._detailsPanelsRegistry);
   }
 
   /**

@@ -33,6 +33,7 @@ import {TimelineFetcher} from '../../common/track_helper';
 import {checkerboardExcept} from '../../frontend/checkerboard';
 import {globals} from '../../frontend/globals';
 import {PanelSize} from '../../frontend/panel';
+import {SliceDetailsPanel} from '../../frontend/slice_details_panel';
 import {
   EngineProxy,
   Plugin,
@@ -506,9 +507,19 @@ class CpuSlices implements Plugin {
         displayName: name,
         kind: CPU_SLICE_TRACK_KIND,
         cpu,
-        track: ({trackKey}) => new CpuSliceTrack(ctx.engine, trackKey, cpu),
+        trackFactory: ({trackKey}) => {
+          return new CpuSliceTrack(ctx.engine, trackKey, cpu);
+        },
       });
     }
+
+    ctx.registerDetailsPanel({
+      render: (sel) => {
+        if (sel.kind === 'SLICE') {
+          return m(SliceDetailsPanel);
+        }
+      },
+    });
   }
 
   async guessCpuSizes(engine: EngineProxy): Promise<Map<number, string>> {

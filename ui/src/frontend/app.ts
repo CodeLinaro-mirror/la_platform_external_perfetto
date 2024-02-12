@@ -43,23 +43,24 @@ import {HotkeyConfig, HotkeyContext} from '../widgets/hotkey_context';
 import {HotkeyGlyphs} from '../widgets/hotkey_glyphs';
 import {maybeRenderFullscreenModalDialog} from '../widgets/modal';
 
-import {addTab} from './bottom_tab';
 import {onClickCopy} from './clipboard';
 import {CookieConsent} from './cookie_consent';
 import {globals} from './globals';
 import {toggleHelp} from './help_modal';
+import {Notes} from './notes';
 import {Omnibox, OmniboxOption} from './omnibox';
-import {runQueryInNewTab} from './query_result_tab';
+import {addQueryResultsTab} from './query_result_tab';
 import {verticalScrollToTrack} from './scroll_helper';
 import {executeSearch} from './search_handler';
 import {Sidebar} from './sidebar';
-import {SqlTableTab} from './sql_table/tab';
-import {SqlTables} from './sql_table/well_known_tables';
 import {Utid} from './sql_types';
 import {getThreadInfo} from './thread_and_process_info';
 import {Topbar} from './topbar';
 import {shareTrace} from './trace_attrs';
 import {addDebugSliceTrack} from './debug_tracks';
+import {AggregationsTabs} from './aggregation_tab';
+import {addSqlTableTab} from './sql_table/tab';
+import {SqlTables} from './sql_table/well_known_tables';
 
 function renderPermalink(): m.Children {
   const permalink = globals.state.permalink;
@@ -147,8 +148,8 @@ export class App implements m.ClassComponent {
   private recentCommands: string[] = [];
 
   constructor() {
-    const unreg = globals.commandManager.registerCommandSource(this);
-    this.trash.add(unreg);
+    this.trash.add(new Notes());
+    this.trash.add(new AggregationsTabs());
   }
 
   private getEngine(): EngineProxy|undefined {
@@ -320,7 +321,7 @@ export class App implements m.ClassComponent {
 
             if (engine !== undefined && trackUtid != 0) {
               await runQuery(
-                `SELECT IMPORT('experimental.thread_executing_span');`,
+                `SELECT IMPORT('sched.thread_executing_span');`,
                 engine);
               await addDebugSliceTrack(
                 engine,
@@ -335,7 +336,7 @@ export class App implements m.ClassComponent {
                       process.name AS process_name,
                       'thread_state' AS table_name
                     FROM
-                      experimental_thread_executing_span_critical_path(
+                      _thread_executing_span_critical_path(
                           ${trackUtid},
                           ${window.start},
                           ${window.end} - ${window.start}) cr
@@ -362,7 +363,7 @@ export class App implements m.ClassComponent {
 
             if (engine !== undefined && trackUtid != 0) {
               await runQuery(
-                `SELECT IMPORT('experimental.thread_executing_span');`,
+                `SELECT IMPORT('sched.thread_executing_span');`,
                 engine);
               await addDebugSliceTrack(
                 engine,
@@ -370,7 +371,7 @@ export class App implements m.ClassComponent {
                   sqlSource: `
                         SELECT cr.id, cr.utid, cr.ts, cr.dur, cr.name, cr.table_name
                         FROM
-                        internal_critical_path_stack(
+                        _critical_path_stack(
                           ${trackUtid},
                           ${window.start},
                           ${window.end} - ${
@@ -395,17 +396,16 @@ export class App implements m.ClassComponent {
             const engine = this.getEngine();
 
             if (engine !== undefined && trackUtid != 0) {
-              runQueryInNewTab(
-                `SELECT IMPORT('experimental.thread_executing_span');
+              addQueryResultsTab({
+                query: `SELECT IMPORT('sched.thread_executing_span');
                    SELECT *
                       FROM
-                        experimental_thread_executing_span_critical_path_graph(
+                        _thread_executing_span_critical_path_graph(
                         "criical_path",
                          ${trackUtid},
                          ${window.start},
                          ${window.end} - ${window.start}) cr`,
-                'Critical path',
-                'omnibox_query');
+                title: 'Critical path'});
             }
           },
     },
@@ -414,12 +414,9 @@ export class App implements m.ClassComponent {
       name: 'Show slice table',
       callback:
           () => {
-            addTab({
-              kind: SqlTableTab.kind,
-              config: {
-                table: SqlTables.slice,
-                displayName: 'slice',
-              },
+            addSqlTableTab({
+              table: SqlTables.slice,
+              displayName: 'slice',
             });
           },
     },
@@ -722,11 +719,13 @@ export class App implements m.ClassComponent {
         this.queryText = value;
         raf.scheduleFullRedraw();
       },
-      onSubmit: (value, alt) => {
-        globals.openQuery(
-          undoCommonChatAppReplacements(value),
-          alt ? 'Pinned query' : 'Omnibox query',
-          alt ? undefined : 'omnibox_query');
+      onSubmit: (query, alt) => {
+        const config = {
+          query: undoCommonChatAppReplacements(query),
+          title: alt ? 'Pinned query' : 'Omnibox query',
+        };
+        const tag = alt? undefined : 'omnibox_query';
+        addQueryResultsTab(config, tag);
       },
       onClose: () => {
         this.queryText = '';
@@ -837,6 +836,12 @@ export class App implements m.ClassComponent {
   oncreate({dom}: m.VnodeDOM) {
     this.updateOmniboxInputRef(dom);
     this.maybeFocusOmnibar();
+
+    // Register each command with the command manager
+    this.cmds.forEach((cmd) => {
+      const dispose = globals.commandManager.registry.register(cmd);
+      this.trash.add(dispose);
+    });
   }
 
   onupdate({dom}: m.VnodeDOM) {

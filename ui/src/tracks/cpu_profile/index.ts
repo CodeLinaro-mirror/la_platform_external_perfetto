@@ -19,6 +19,7 @@ import {Actions} from '../../common/actions';
 import {colorForSample} from '../../common/colorizer';
 import {TrackData} from '../../common/track_data';
 import {TimelineFetcher} from '../../common/track_helper';
+import {CpuProfileDetailsPanel} from '../../frontend/cpu_profile_panel';
 import {globals} from '../../frontend/globals';
 import {PanelSize} from '../../frontend/panel';
 import {TimeScale} from '../../frontend/time_scale';
@@ -280,9 +281,19 @@ class CpuProfile implements Plugin {
         displayName: `${threadName} (CPU Stack Samples)`,
         kind: CPU_PROFILE_TRACK_KIND,
         utid,
-        track: () => new CpuProfileTrack(ctx.engine, utid),
+        trackFactory: () => new CpuProfileTrack(ctx.engine, utid),
       });
     }
+
+    ctx.registerDetailsPanel({
+      render: (sel) => {
+        if (sel.kind === 'CPU_PROFILE_SAMPLE') {
+          return m(CpuProfileDetailsPanel);
+        } else {
+          return undefined;
+        }
+      },
+    });
   }
 }
 
