@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -291,11 +292,6 @@ SearchValidationResult DoubleColumnWithInt(FilterOp op, SqlValue* sql_val) {
 }
 
 }  // namespace
-
-NumericStorageBase::NumericStorageBase(ColumnType type, bool is_sorted)
-    : storage_type_(type), is_sorted_(is_sorted) {}
-
-NumericStorageBase::~NumericStorageBase() = default;
 
 NumericStorageBase::ChainImpl::ChainImpl(const void* vector_ptr,
                                          ColumnType type,

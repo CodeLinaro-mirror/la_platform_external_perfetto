@@ -59,28 +59,26 @@ std::optional<MappingId> StackProfileSequenceState::FindOrInsertMapping(
     return std::nullopt;
   }
 
-  base::StringView build_id;
-  if (decoder->has_build_id()) {
-    std::optional<base::StringView> maybe_build_id =
-        LookupInternedBuildId(decoder->build_id());
-    if (!maybe_build_id) {
-      return std::nullopt;
-    }
-    build_id = *maybe_build_id;
+  std::optional<base::StringView> build_id =
+      LookupInternedBuildId(decoder->build_id());
+  if (!build_id) {
+    return std::nullopt;
   }
 
   std::vector<base::StringView> path_components;
   for (auto it = decoder->path_string_ids(); it; ++it) {
     std::optional<base::StringView> str = LookupInternedMappingPath(*it);
     if (!str) {
-      return std::nullopt;
+      // For backward compatibility reasons we do not return an error but
+      // instead stop adding path components.
+      break;
     }
     path_components.push_back(*str);
   }
   std::string path = ProfilePacketUtils::MakeMappingName(path_components);
 
   StackProfileTracker::CreateMappingParams params;
-  params.build_id = build_id;
+  params.build_id = *build_id;
   params.exact_offset = decoder->exact_offset();
   params.start_offset = decoder->start_offset();
   params.start = decoder->start();
@@ -94,6 +92,11 @@ std::optional<MappingId> StackProfileSequenceState::FindOrInsertMapping(
 
 std::optional<base::StringView>
 StackProfileSequenceState::LookupInternedBuildId(uint64_t iid) {
+  // This should really be an error (value not set) or at the very least return
+  // a null string, but for backward compatibility use an empty string instead.
+  if (iid == 0) {
+    return "";
+  }
   auto* decoder =
       LookupInternedMessage<protos::pbzero::InternedData::kBuildIdsFieldNumber,
                             protos::pbzero::InternedString>(iid);
@@ -107,11 +110,14 @@ StackProfileSequenceState::LookupInternedBuildId(uint64_t iid) {
 
 std::optional<base::StringView>
 StackProfileSequenceState::LookupInternedMappingPath(uint64_t iid) {
-  auto* decoder =
-
-      LookupInternedMessage<
-          protos::pbzero::InternedData::kMappingPathsFieldNumber,
-          protos::pbzero::InternedString>(iid);
+  // This should really be an error (value not set) or at the very least return
+  // a null string, but for backward compatibility use an empty string instead.
+  if (iid == 0) {
+    return "";
+  }
+  auto* decoder = LookupInternedMessage<
+      protos::pbzero::InternedData::kMappingPathsFieldNumber,
+      protos::pbzero::InternedString>(iid);
   if (!decoder) {
     context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
     return std::nullopt;
@@ -194,6 +200,11 @@ std::optional<FrameId> StackProfileSequenceState::FindOrInsertFrame(
 
 std::optional<base::StringView>
 StackProfileSequenceState::LookupInternedFunctionName(uint64_t iid) {
+  // This should really be an error (value not set) or at the very least return
+  // a null string, but for backward compatibility use an empty string instead.
+  if (iid == 0) {
+    return "";
+  }
   auto* decoder = LookupInternedMessage<
       protos::pbzero::InternedData::kFunctionNamesFieldNumber,
       protos::pbzero::InternedString>(iid);
