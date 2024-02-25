@@ -17,6 +17,7 @@
 #include "src/trace_processor/importers/proto/profile_packet_sequence_state.h"
 
 #include "perfetto/base/flat_set.h"
+#include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_view.h"
 #include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/importers/common/stack_profile_tracker.h"
@@ -36,7 +37,9 @@ const char kArtHeapName[] = "com.android.art";
 
 ProfilePacketSequenceState::ProfilePacketSequenceState(
     TraceProcessorContext* context)
-    : context_(context) {}
+    : context_(context) {
+  strings_.Insert(0, "");
+}
 
 ProfilePacketSequenceState::~ProfilePacketSequenceState() = default;
 
@@ -59,6 +62,7 @@ void ProfilePacketSequenceState::SetProfilePacketIndex(uint64_t index) {
 
 void ProfilePacketSequenceState::AddString(SourceStringId id,
                                            base::StringView str) {
+  PERFETTO_CHECK(id != 0 || str.empty());
   strings_.Insert(id, str.ToStdString());
 }
 
@@ -84,7 +88,9 @@ void ProfilePacketSequenceState::AddMapping(SourceMappingId id,
       path_components.push_back(base::StringView(*str));
     } else {
       context_->storage->IncrementStats(stats::stackprofile_invalid_string_id);
-      return;
+      // For backward compatibility reasons we do not return an error but
+      // instead stop adding path components.
+      break;
     }
   }
   std::string path = ProfilePacketUtils::MakeMappingName(path_components);
