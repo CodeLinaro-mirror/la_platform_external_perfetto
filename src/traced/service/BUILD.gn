@@ -28,7 +28,7 @@ executable("traced") {
     "../../../include/perfetto/ext/traced",
   ]
   sources = [ "main.cc" ]
-  assert_no_deps = [ "//gn:protobuf_lite" ]
+  assert_no_deps = [ "../../../gn:protobuf_lite" ]
 }
 
 # Contains all the implementation but not the main() entry point. This target
@@ -44,11 +44,11 @@ source_set("service") {
     "../../base",
     "../../base:version",
     "../../tracing/core",
-    "../../tracing/core:service",
     "../../tracing/ipc/service",
+    "../../tracing/service:service",
   ]
   if (enable_perfetto_zlib) {
-    deps += [ "../../tracing/core:zlib_compressor" ]
+    deps += [ "../../tracing/service:zlib_compressor" ]
   }
 
   sources = [

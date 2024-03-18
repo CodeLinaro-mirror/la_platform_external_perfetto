@@ -30,11 +30,7 @@ import {HotkeyGlyphs} from '../widgets/hotkey_glyphs';
 import {Icon} from '../widgets/icon';
 import {Menu, MenuDivider, MenuItem, PopupMenu2} from '../widgets/menu';
 import {showModal} from '../widgets/modal';
-import {
-  MultiSelect,
-  MultiSelectDiff,
-  PopupMultiSelect,
-} from '../widgets/multiselect';
+import {MultiSelect, MultiSelectDiff, PopupMultiSelect} from '../widgets/multiselect';
 import {Popup, PopupPosition} from '../widgets/popup';
 import {Portal} from '../widgets/portal';
 import {FilterableSelect, Select} from '../widgets/select';
@@ -48,6 +44,7 @@ import {VegaView} from '../widgets/vega_view';
 import {createPage} from './pages';
 import {PopupMenuButton} from './popup_menu';
 import {TableShowcase} from './tables/table_showcase';
+import {TreeTable, TreeTableAttrs} from './widgets/treetable';
 
 const DATA_ENGLISH_LETTER_FREQUENCY = {
   table: [
@@ -210,29 +207,29 @@ enum DataExample {
 
 function getExampleSpec(example: SpecExample): string {
   switch (example) {
-    case SpecExample.BarChart:
-      return SPEC_BAR_CHART;
-    case SpecExample.BarChartLite:
-      return SPEC_BAR_CHART_LITE;
-    case SpecExample.Broken:
-      return SPEC_BROKEN;
-    default:
-      const exhaustiveCheck: never = example;
-      throw new Error(`Unhandled case: ${exhaustiveCheck}`);
+  case SpecExample.BarChart:
+    return SPEC_BAR_CHART;
+  case SpecExample.BarChartLite:
+    return SPEC_BAR_CHART_LITE;
+  case SpecExample.Broken:
+    return SPEC_BROKEN;
+  default:
+    const exhaustiveCheck: never = example;
+    throw new Error(`Unhandled case: ${exhaustiveCheck}`);
   }
 }
 
 function getExampleData(example: DataExample) {
   switch (example) {
-    case DataExample.English:
-      return DATA_ENGLISH_LETTER_FREQUENCY;
-    case DataExample.Polish:
-      return DATA_POLISH_LETTER_FREQUENCY;
-    case DataExample.Empty:
-      return DATA_EMPTY;
-    default:
-      const exhaustiveCheck: never = example;
-      throw new Error(`Unhandled case: ${exhaustiveCheck}`);
+  case DataExample.English:
+    return DATA_ENGLISH_LETTER_FREQUENCY;
+  case DataExample.Polish:
+    return DATA_POLISH_LETTER_FREQUENCY;
+  case DataExample.Empty:
+    return DATA_EMPTY;
+  default:
+    const exhaustiveCheck: never = example;
+    throw new Error(`Unhandled case: ${exhaustiveCheck}`);
   }
 }
 
@@ -308,20 +305,20 @@ function ControlledPopup() {
   return {
     view: function() {
       return m(
-          Popup,
-          {
-            trigger:
+        Popup,
+        {
+          trigger:
                 m(Button, {label: `${popupOpen ? 'Close' : 'Open'} Popup`}),
-            isOpen: popupOpen,
-            onChange: (shouldOpen: boolean) => popupOpen = shouldOpen,
+          isOpen: popupOpen,
+          onChange: (shouldOpen: boolean) => popupOpen = shouldOpen,
+        },
+        m(Button, {
+          label: 'Close Popup',
+          onclick: () => {
+            popupOpen = !popupOpen;
+            raf.scheduleFullRedraw();
           },
-          m(Button, {
-            label: 'Close Popup',
-            onclick: () => {
-              popupOpen = !popupOpen;
-              raf.scheduleFullRedraw();
-            },
-          }),
+        }),
       );
     },
   };
@@ -369,9 +366,9 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
       return null;
     }
     return m(
-        '.widget-controls',
-        m('h3', 'Options'),
-        m('ul', listItems),
+      '.widget-controls',
+      m('h3', 'Options'),
+      m('ul', listItems),
     );
   }
 
@@ -410,19 +407,19 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
       m(WidgetTitle, {label}),
       description && m('p', description),
       m(
-          '.widget-block',
-          m(
-              'div',
-              {
-                class: classNames(
-                    'widget-container',
-                    wide && 'widget-container-wide',
-                    ),
-              },
-              renderWidget(this.optValues),
-              ),
-          this.renderOptions(listItems),
-          ),
+        '.widget-block',
+        m(
+          'div',
+          {
+            class: classNames(
+              'widget-container',
+              wide && 'widget-container-wide',
+            ),
+          },
+          renderWidget(this.optValues),
+        ),
+        this.renderOptions(listItems),
+      ),
     ];
   }
 
@@ -467,161 +464,228 @@ class WidgetShowcase implements m.ClassComponent<WidgetShowcaseAttrs> {
       return m('option', {value: option}, option);
     });
     return m(
-        Select,
-        {
-          value: this.optValues[key],
-          onchange: (e: Event) => {
-            const el = e.target as HTMLSelectElement;
-            this.optValues[key] = el.value;
-            raf.scheduleFullRedraw();
-          },
+      Select,
+      {
+        value: this.optValues[key],
+        onchange: (e: Event) => {
+          const el = e.target as HTMLSelectElement;
+          this.optValues[key] = el.value;
+          raf.scheduleFullRedraw();
         },
-        optionElements);
+      },
+      optionElements);
   }
 }
+
+interface File {
+  name: string;
+  size: string;
+  date: string;
+  children?: File[];
+}
+
+const files: File[] = [
+  {
+    name: 'foo',
+    size: '10MB',
+    date: '2023-04-02',
+  },
+  {
+    name: 'bar',
+    size: '123KB',
+    date: '2023-04-08',
+    children: [
+      {
+        name: 'baz',
+        size: '4KB',
+        date: '2023-05-07',
+      },
+      {
+        name: 'qux',
+        size: '18KB',
+        date: '2023-05-28',
+        children: [
+          {
+            name: 'quux',
+            size: '4KB',
+            date: '2023-05-07',
+          },
+          {
+            name: 'corge',
+            size: '18KB',
+            date: '2023-05-28',
+            children: [
+              {
+                name: 'grault',
+                size: '4KB',
+                date: '2023-05-07',
+              },
+              {
+                name: 'garply',
+                size: '18KB',
+                date: '2023-05-28',
+              },
+              {
+                name: 'waldo',
+                size: '87KB',
+                date: '2023-05-02',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'fred',
+    size: '8KB',
+    date: '2022-12-27',
+  },
+];
 
 export const WidgetsPage = createPage({
   view() {
     return m(
-        '.widgets-page',
-        m('h1', 'Widgets'),
-        m(WidgetShowcase, {
-          label: 'Button',
-          renderWidget: ({label, icon, rightIcon, ...rest}) => m(Button, {
-            icon: icon ? 'send' : undefined,
-            rightIcon: rightIcon ? 'arrow_forward' : undefined,
-            label: label ? 'Button' : '',
-            ...rest,
-          }),
-          initialOpts: {
-            label: true,
-            icon: true,
-            rightIcon: false,
-            disabled: false,
-            minimal: false,
-            active: false,
-            compact: false,
-          },
+      '.widgets-page',
+      m('h1', 'Widgets'),
+      m(WidgetShowcase, {
+        label: 'Button',
+        renderWidget: ({label, icon, rightIcon, ...rest}) => m(Button, {
+          icon: icon ? 'send' : undefined,
+          rightIcon: rightIcon ? 'arrow_forward' : undefined,
+          label: label ? 'Button' : '',
+          ...rest,
         }),
-        m(WidgetShowcase, {
-          label: 'Checkbox',
-          renderWidget: (opts) => m(Checkbox, {label: 'Checkbox', ...opts}),
-          initialOpts: {
-            disabled: false,
-          },
+        initialOpts: {
+          label: true,
+          icon: true,
+          rightIcon: false,
+          disabled: false,
+          minimal: false,
+          active: false,
+          compact: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Checkbox',
+        renderWidget: (opts) => m(Checkbox, {label: 'Checkbox', ...opts}),
+        initialOpts: {
+          disabled: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Switch',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        renderWidget: ({label, ...rest}: any) =>
+          m(Switch, {label: label ? 'Switch' : undefined, ...rest}),
+        initialOpts: {
+          label: true,
+          disabled: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Text Input',
+        renderWidget: ({placeholder, ...rest}) => m(TextInput, {
+          placeholder: placeholder ? 'Placeholder...' : '',
+          ...rest,
         }),
-        m(WidgetShowcase, {
-          label: 'Switch',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          renderWidget: ({label, ...rest}: any) =>
-              m(Switch, {label: label ? 'Switch' : undefined, ...rest}),
-          initialOpts: {
-            label: true,
-            disabled: false,
-          },
+        initialOpts: {
+          placeholder: true,
+          disabled: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Select',
+        renderWidget: (opts) =>
+          m(Select, opts,
+            [
+              m('option', {value: 'foo', label: 'Foo'}),
+              m('option', {value: 'bar', label: 'Bar'}),
+              m('option', {value: 'baz', label: 'Baz'}),
+            ]),
+        initialOpts: {
+          disabled: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Filterable Select',
+        renderWidget: () => m(FilterableSelect, {
+          values: ['foo', 'bar', 'baz'],
+          onSelected: () => {},
         }),
-        m(WidgetShowcase, {
-          label: 'Text Input',
-          renderWidget: ({placeholder, ...rest}) => m(TextInput, {
-            placeholder: placeholder ? 'Placeholder...' : '',
-            ...rest,
-          }),
-          initialOpts: {
-            placeholder: true,
-            disabled: false,
-          },
-        }),
-        m(WidgetShowcase, {
-          label: 'Select',
-          renderWidget: (opts) =>
-              m(Select,
-                opts,
-                [
-                  m('option', {value: 'foo', label: 'Foo'}),
-                  m('option', {value: 'bar', label: 'Bar'}),
-                  m('option', {value: 'baz', label: 'Baz'}),
-                ]),
-          initialOpts: {
-            disabled: false,
-          },
-        }),
-        m(WidgetShowcase, {
-          label: 'Filterable Select',
-          renderWidget: () =>
-              m(FilterableSelect, {
-                values: ['foo', 'bar', 'baz'],
-                onSelected: () => {},
-              }),
-        }),
-        m(WidgetShowcase, {
+      }),
+      m(WidgetShowcase,
+        {
           label: 'Empty State',
           renderWidget: ({header, content}) =>
-              m(EmptyState,
-                {
-                  header: header && 'No search results found...',
-                },
-                content && m(Button, {label: 'Try again'})),
+            m(EmptyState, {
+              title: header && 'No search results found...',
+            },
+            content && m(Button, {label: 'Try again'})),
           initialOpts: {
             header: true,
             content: true,
           },
         }),
-        m(WidgetShowcase, {
-          label: 'Anchor',
-          renderWidget: ({icon}) => m(
-              Anchor,
-              {
-                icon: icon && 'open_in_new',
-                href: 'https://perfetto.dev/docs/',
-                target: '_blank',
-              },
-              'Docs',
-              ),
-          initialOpts: {
-            icon: true,
-          },
-        }),
-        m(WidgetShowcase,
+      m(WidgetShowcase, {
+        label: 'Anchor',
+        renderWidget: ({icon}) => m(
+          Anchor,
           {
-            label: 'Table',
-            renderWidget: () => m(TableShowcase), initialOpts: {}, wide: true,
-        }),
-        m(WidgetShowcase, {
-          label: 'Portal',
-          description: `A portal is a div rendered out of normal flow
-          of the hierarchy.`,
-          renderWidget: (opts) => m(PortalButton, opts),
-          initialOpts: {
-            absolute: true,
-            zIndex: true,
-            top: true,
+            icon: icon && 'open_in_new',
+            href: 'https://perfetto.dev/docs/',
+            target: '_blank',
           },
-        }),
-        m(WidgetShowcase, {
-          label: 'Popup',
-          description: `A popup is a nicely styled portal element whose position is
+          'Docs',
+        ),
+        initialOpts: {
+          icon: true,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Table',
+        renderWidget: () => m(TableShowcase),
+        initialOpts: {},
+        wide: true,
+      }),
+      m(WidgetShowcase, {
+        label: 'Portal',
+        description: `A portal is a div rendered out of normal flow
+          of the hierarchy.`,
+        renderWidget: (opts) => m(PortalButton, opts),
+        initialOpts: {
+          absolute: true,
+          zIndex: true,
+          top: true,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Popup',
+        description:
+              `A popup is a nicely styled portal element whose position is
         dynamically updated to appear to float alongside a specific element on
         the page, even as the element is moved and scrolled around.`,
-          renderWidget: (opts) => m(
-              Popup,
-              {
-                trigger: m(Button, {label: 'Toggle Popup'}),
-                ...opts,
-              },
-              lorem(),
-              ),
-          initialOpts: {
-            position: new EnumOption(
-                PopupPosition.Auto,
-                Object.values(PopupPosition),
-                ),
-            closeOnEscape: true,
-            closeOnOutsideClick: true,
+        renderWidget: (opts) => m(
+          Popup,
+          {
+            trigger: m(Button, {label: 'Toggle Popup'}),
+            ...opts,
           },
-        }),
-        m(WidgetShowcase, {
-          label: 'Controlled Popup',
-        description: `The open/close state of a controlled popup is passed in via
+          lorem(),
+        ),
+        initialOpts: {
+          position: new EnumOption(
+            PopupPosition.Auto,
+            Object.values(PopupPosition),
+          ),
+          closeOnEscape: true,
+          closeOnOutsideClick: true,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Controlled Popup',
+        description:
+              `The open/close state of a controlled popup is passed in via
         the 'isOpen' attribute. This means we can get open or close the popup
         from wherever we like. E.g. from a button inside the popup.
         Keeping this state external also means we can modify other parts of the
@@ -629,181 +693,184 @@ export const WidgetsPage = createPage({
         on this button.
         Note, this is the same component as the popup above, but used in
         controlled mode.`,
-          renderWidget: (opts) => m(ControlledPopup, opts),
-          initialOpts: {},
-        }),
-        m(WidgetShowcase, {
-          label: 'Icon',
-          renderWidget: (opts) => m(Icon, {icon: 'star', ...opts}),
-          initialOpts: {filled: false},
-        }),
-        m(WidgetShowcase, {
-          label: 'MultiSelect panel',
-          renderWidget: ({...rest}) => m(MultiSelect, {
-            options: Object.entries(options).map(([key, value]) => {
-              return {
-                id: key,
-                name: key,
-                checked: value,
-              };
-            }),
-            onChange: (diffs: MultiSelectDiff[]) => {
-              diffs.forEach(({id, checked}) => {
-                options[id] = checked;
-              });
-              raf.scheduleFullRedraw();
-            },
-            ...rest,
+        renderWidget: (opts) => m(ControlledPopup, opts),
+        initialOpts: {},
+      }),
+      m(WidgetShowcase, {
+        label: 'Icon',
+        renderWidget: (opts) => m(Icon, {icon: 'star', ...opts}),
+        initialOpts: {filled: false},
+      }),
+      m(WidgetShowcase, {
+        label: 'MultiSelect panel',
+        renderWidget: ({...rest}) => m(MultiSelect, {
+          options: Object.entries(options).map(([key, value]) => {
+            return {
+              id: key,
+              name: key,
+              checked: value,
+            };
           }),
-          initialOpts: {
-            repeatCheckedItemsAtTop: false,
-            fixedSize: false,
-          },
-        }),
-        m(WidgetShowcase, {
-          label: 'Popup with MultiSelect',
-          renderWidget: ({icon, ...rest}) => m(PopupMultiSelect, {
-            options: Object.entries(options).map(([key, value]) => {
-              return {
-                id: key,
-                name: key,
-                checked: value,
-              };
-            }),
-            popupPosition: PopupPosition.Top,
-            label: 'Multi Select',
-            icon: icon ? Icons.LibraryAddCheck : undefined,
-            onChange: (diffs: MultiSelectDiff[]) => {
-              diffs.forEach(({id, checked}) => {
-                options[id] = checked;
-              });
-              raf.scheduleFullRedraw();
-            },
-            ...rest,
-          }),
-          initialOpts: {
-            icon: true,
-            showNumSelected: true,
-            repeatCheckedItemsAtTop: false,
-          },
-        }),
-        m(WidgetShowcase, {
-          label: 'PopupMenu',
-          renderWidget: () => {
-            return m(PopupMenuButton, {
-              icon: 'description',
-              items: [
-                {itemType: 'regular', text: 'New', callback: () => {}},
-                {itemType: 'regular', text: 'Open', callback: () => {}},
-                {itemType: 'regular', text: 'Save', callback: () => {}},
-                {itemType: 'regular', text: 'Delete', callback: () => {}},
-                {
-                  itemType: 'group',
-                  text: 'Share',
-                  itemId: 'foo',
-                  children: [
-                    {itemType: 'regular', text: 'Friends', callback: () => {}},
-                    {itemType: 'regular', text: 'Family', callback: () => {}},
-                    {itemType: 'regular', text: 'Everyone', callback: () => {}},
-                  ],
-                },
-              ],
+          onChange: (diffs: MultiSelectDiff[]) => {
+            diffs.forEach(({id, checked}) => {
+              options[id] = checked;
             });
+            raf.scheduleFullRedraw();
           },
+          ...rest,
         }),
-        m(WidgetShowcase, {
-          label: 'Menu',
-          renderWidget: () => m(
-              Menu,
-              m(MenuItem, {label: 'New', icon: 'add'}),
-              m(MenuItem, {label: 'Open', icon: 'folder_open'}),
-              m(MenuItem, {label: 'Save', icon: 'save', disabled: true}),
-              m(MenuDivider),
-              m(MenuItem, {label: 'Delete', icon: 'delete'}),
-              m(MenuDivider),
-              m(
-                  MenuItem,
-                  {label: 'Share', icon: 'share'},
-                  m(MenuItem, {label: 'Everyone', icon: 'public'}),
-                  m(MenuItem, {label: 'Friends', icon: 'group'}),
-                  m(
-                      MenuItem,
-                      {label: 'Specific people', icon: 'person_add'},
-                      m(MenuItem, {label: 'Alice', icon: 'person'}),
-                      m(MenuItem, {label: 'Bob', icon: 'person'}),
-                      ),
-                  ),
-              m(
-                  MenuItem,
-                  {label: 'More', icon: 'more_horiz'},
-                  m(MenuItem, {label: 'Query', icon: 'database'}),
-                  m(MenuItem, {label: 'Download', icon: 'download'}),
-                  m(MenuItem, {label: 'Clone', icon: 'copy_all'}),
-                  ),
-              ),
-
+        initialOpts: {
+          repeatCheckedItemsAtTop: false,
+          fixedSize: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Popup with MultiSelect',
+        renderWidget: ({icon, ...rest}) => m(PopupMultiSelect, {
+          options: Object.entries(options).map(([key, value]) => {
+            return {
+              id: key,
+              name: key,
+              checked: value,
+            };
+          }),
+          popupPosition: PopupPosition.Top,
+          label: 'Multi Select',
+          icon: icon ? Icons.LibraryAddCheck : undefined,
+          onChange: (diffs: MultiSelectDiff[]) => {
+            diffs.forEach(({id, checked}) => {
+              options[id] = checked;
+            });
+            raf.scheduleFullRedraw();
+          },
+          ...rest,
         }),
-        m(WidgetShowcase, {
-          label: 'PopupMenu2',
-          renderWidget: (opts) => m(
-              PopupMenu2,
+        initialOpts: {
+          icon: true,
+          showNumSelected: true,
+          repeatCheckedItemsAtTop: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'PopupMenu',
+        renderWidget: () => {
+          return m(PopupMenuButton, {
+            icon: 'description',
+            items: [
+              {itemType: 'regular', text: 'New', callback: () => {}},
+              {itemType: 'regular', text: 'Open', callback: () => {}},
+              {itemType: 'regular', text: 'Save', callback: () => {}},
+              {itemType: 'regular', text: 'Delete', callback: () => {}},
               {
-                trigger: m(Button, {
-                  label: 'Menu',
-                  rightIcon: Icons.ContextMenu,
-                }),
-                ...opts,
+                itemType: 'group',
+                text: 'Share',
+                itemId: 'foo',
+                children: [
+                  {itemType: 'regular', text: 'Friends', callback: () => {}},
+                  {itemType: 'regular', text: 'Family', callback: () => {}},
+                  {itemType: 'regular', text: 'Everyone', callback: () => {}},
+                ],
               },
-              m(MenuItem, {label: 'New', icon: 'add'}),
-              m(MenuItem, {label: 'Open', icon: 'folder_open'}),
-              m(MenuItem, {label: 'Save', icon: 'save', disabled: true}),
-              m(MenuDivider),
-              m(MenuItem, {label: 'Delete', icon: 'delete'}),
-              m(MenuDivider),
-              m(
-                  MenuItem,
-                  {label: 'Share', icon: 'share'},
-                  m(MenuItem, {label: 'Everyone', icon: 'public'}),
-                  m(MenuItem, {label: 'Friends', icon: 'group'}),
-                  m(
-                      MenuItem,
-                      {label: 'Specific people', icon: 'person_add'},
-                      m(MenuItem, {label: 'Alice', icon: 'person'}),
-                      m(MenuItem, {label: 'Bob', icon: 'person'}),
-                      ),
-                  ),
-              m(
-                  MenuItem,
-                  {label: 'More', icon: 'more_horiz'},
-                  m(MenuItem, {label: 'Query', icon: 'database'}),
-                  m(MenuItem, {label: 'Download', icon: 'download'}),
-                  m(MenuItem, {label: 'Clone', icon: 'copy_all'}),
-                  ),
-              ),
-          initialOpts: {
-            popupPosition: new EnumOption(
-                PopupPosition.Bottom,
-                Object.values(PopupPosition),
-                ),
+            ],
+          });
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Menu',
+        renderWidget: () => m(
+          Menu,
+          m(MenuItem, {label: 'New', icon: 'add'}),
+          m(MenuItem, {label: 'Open', icon: 'folder_open'}),
+          m(MenuItem, {label: 'Save', icon: 'save', disabled: true}),
+          m(MenuDivider),
+          m(MenuItem, {label: 'Delete', icon: 'delete'}),
+          m(MenuDivider),
+          m(
+            MenuItem,
+            {label: 'Share', icon: 'share'},
+            m(MenuItem, {label: 'Everyone', icon: 'public'}),
+            m(MenuItem, {label: 'Friends', icon: 'group'}),
+            m(
+              MenuItem,
+              {label: 'Specific people', icon: 'person_add'},
+              m(MenuItem, {label: 'Alice', icon: 'person'}),
+              m(MenuItem, {label: 'Bob', icon: 'person'}),
+            ),
+          ),
+          m(
+            MenuItem,
+            {label: 'More', icon: 'more_horiz'},
+            m(MenuItem, {label: 'Query', icon: 'database'}),
+            m(MenuItem, {label: 'Download', icon: 'download'}),
+            m(MenuItem, {label: 'Clone', icon: 'copy_all'}),
+          ),
+        ),
+
+      }),
+      m(WidgetShowcase, {
+        label: 'PopupMenu2',
+        renderWidget: (opts) => m(
+          PopupMenu2,
+          {
+            trigger: m(Button, {
+              label: 'Menu',
+              rightIcon: Icons.ContextMenu,
+            }),
+            ...opts,
           },
-        }),
-        m(WidgetShowcase, {
-          label: 'Spinner',
-          description: `Simple spinner, rotates forever.
+          m(MenuItem, {label: 'New', icon: 'add'}),
+          m(MenuItem, {label: 'Open', icon: 'folder_open'}),
+          m(MenuItem, {label: 'Save', icon: 'save', disabled: true}),
+          m(MenuDivider),
+          m(MenuItem, {label: 'Delete', icon: 'delete'}),
+          m(MenuDivider),
+          m(
+            MenuItem,
+            {label: 'Share', icon: 'share'},
+            m(MenuItem, {label: 'Everyone', icon: 'public'}),
+            m(MenuItem, {label: 'Friends', icon: 'group'}),
+            m(
+              MenuItem,
+              {label: 'Specific people', icon: 'person_add'},
+              m(MenuItem, {label: 'Alice', icon: 'person'}),
+              m(MenuItem, {label: 'Bob', icon: 'person'}),
+            ),
+          ),
+          m(
+            MenuItem,
+            {label: 'More', icon: 'more_horiz'},
+            m(MenuItem, {label: 'Query', icon: 'database'}),
+            m(MenuItem, {label: 'Download', icon: 'download'}),
+            m(MenuItem, {label: 'Clone', icon: 'copy_all'}),
+          ),
+        ),
+        initialOpts: {
+          popupPosition: new EnumOption(
+            PopupPosition.Bottom,
+            Object.values(PopupPosition),
+          ),
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Spinner',
+        description: `Simple spinner, rotates forever.
             Width and height match the font size.`,
-          renderWidget: ({fontSize, easing}) =>
-              m('', {style: {fontSize}}, m(Spinner, {easing})),
-          initialOpts: {
-            fontSize: new EnumOption(
-                '16px',
-                ['12px', '16px', '24px', '32px', '64px', '128px'],
-                ),
-            easing: false,
-          },
-        }),
-        m(WidgetShowcase, {
-          label: 'Tree',
-          renderWidget: (opts) => m(
+        renderWidget: ({fontSize, easing}) =>
+          m('', {style: {fontSize}}, m(Spinner, {easing})),
+        initialOpts: {
+          fontSize: new EnumOption(
+            '16px',
+            ['12px', '16px', '24px', '32px', '64px', '128px'],
+          ),
+          easing: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Tree',
+        description: `Hierarchical tree with left and right values aligned to
+        a grid.`,
+        renderWidget: (opts) =>
+          m(
             Tree,
             opts,
             m(TreeNode, {left: 'Name', right: 'my_event', icon: 'badge'}),
@@ -811,26 +878,30 @@ export const WidgetsPage = createPage({
             m(TreeNode,
               {left: 'Start time', right: '1s 435ms', icon: 'schedule'}),
             m(TreeNode, {left: 'Duration', right: '86ms', icon: 'timer'}),
-            m(TreeNode, {
-              left: 'SQL',
-              right: m(
-                PopupMenu2,
-                {
-                  popupPosition: PopupPosition.RightStart,
-                  trigger: m(Anchor, {
-                    icon: Icons.ContextMenu,
-                  }, 'SELECT * FROM raw WHERE id = 123'),
-                },
-                m(MenuItem, {
-                  label: 'Copy SQL Query',
-                  icon: 'content_copy',
-                }),
-                m(MenuItem, {
-                  label: 'Execute Query in new tab',
-                  icon: 'open_in_new',
-                }),
-                ),
-            }),
+            m(TreeNode,
+              {
+                left: 'SQL',
+                right:
+                          m(
+                            PopupMenu2,
+                            {
+                              popupPosition: PopupPosition.RightStart,
+                              trigger:
+                                    m(Anchor, {
+                                      icon: Icons.ContextMenu,
+                                    },
+                                    'SELECT * FROM raw WHERE id = 123'),
+                            },
+                            m(MenuItem, {
+                              label: 'Copy SQL Query',
+                              icon: 'content_copy',
+                            }),
+                            m(MenuItem, {
+                              label: 'Execute Query in new tab',
+                              icon: 'open_in_new',
+                            }),
+                          ),
+              }),
             m(TreeNode, {
               icon: 'account_tree',
               left: 'Process',
@@ -855,8 +926,8 @@ export const WidgetsPage = createPage({
                 m(TreeNode, {left: '[1]', right: 'grault'}),
                 m(TreeNode, {left: '[2]', right: 'garply'}),
                 m(TreeNode, {left: '[3]', right: 'waldo'}),
-                ),
               ),
+            ),
             m(LazyTreeNode, {
               left: 'Lazy',
               icon: 'bedtime',
@@ -874,158 +945,171 @@ export const WidgetsPage = createPage({
                 return () => m(TreeNode, {left: 'foo'});
               },
             }),
-            ),
-          wide: true,
-        }),
-        m(
-          WidgetShowcase, {
-            label: 'Form',
-            renderWidget: () => renderForm('form'),
-          }),
-        m(WidgetShowcase, {
-            label: 'Nested Popups',
-            renderWidget: () => m(
-              Popup,
-              {
-                trigger: m(Button, {label: 'Open the popup'}),
-              },
-              m(PopupMenu2,
-                {
-                  trigger: m(Button, {label: 'Select an option'}),
-                },
-                m(MenuItem, {label: 'Option 1'}),
-                m(MenuItem, {label: 'Option 2'}),
-              ),
-              m(Button, {
-                label: 'Done',
-                dismissPopup: true,
-              }),
-            ),
-          }),
+          ),
+        wide: true,
+      }),
+      m(WidgetShowcase, {
+        label: 'Form',
+        renderWidget: () => renderForm('form'),
+      }),
+      m(WidgetShowcase, {
+        label: 'Nested Popups',
+        renderWidget: () => m(
+          Popup,
+          {
+            trigger: m(Button, {label: 'Open the popup'}),
+          },
           m(
-            WidgetShowcase, {
-              label: 'Callout',
-              renderWidget: () => m(
-                Callout,
-                {
-                  icon: 'info',
-                },
-                'Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' +
-                'Nulla rhoncus tempor neque, sed malesuada eros dapibus vel. ' +
-                'Aliquam in ligula vitae tortor porttitor laoreet iaculis ' +
-                'finibus est.',
-              ),
-            }),
-          m(WidgetShowcase, {
-            label: 'Editor',
-            renderWidget: () => m(Editor),
-          }),
-          m(WidgetShowcase, {
-            label: 'VegaView',
-            renderWidget: (opt) => m(VegaView, {
-              spec: getExampleSpec(opt.exampleSpec),
-              data: getExampleData(opt.exampleData),
-            }),
-            initialOpts: {
-              exampleSpec: new EnumOption(
-                SpecExample.BarChart,
-                Object.values(SpecExample),
-              ),
-              exampleData: new EnumOption(
-                DataExample.English,
-                Object.values(DataExample),
-              ),
-
+            PopupMenu2,
+            {
+              trigger: m(Button, {label: 'Select an option'}),
             },
+            m(MenuItem, {label: 'Option 1'}),
+            m(MenuItem, {label: 'Option 2'}),
+          ),
+          m(Button, {
+            label: 'Done',
+            dismissPopup: true,
           }),
-          m(
-            WidgetShowcase, {
-              label: 'Form within PopupMenu2',
-              description: `A form placed inside a popup menu works just fine,
+        ),
+      }),
+      m(WidgetShowcase, {
+        label: 'Callout',
+        renderWidget: () => m(
+          Callout,
+          {
+            icon: 'info',
+          },
+          'Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' +
+                  'Nulla rhoncus tempor neque, sed malesuada eros dapibus vel. ' +
+                  'Aliquam in ligula vitae tortor porttitor laoreet iaculis ' +
+                  'finibus est.',
+        ),
+      }),
+      m(WidgetShowcase, {
+        label: 'Editor',
+        renderWidget: () => m(Editor),
+      }),
+      m(WidgetShowcase, {
+        label: 'VegaView',
+        renderWidget: (opt) => m(VegaView, {
+          spec: getExampleSpec(opt.exampleSpec),
+          data: getExampleData(opt.exampleData),
+        }),
+        initialOpts: {
+          exampleSpec: new EnumOption(
+            SpecExample.BarChart,
+            Object.values(SpecExample),
+          ),
+          exampleData: new EnumOption(
+            DataExample.English,
+            Object.values(DataExample),
+          ),
+
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Form within PopupMenu2',
+        description: `A form placed inside a popup menu works just fine,
               and the cancel/submit buttons also dismiss the popup. A bit more
               margin is added around it too, which improves the look and feel.`,
-              renderWidget: () => m(
-                PopupMenu2,
-                {
-                  trigger: m(Button, {label: 'Popup!'}),
-                },
-                m(MenuItem,
-                  {
-                    label: 'Open form...',
-                  },
-                  renderForm('popup-form'),
-                ),
-              ),
-            }),
+        renderWidget: () => m(
+          PopupMenu2,
+          {
+            trigger: m(Button, {label: 'Popup!'}),
+          },
           m(
-            WidgetShowcase, {
-              label: 'Hotkey',
-              renderWidget: (opts) => {
-                if (opts.platform === 'auto') {
-                  return m(HotkeyGlyphs, {hotkey: opts.hotkey as Hotkey});
-                } else {
-                  const platform = opts.platform as Platform;
-                  return m(HotkeyGlyphs, {
-                    hotkey: opts.hotkey as Hotkey,
-                    spoof: platform,
-                  });
-                }
-              },
-              initialOpts: {
-                hotkey: 'Mod+Shift+P',
-                platform: new EnumOption('auto', ['auto', 'Mac', 'PC']),
-              },
-            }),
-          m(
-            WidgetShowcase, {
-              label: 'Text Paragraph',
-              description: `A basic formatted text paragraph with wrapping. If
+            MenuItem,
+            {
+              label: 'Open form...',
+            },
+            renderForm('popup-form'),
+          ),
+        ),
+      }),
+      m(WidgetShowcase, {
+        label: 'Hotkey',
+        renderWidget: (opts) => {
+          if (opts.platform === 'auto') {
+            return m(HotkeyGlyphs, {hotkey: opts.hotkey as Hotkey});
+          } else {
+            const platform = opts.platform as Platform;
+            return m(HotkeyGlyphs, {
+              hotkey: opts.hotkey as Hotkey,
+              spoof: platform,
+            });
+          }
+        },
+        initialOpts: {
+          hotkey: 'Mod+Shift+P',
+          platform: new EnumOption('auto', ['auto', 'Mac', 'PC']),
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Text Paragraph',
+        description: `A basic formatted text paragraph with wrapping. If
               it is desirable to preserve the original text format/line breaks,
               set the compressSpace attribute to false.`,
-              renderWidget: (opts) => {
-                return m(TextParagraph, {
-                  text: `Lorem ipsum dolor sit amet, consectetur adipiscing
+        renderWidget: (opts) => {
+          return m(TextParagraph, {
+            text: `Lorem ipsum dolor sit amet, consectetur adipiscing
                          elit. Nulla rhoncus tempor neque, sed malesuada eros
                          dapibus vel. Aliquam in ligula vitae tortor porttitor
                          laoreet iaculis finibus est.`,
-                  compressSpace: opts.compressSpace,
-                });
-              },
-              initialOpts: {
-                compressSpace: true,
-              },
+            compressSpace: opts.compressSpace,
+          });
+        },
+        initialOpts: {
+          compressSpace: true,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Multi Paragraph Text',
+        description: `A wrapper for multiple paragraph widgets.`,
+        renderWidget: () => {
+          return m(
+            MultiParagraphText,
+            m(TextParagraph, {
+              text: `Lorem ipsum dolor sit amet, consectetur adipiscing
+                         elit. Nulla rhoncus tempor neque, sed malesuada eros
+                         dapibus vel. Aliquam in ligula vitae tortor porttitor
+                         laoreet iaculis finibus est.`,
+              compressSpace: true,
             }),
-          m(
-            WidgetShowcase, {
-              label: 'Multi Paragraph Text',
-              description: `A wrapper for multiple paragraph widgets.`,
-              renderWidget: () => {
-                return m(MultiParagraphText,
-                 m(TextParagraph, {
-                  text: `Lorem ipsum dolor sit amet, consectetur adipiscing
-                         elit. Nulla rhoncus tempor neque, sed malesuada eros
-                         dapibus vel. Aliquam in ligula vitae tortor porttitor
-                         laoreet iaculis finibus est.`,
-                  compressSpace: true,
-                }), m(TextParagraph, {
-                  text: `Sed ut perspiciatis unde omnis iste natus error sit
+            m(TextParagraph, {
+              text: `Sed ut perspiciatis unde omnis iste natus error sit
                          voluptatem accusantium doloremque laudantium, totam rem
                          aperiam, eaque ipsa quae ab illo inventore veritatis et
                          quasi architecto beatae vitae dicta sunt explicabo.
                          Nemo enim ipsam voluptatem quia voluptas sit aspernatur
                          aut odit aut fugit, sed quia consequuntur magni dolores
                          eos qui ratione voluptatem sequi nesciunt.`,
-                  compressSpace: true,
-                }),
-                );
-              },
+              compressSpace: true,
             }),
-            m(
-              WidgetShowcase, {
-                label: 'Modal',
-                description: `A helper for modal dialog.`,
-                renderWidget: () => m(ModalShowcase),
-              }),
+          );
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Modal',
+        description: `A helper for modal dialog.`,
+        renderWidget: () => m(ModalShowcase),
+      }),
+      m(WidgetShowcase, {
+        label: 'TreeTable',
+        description: `Hierarchical tree with multiple columns`,
+        renderWidget: () => {
+          const attrs: TreeTableAttrs<File> = {
+            rows: files,
+            getChildren: (file) => file.children,
+            columns: [
+              {name: 'Name', getData: (file) => file.name},
+              {name: 'Size', getData: (file) => file.size},
+              {name: 'Date', getData: (file) => file.date},
+            ],
+          };
+          return m(TreeTable<File>, attrs);
+        },
+      }),
     );
   },
 });
@@ -1058,9 +1142,9 @@ class ModalShowcase implements m.ClassComponent {
           vnode.state.progress = (vnode.state.progress + 1) % 100;
           raf.scheduleFullRedraw();
           return m(
-              'div',
-              m('div', 'You should see an animating progress bar'),
-              m('progress', {value: vnode.state.progress, max: 100}),
+            'div',
+            m('div', 'You should see an animating progress bar'),
+            m('progress', {value: vnode.state.progress, max: 100}),
           );
         },
       } as m.Component<{}, {progress: number}>;
@@ -1087,57 +1171,57 @@ class ModalShowcase implements m.ClassComponent {
 
   view() {
     return m(
-        'div',
-        {
-          style: {
-            'display': 'flex',
-            'flex-direction': 'column',
-            'width': '100%',
-          },
+      'div',
+      {
+        style: {
+          'display': 'flex',
+          'flex-direction': 'column',
+          'width': '100%',
         },
-        m('textarea', {
-          id: 'mwlogs',
-          readonly: 'readonly',
-          rows: '8',
-          placeholder: 'Logs will appear here',
-        }),
-        m('input[type=button]', {
-          value: 'Show modal (static)',
-          onclick: () => ModalShowcase.showModalDialog(true),
-        }),
-        m('input[type=button]', {
-          value: 'Show modal (dynamic)',
-          onclick: () => ModalShowcase.showModalDialog(false),
-        }),
+      },
+      m('textarea', {
+        id: 'mwlogs',
+        readonly: 'readonly',
+        rows: '8',
+        placeholder: 'Logs will appear here',
+      }),
+      m('input[type=button]', {
+        value: 'Show modal (static)',
+        onclick: () => ModalShowcase.showModalDialog(true),
+      }),
+      m('input[type=button]', {
+        value: 'Show modal (dynamic)',
+        onclick: () => ModalShowcase.showModalDialog(false),
+      }),
     );
   }
 }  // class ModalShowcase
 
 function renderForm(id: string) {
   return m(
-      Form,
-      {
-        submitLabel: 'Submit',
-        submitIcon: 'send',
-        cancelLabel: 'Cancel',
-        resetLabel: 'Reset',
-        onSubmit: () => window.alert('Form submitted!'),
+    Form,
+    {
+      submitLabel: 'Submit',
+      submitIcon: 'send',
+      cancelLabel: 'Cancel',
+      resetLabel: 'Reset',
+      onSubmit: () => window.alert('Form submitted!'),
+    },
+    m(FormLabel,
+      {for: `${id}-foo`,
       },
-      m(FormLabel,
-        {for: `${id}-foo`,
-        },
-        'Foo'),
-      m(TextInput, {id: `${id}-foo`}),
-      m(FormLabel,
-        {for: `${id}-bar`,
-        },
-        'Bar'),
-      m(Select,
-        {id: `${id}-bar`},
-        [
-          m('option', {value: 'foo', label: 'Foo'}),
-          m('option', {value: 'bar', label: 'Bar'}),
-          m('option', {value: 'baz', label: 'Baz'}),
-        ]),
+      'Foo'),
+    m(TextInput, {id: `${id}-foo`}),
+    m(FormLabel,
+      {for: `${id}-bar`,
+      },
+      'Bar'),
+    m(Select,
+      {id: `${id}-bar`},
+      [
+        m('option', {value: 'foo', label: 'Foo'}),
+        m('option', {value: 'bar', label: 'Bar'}),
+        m('option', {value: 'baz', label: 'Baz'}),
+      ]),
   );
 }

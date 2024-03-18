@@ -19,12 +19,15 @@ import {hasChildren} from '../base/mithril_utils';
 
 import {scheduleFullRedraw} from './raf';
 
-// Heirachical tree layout but right values are horizontally aligned.
+// Heirachical tree layout with left and right values.
+// Right and left values of the same indentation level are horizontally aligned.
 // Example:
-// foo     bar
+// foo    bar
 //  ├ baz  qux
 //  └ quux corge
-// grault  garply
+//    ├ looong_left aaa
+//    └ a           bbb
+// grault garply
 
 interface TreeAttrs {
   // Space delimited class list applied to our tree element.
@@ -38,7 +41,7 @@ export class Tree implements m.ClassComponent<TreeAttrs> {
     } = attrs;
 
     const classes = classNames(
-        className,
+      className,
     );
 
     return m('.pf-tree', {class: classes}, children);
@@ -81,23 +84,23 @@ export class TreeNode implements m.ClassComponent<TreeNodeAttrs> {
     const {children, attrs, attrs: {left, onCollapseChanged = () => {}}} =
         vnode;
     return m(
-        '.pf-tree-node',
-        {
-          class: classNames(this.getClassNameForNode(vnode)),
+      '.pf-tree-node',
+      {
+        class: classNames(this.getClassNameForNode(vnode)),
+      },
+      m('span.pf-tree-gutter', {
+        onclick: () => {
+          this.collapsed = !this.isCollapsed(vnode);
+          onCollapseChanged(this.collapsed, attrs);
+          scheduleFullRedraw();
         },
-        m('span.pf-tree-gutter', {
-          onclick: () => {
-            this.collapsed = !this.isCollapsed(vnode);
-            onCollapseChanged(this.collapsed, attrs);
-            scheduleFullRedraw();
-          },
-        }),
-        m(
-            '.pf-tree-content',
-            m('.pf-tree-left', left),
-            this.renderRight(vnode),
-            ),
-        hasChildren(vnode) &&
+      }),
+      m(
+        '.pf-tree-content',
+        m('.pf-tree-left', left),
+        this.renderRight(vnode),
+      ),
+      hasChildren(vnode) &&
             [
               m('span.pf-tree-indent-gutter'),
               m('.pf-tree-children', children),
@@ -200,39 +203,39 @@ export class LazyTreeNode implements m.ClassComponent<LazyTreeNodeAttrs> {
     } = attrs;
 
     return m(
-        TreeNode,
-        {
-          left,
-          right,
-          icon,
-          summary,
-          showCaret: true,
-          loading: this.loading,
-          collapsed: this.collapsed,
-          onCollapseChanged: (collapsed) => {
-            if (collapsed) {
-              if (unloadOnCollapse) {
-                this.renderChildren = undefined;
-              }
-            } else {
-              // Expanding
-              if (this.renderChildren) {
-                this.collapsed = false;
-                scheduleFullRedraw();
-              } else {
-                this.loading = true;
-                fetchData().then((result) => {
-                  this.loading = false;
-                  this.collapsed = false;
-                  this.renderChildren = result;
-                  scheduleFullRedraw();
-                });
-              }
+      TreeNode,
+      {
+        left,
+        right,
+        icon,
+        summary,
+        showCaret: true,
+        loading: this.loading,
+        collapsed: this.collapsed,
+        onCollapseChanged: (collapsed) => {
+          if (collapsed) {
+            if (unloadOnCollapse) {
+              this.renderChildren = undefined;
             }
-            this.collapsed = collapsed;
-            scheduleFullRedraw();
-          },
+          } else {
+            // Expanding
+            if (this.renderChildren) {
+              this.collapsed = false;
+              scheduleFullRedraw();
+            } else {
+              this.loading = true;
+              fetchData().then((result) => {
+                this.loading = false;
+                this.collapsed = false;
+                this.renderChildren = result;
+                scheduleFullRedraw();
+              });
+            }
+          }
+          this.collapsed = collapsed;
+          scheduleFullRedraw();
         },
-        this.renderChildren && this.renderChildren());
+      },
+      this.renderChildren && this.renderChildren());
   }
 }

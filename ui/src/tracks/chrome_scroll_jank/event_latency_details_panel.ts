@@ -14,26 +14,16 @@
 
 import m from 'mithril';
 
-import {duration, time} from '../../base/time';
+import {Duration, duration, time} from '../../base/time';
 import {raf} from '../../core/raf_scheduler';
-import {
-  BottomTab,
-  bottomTabRegistry,
-  NewBottomTabArgs,
-} from '../../frontend/bottom_tab';
-import {
-  GenericSliceDetailsTabConfig,
-} from '../../frontend/generic_slice_details_tab';
+import {BottomTab, bottomTabRegistry, NewBottomTabArgs} from '../../frontend/bottom_tab';
+import {GenericSliceDetailsTabConfig} from '../../frontend/generic_slice_details_tab';
 import {hasArgs, renderArguments} from '../../frontend/slice_args';
 import {renderDetails} from '../../frontend/slice_details';
-import {getSlice, SliceDetails, sliceRef} from '../../frontend/sql/slice';
+import {getDescendantSliceTree, getSlice, getSliceFromConstraints, SliceDetails, sliceRef, SliceTreeNode} from '../../frontend/sql/slice';
 import {asSliceSqlId, SliceSqlId} from '../../frontend/sql_types';
-import {
-  ColumnDescriptor,
-  Table,
-  TableData,
-  widgetColumn,
-} from '../../frontend/tables/table';
+import {ColumnDescriptor, Table, TableData, widgetColumn} from '../../frontend/tables/table';
+import {TreeTable, TreeTableAttrs} from '../../frontend/widgets/treetable';
 import {NUM, STR} from '../../trace_processor/query_result';
 import {DetailsShell} from '../../widgets/details_shell';
 import {GridLayout, GridLayoutColumn} from '../../widgets/grid_layout';
@@ -41,23 +31,56 @@ import {Section} from '../../widgets/section';
 import {MultiParagraphText, TextParagraph} from '../../widgets/text_paragraph';
 import {Tree, TreeNode} from '../../widgets/tree';
 
-import {
-  EventLatencyCauseThreadTracks,
-  EventLatencyStage,
-  getCauseLink,
-  getEventLatencyCauseTracks,
-  getScrollJankCauseStage,
-} from './scroll_jank_cause_link_utils';
+import {EventLatencyCauseThreadTracks, EventLatencyStage, getCauseLink, getEventLatencyCauseTracks, getScrollJankCauseStage} from './scroll_jank_cause_link_utils';
 import {ScrollJankCauseMap} from './scroll_jank_cause_map';
-import {
-  getScrollJankSlices,
-  getSliceForTrack,
-  ScrollJankSlice,
-} from './scroll_jank_slice';
+import {getScrollJankSlices, getSliceForTrack, ScrollJankSlice} from './scroll_jank_slice';
 import {ScrollJankV3Track} from './scroll_jank_v3_track';
 
+// Given a node in the slice tree, return a path from root to it.
+function getPath(slice: SliceTreeNode): string[] {
+  const result: string[] = [];
+  let node: SliceTreeNode|undefined = slice;
+  while (node.parent !== undefined) {
+    result.push(node.name);
+    node = node.parent;
+  }
+  return result.reverse();
+}
+
+// Given a slice tree node and a path, find the node following the path from
+// the given slice, or `undefined` if not found.
+function findSliceInTreeByPath(
+  slice: SliceTreeNode|undefined, path: string[]): SliceTreeNode|undefined {
+  if (slice === undefined) {
+    return undefined;
+  }
+  let result = slice;
+  for (const segment of path) {
+    let found = false;
+    for (const child of result.children) {
+      if (child.name === segment) {
+        found = true;
+        result = child;
+        break;
+      }
+    }
+    if (!found) {
+      return undefined;
+    }
+  }
+  return result;
+}
+
+function durationDelta(value: duration, base?: duration): string {
+  if (base === undefined) {
+    return 'NULL';
+  }
+  const delta = value - base;
+  return `${delta > 0 ? '+' : ''}${Duration.humanise(delta)}`;
+}
+
 export class EventLatencySliceDetailsPanel extends
-    BottomTab<GenericSliceDetailsTabConfig> {
+  BottomTab<GenericSliceDetailsTabConfig> {
   static readonly kind = 'dev.perfetto.EventLatencySliceDetailsPanel';
 
   private loaded = false;
@@ -76,12 +99,19 @@ export class EventLatencySliceDetailsPanel extends
   // is stores information about the current stage;
   private relevantThreadStage: EventLatencyStage|undefined;
   private relevantThreadTracks: EventLatencyCauseThreadTracks[] = [];
+  // Stages tree for the current EventLatency.
+  private eventLatencyBreakdown?: SliceTreeNode;
+  // Stages tree for the next EventLatency.
+  private nextEventLatencyBreakdown?: SliceTreeNode;
+  // Stages tree for the prev EventLatency.
+  private prevEventLatencyBreakdown?: SliceTreeNode;
 
-  static create(args: NewBottomTabArgs): EventLatencySliceDetailsPanel {
+  static create(args: NewBottomTabArgs<GenericSliceDetailsTabConfig>):
+      EventLatencySliceDetailsPanel {
     return new EventLatencySliceDetailsPanel(args);
   }
 
-  constructor(args: NewBottomTabArgs) {
+  constructor(args: NewBottomTabArgs<GenericSliceDetailsTabConfig>) {
     super(args);
 
     this.loadData();
@@ -104,6 +134,8 @@ export class EventLatencySliceDetailsPanel extends
     await this.loadSlice();
     await this.loadJankSlice();
     await this.loadRelevantThreads();
+    await this.loadEventLatencyBreakdown();
+
     this.loaded = true;
   }
 
@@ -162,7 +194,51 @@ export class EventLatencySliceDetailsPanel extends
 
     if (this.relevantThreadStage) {
       this.relevantThreadTracks = await getEventLatencyCauseTracks(
-          this.engine, this.relevantThreadStage);
+        this.engine, this.relevantThreadStage);
+    }
+  }
+
+  async loadEventLatencyBreakdown() {
+    if (this.topEventLatencyId === undefined) {
+      return;
+    }
+    this.eventLatencyBreakdown =
+        await getDescendantSliceTree(this.engine, this.topEventLatencyId);
+
+    // TODO(altimin): this should be based on an stdlib table and consider only
+    // EventLatencies within the same scroll.
+    // This is a copy of the statement in event_latency_track. It should move to
+    // stdlib instead of living in the UI code.
+    const whereClause = `
+    EXTRACT_ARG(arg_set_id, 'event_latency.event_type') IN (
+      'FIRST_GESTURE_SCROLL_UPDATE',
+      'GESTURE_SCROLL_UPDATE',
+      'INERTIAL_GESTURE_SCROLL_UPDATE')
+    AND HAS_DESCENDANT_SLICE_WITH_NAME(
+      id,
+      'SubmitCompositorFrameToPresentationCompositorFrame')`;
+    const prevEventLatency = await getSliceFromConstraints(this.engine, {
+      filters: [
+        `name = 'EventLatency'`, `id < ${this.topEventLatencyId}`, whereClause,
+      ],
+      orderBy: [{fieldName: 'id', direction: 'DESC'}],
+      limit: 1,
+    });
+    if (prevEventLatency.length > 0) {
+      this.prevEventLatencyBreakdown =
+          await getDescendantSliceTree(this.engine, prevEventLatency[0].id);
+    }
+
+    const nextEventLatency = await getSliceFromConstraints(this.engine, {
+      filters: [
+        `name = 'EventLatency'`, `id > ${this.topEventLatencyId}`, whereClause,
+      ],
+      orderBy: ['id'],
+      limit: 1,
+    });
+    if (nextEventLatency.length > 0) {
+      this.nextEventLatencyBreakdown =
+          await getDescendantSliceTree(this.engine, nextEventLatency[0].id);
     }
   }
 
@@ -177,11 +253,11 @@ export class EventLatencySliceDetailsPanel extends
     }
 
     const name = this.relevantThreadStage ? this.relevantThreadStage.name :
-                                            this.sliceDetails.name;
+      this.sliceDetails.name;
     const ts = this.relevantThreadStage ? this.relevantThreadStage.ts :
-                                          this.sliceDetails.ts;
+      this.sliceDetails.ts;
     const dur = this.relevantThreadStage ? this.relevantThreadStage.dur :
-                                           this.sliceDetails.dur;
+      this.sliceDetails.dur;
     const stageDetails = ScrollJankCauseMap.getEventLatencyDetails(name);
     if (stageDetails === undefined) return undefined;
 
@@ -197,16 +273,16 @@ export class EventLatencySliceDetailsPanel extends
 
     const columns: ColumnDescriptor<RelevantThreadRow>[] = [
       widgetColumn<RelevantThreadRow>(
-          'Relevant Thread', (x) => getCauseLink(x.tracks, x.ts, x.dur)),
+        'Relevant Thread', (x) => getCauseLink(x.tracks, x.ts, x.dur)),
       widgetColumn<RelevantThreadRow>(
-          'Description',
-          (x) => {
-            if (x.description === '') {
-              return x.description;
-            } else {
-              return m(TextParagraph, {text: x.description});
-            }
-          }),
+        'Description',
+        (x) => {
+          if (x.description === '') {
+            return x.description;
+          } else {
+            return m(TextParagraph, {text: x.description});
+          }
+        }),
     ];
 
     const trackLinks: RelevantThreadRow[] = [];
@@ -235,9 +311,9 @@ export class EventLatencySliceDetailsPanel extends
     }
 
     return m(
-        Section,
-        {title: this.isJankStage ? `Jank Cause: ${name}` : name},
-        childWidgets);
+      Section,
+      {title: this.isJankStage ? `Jank Cause: ${name}` : name},
+      childWidgets);
   }
 
   private async getOldestAncestorSliceId(): Promise<number> {
@@ -264,53 +340,92 @@ export class EventLatencySliceDetailsPanel extends
 
   private getLinksSection(): m.Child {
     return m(
-        Section,
-        {title: 'Quick links'},
-        m(
-            Tree,
-            m(TreeNode, {
-              left: this.sliceDetails ?
-                  sliceRef(
-                      this.sliceDetails,
-                      'EventLatency in context of other Input events') :
-                  'EventLatency in context of other Input events',
-              right: this.sliceDetails ? '' : 'N/A',
-            }),
-            m(TreeNode, {
-              left: this.jankySlice ? getSliceForTrack(
-                                          this.jankySlice,
-                                          ScrollJankV3Track.kind,
-                                          'Jank Interval') :
-                                      'Jank Interval',
-              right: this.jankySlice ? '' : 'N/A',
-            }),
-            ),
+      Section,
+      {title: 'Quick links'},
+      m(
+        Tree,
+        m(TreeNode, {
+          left: this.sliceDetails ?
+            sliceRef(
+              this.sliceDetails,
+              'EventLatency in context of other Input events') :
+            'EventLatency in context of other Input events',
+          right: this.sliceDetails ? '' : 'N/A',
+        }),
+        m(TreeNode, {
+          left: this.jankySlice ? getSliceForTrack(
+            this.jankySlice,
+            ScrollJankV3Track.kind,
+            'Jank Interval') :
+            'Jank Interval',
+          right: this.jankySlice ? '' : 'N/A',
+        }),
+      ),
+    );
+  }
+
+  private getBreakdownSection(): m.Child {
+    if (this.eventLatencyBreakdown === undefined) {
+      return undefined;
+    }
+
+    const attrs: TreeTableAttrs<SliceTreeNode> = {
+      rows: [this.eventLatencyBreakdown],
+      getChildren: (slice) => slice.children,
+      columns: [
+        {name: 'Name', getData: (slice) => slice.name},
+        {name: 'Duration', getData: (slice) => Duration.humanise(slice.dur)},
+        {
+          name: 'vs prev',
+          getData: (slice) => durationDelta(
+            slice.dur,
+            findSliceInTreeByPath(
+              this.prevEventLatencyBreakdown, getPath(slice))
+              ?.dur),
+        },
+        {
+          name: 'vs next',
+          getData: (slice) => durationDelta(
+            slice.dur,
+            findSliceInTreeByPath(
+              this.nextEventLatencyBreakdown, getPath(slice))
+              ?.dur),
+        },
+      ],
+    };
+
+    return m(
+      Section,
+      {
+        title: 'EventLatency Stage Breakdown',
+      },
+      m(TreeTable<SliceTreeNode>, attrs),
     );
   }
 
   private getDescriptionText(): m.Child {
     return m(
-        MultiParagraphText,
-        m(TextParagraph, {
-          text: `EventLatency tracks the latency of handling a given input event
+      MultiParagraphText,
+      m(TextParagraph, {
+        text: `EventLatency tracks the latency of handling a given input event
                  (Scrolls, Touches, Taps, etc). Ideally from when the input was
                  read by the hardware to when it was reflected on the screen.`,
-        }),
-        m(TextParagraph, {
-          text:
+      }),
+      m(TextParagraph, {
+        text:
               `Note however the concept of coalescing or terminating early. This
                occurs when we receive multiple events or handle them quickly by
                converting them into a different event. Such as a TOUCH_MOVE
                being converted into a GESTURE_SCROLL_UPDATE type, or a multiple
                GESTURE_SCROLL_UPDATE events being formed into a single frame at
                the end of the RendererCompositorQueuingDelay.`,
-        }),
-        m(TextParagraph, {
-          text:
+      }),
+      m(TextParagraph, {
+        text:
               `*Important:* On some platforms (MacOS) we do not get feedback on
                when something is presented on the screen so the timings are only
                accurate for what we know on a given platform.`,
-        }),
+      }),
     );
   }
 
@@ -320,9 +435,9 @@ export class EventLatencySliceDetailsPanel extends
 
       const rightSideWidgets: m.Child[] = [];
       rightSideWidgets.push(
-          m(Section,
-            {title: 'Description'},
-            m('.div', this.getDescriptionText())));
+        m(Section,
+          {title: 'Description'},
+          m('.div', this.getDescriptionText())));
 
       const stageWidget = this.getRelevantLinks();
       // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
@@ -330,25 +445,20 @@ export class EventLatencySliceDetailsPanel extends
         rightSideWidgets.push(stageWidget);
       }
       rightSideWidgets.push(this.getLinksSection());
+      rightSideWidgets.push(this.getBreakdownSection());
 
       return m(
-          DetailsShell,
-          {
-            title: 'Slice',
-            description: this.name,
-          },
-          m(GridLayout,
-            m(GridLayoutColumn,
-              renderDetails(slice),
-              hasArgs(slice.args) &&
-                  m(Section,
-                    {title: 'Arguments'},
+        DetailsShell,
+        {
+          title: 'Slice',
+          description: this.name,
+        },
+        m(GridLayout,
+          m(GridLayoutColumn, renderDetails(slice),
+            hasArgs(slice.args) &&
+                  m(Section, {title: 'Arguments'},
                     m(Tree, renderArguments(this.engine, slice.args)))),
-            m(GridLayoutColumn,
-              m(Section,
-                {title: 'Description'},
-                m('.div', this.getDescriptionText())),
-              this.getLinksSection())),
+          m(GridLayoutColumn, rightSideWidgets)),
       );
     } else {
       return m(DetailsShell, {title: 'Slice', description: 'Loading...'});
