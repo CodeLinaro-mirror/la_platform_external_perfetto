@@ -90,21 +90,12 @@ std::string HexToBinary(base::StringView hex) {
   return res;
 }
 
-bool IsHex(base::StringView module) {
-  for (char c : module) {
-    if (!std::isxdigit(c)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 // Returns whether this string is of a hex chrome module or not to decide
 // whether to convert the module to/from hex.
 // TODO(b/148109467): Remove workaround once all active Chrome versions
 // write raw bytes instead of a string as build_id.
 bool IsHexModuleId(base::StringView module) {
-  return module.size() == 33 && IsHex(module);
+  return module.size() == 33;
 }
 
 }  // namespace
