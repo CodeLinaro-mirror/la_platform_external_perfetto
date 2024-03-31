@@ -99,6 +99,7 @@ from diff_tests.stdlib.common.tests import StdlibCommon
 from diff_tests.stdlib.counters.tests import StdlibCounterIntervals
 from diff_tests.stdlib.dynamic_tables.tests import DynamicTables
 from diff_tests.stdlib.intervals.tests import StdlibIntervals
+from diff_tests.stdlib.intervals.intersect_tests import IntervalsIntersect
 from diff_tests.stdlib.graphs.dominator_tree_tests import DominatorTree
 from diff_tests.stdlib.graphs.search_tests import GraphSearchTests
 from diff_tests.stdlib.linux.tests import LinuxStdlib
@@ -126,6 +127,7 @@ from diff_tests.syntax.view_tests import PerfettoView
 from diff_tests.tables.tests import Tables
 from diff_tests.tables.tests_counters import TablesCounters
 from diff_tests.tables.tests_sched import TablesSched
+from diff_tests.parser.ftrace.ftrace_crop_tests import FtraceCrop
 
 sys.path.pop()
 
@@ -197,6 +199,7 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
       *ParsingRssStats(index_path, 'parser/parsing', 'ParsingRssStats').fetch(),
       *ParsingMemoryCounters(index_path, 'parser/parsing',
                              'ParsingMemoryCounters').fetch(),
+      *FtraceCrop(index_path, 'parser/ftrace', 'FtraceCrop').fetch(),
   ]
 
   metrics_tests = [
@@ -274,7 +277,9 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
       *SpanJoinSmoke(index_path, 'stdlib/span_join', 'SpanJoinSmoke').fetch(),
       *StdlibCommon(index_path, 'stdlib/common', 'StdlibCommon').fetch(),
       *StdlibIntervals(index_path, 'stdlib/intervals',
-                       'StdlibIntervals').fetch(),
+                       'StdlibIntervalsIntersect').fetch(),
+      *IntervalsIntersect(index_path, 'stdlib/intervals',
+                          'StdlibIntervals').fetch(),
       *Timestamps(index_path, 'stdlib/timestamps', 'Timestamps').fetch(),
   ] + chrome_stdlib_tests
 
