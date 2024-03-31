@@ -12,21 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Selection} from './state';
+import {LegacySelection} from './state';
 
-export type SelectionChangedObserver =
-    (selection: Selection|undefined, openCurrentSelectionTab: boolean) => void;
+export type SelectionChangedObserver = (
+  selection: LegacySelection | undefined,
+  openCurrentSelectionTab: boolean,
+) => void;
 
 const selectionObservers: SelectionChangedObserver[] = [];
 
 export function onSelectionChanged(
-  selection: Selection|undefined, openCurrentSelectionTab: boolean) {
+  selection: LegacySelection | undefined,
+  openCurrentSelectionTab: boolean,
+) {
   for (const observer of selectionObservers) {
     observer(selection, openCurrentSelectionTab);
   }
 }
 
-export function addSelectionChangeObserver(observer: SelectionChangedObserver):
-    void {
+export function addSelectionChangeObserver(
+  observer: SelectionChangedObserver,
+): void {
   selectionObservers.push(observer);
 }
