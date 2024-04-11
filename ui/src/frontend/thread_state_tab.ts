@@ -25,7 +25,7 @@ import {Section} from '../widgets/section';
 import {SqlRef} from '../widgets/sql_ref';
 import {Tree, TreeNode} from '../widgets/tree';
 
-import {BottomTab, bottomTabRegistry, NewBottomTabArgs} from './bottom_tab';
+import {BottomTab, NewBottomTabArgs} from './bottom_tab';
 import {SchedSqlId, ThreadStateSqlId} from './sql_types';
 import {
   getFullThreadName,
@@ -357,7 +357,7 @@ export class ThreadStateTab extends BottomTab<ThreadStateTabConfig> {
         label: 'Critical path',
         onclick: () =>
           runQuery(
-            `INCLUDE PERFETTO MODULE sched.thread_executing_span;`,
+            `INCLUDE PERFETTO MODULE sched.thread_executing_span_with_slice;`,
             this.engine,
           ).then(() =>
             addDebugSliceTrack(
@@ -387,5 +387,3 @@ export class ThreadStateTab extends BottomTab<ThreadStateTabConfig> {
     return this.state === undefined || this.relatedStates === undefined;
   }
 }
-
-bottomTabRegistry.register(ThreadStateTab);

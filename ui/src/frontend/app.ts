@@ -322,7 +322,7 @@ export class App implements m.ClassComponent {
 
         if (engine !== undefined && trackUtid != 0) {
           await runQuery(
-            `SELECT IMPORT('sched.thread_executing_span');`,
+            `INCLUDE PERFETTO MODULE sched.thread_executing_span;`,
             engine,
           );
           await addDebugSliceTrack(
@@ -365,7 +365,7 @@ export class App implements m.ClassComponent {
 
         if (engine !== undefined && trackUtid != 0) {
           await runQuery(
-            `SELECT IMPORT('sched.thread_executing_span');`,
+            `INCLUDE PERFETTO MODULE sched.thread_executing_span_with_slice;`,
             engine,
           );
           await addDebugSliceTrack(
@@ -399,7 +399,7 @@ export class App implements m.ClassComponent {
 
         if (engine !== undefined && trackUtid != 0) {
           addQueryResultsTab({
-            query: `SELECT IMPORT('sched.thread_executing_span');
+            query: `INCLUDE PERFETTO MODULE sched.thread_executing_span_with_slice;
                    SELECT *
                       FROM
                         _thread_executing_span_critical_path_graph(
@@ -554,7 +554,7 @@ export class App implements m.ClassComponent {
       name: 'Deselect',
       callback: () => {
         globals.timeline.deselectArea();
-        globals.makeSelection(Actions.deselect({}));
+        globals.clearSelection();
         globals.dispatch(Actions.removeNote({id: '0'}));
       },
       defaultHotkey: 'Escape',
@@ -589,25 +589,25 @@ export class App implements m.ClassComponent {
       id: 'perfetto.NextFlow',
       name: 'Next flow',
       callback: () => focusOtherFlow('Forward'),
-      defaultHotkey: ']',
+      defaultHotkey: 'Mod+]',
     },
     {
       id: 'perfetto.PrevFlow',
       name: 'Prev flow',
       callback: () => focusOtherFlow('Backward'),
-      defaultHotkey: '[',
+      defaultHotkey: 'Mod+[',
     },
     {
       id: 'perfetto.MoveNextFlow',
       name: 'Move next flow',
       callback: () => moveByFocusedFlow('Forward'),
-      defaultHotkey: 'Mod+]',
+      defaultHotkey: ']',
     },
     {
       id: 'perfetto.MovePrevFlow',
       name: 'Move prev flow',
       callback: () => moveByFocusedFlow('Backward'),
-      defaultHotkey: 'Mod+[',
+      defaultHotkey: '[',
     },
     {
       id: 'perfetto.SelectAll',
