@@ -41,7 +41,6 @@
 #include "src/trace_processor/db/runtime_table.h"
 #include "src/trace_processor/db/table.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/table_functions/static_table_function.h"
-#include "src/trace_processor/sqlite/query_cache.h"
 #include "src/trace_processor/sqlite/query_constraints.h"
 #include "src/trace_processor/sqlite/sqlite_table.h"
 #include "src/trace_processor/sqlite/sqlite_utils.h"
@@ -210,9 +209,10 @@ base::Status DbSqliteTable::Init(int, const char* const*, Schema* schema) {
   return base::OkStatus();
 }
 
-SqliteTable::Schema DbSqliteTable::ComputeSchema(const Table::Schema& schema,
-                                                 const char* table_name) {
-  std::vector<SqliteTable::Column> schema_cols;
+SqliteTableLegacy::Schema DbSqliteTable::ComputeSchema(
+    const Table::Schema& schema,
+    const char* table_name) {
+  std::vector<SqliteTableLegacy::Column> schema_cols;
   for (uint32_t i = 0; i < schema.columns.size(); ++i) {
     const auto& col = schema.columns[i];
     schema_cols.emplace_back(i, col.name, col.type, col.is_hidden);
@@ -319,7 +319,7 @@ void DbSqliteTable::ModifyConstraints(const Table::Schema& schema,
   {
     auto p = [&cs](const QueryConstraints::OrderBy& o) {
       auto inner_p = [&o](const QueryConstraints::Constraint& c) {
-        return c.column == o.iColumn && sqlite_utils::IsOpEq(c.op);
+        return c.column == o.iColumn && sqlite::utils::IsOpEq(c.op);
       };
       return std::any_of(cs->begin(), cs->end(), inner_p);
     };
@@ -373,7 +373,7 @@ DbSqliteTable::QueryCost DbSqliteTable::EstimateCost(
     if (current_row_count < 2)
       break;
     const auto& col_schema = schema.columns[static_cast<uint32_t>(c.column)];
-    if (sqlite_utils::IsOpEq(c.op) && col_schema.is_id) {
+    if (sqlite::utils::IsOpEq(c.op) && col_schema.is_id) {
       // If we have an id equality constraint, we can very efficiently filter
       // down to a single row in C++. However, if we're joining with another
       // table, SQLite will do this once per row which can be extremely
@@ -382,7 +382,7 @@ DbSqliteTable::QueryCost DbSqliteTable::EstimateCost(
       // entire filter call is ~10x the cost of iterating a single row.
       filter_cost += 10;
       current_row_count = 1;
-    } else if (sqlite_utils::IsOpEq(c.op)) {
+    } else if (sqlite::utils::IsOpEq(c.op)) {
       // If there is only a single equality constraint, we have special logic
       // to sort by that column and then binary search if we see the constraint
       // set often. Model this by dividing by the log of the number of rows as
@@ -400,8 +400,8 @@ DbSqliteTable::QueryCost DbSqliteTable::EstimateCost(
       double estimated_rows = current_row_count / (2 * log2(current_row_count));
       current_row_count = std::max(static_cast<uint32_t>(estimated_rows), 1u);
     } else if (col_schema.is_sorted &&
-               (sqlite_utils::IsOpLe(c.op) || sqlite_utils::IsOpLt(c.op) ||
-                sqlite_utils::IsOpGt(c.op) || sqlite_utils::IsOpGe(c.op))) {
+               (sqlite::utils::IsOpLe(c.op) || sqlite::utils::IsOpLt(c.op) ||
+                sqlite::utils::IsOpGt(c.op) || sqlite::utils::IsOpGe(c.op))) {
       // On a sorted column, if we see any partition constraints, we can do this
       // filter very efficiently. Model this using the log of the  number of
       // rows as a good approximation.
@@ -437,14 +437,13 @@ DbSqliteTable::QueryCost DbSqliteTable::EstimateCost(
   return QueryCost{final_cost, current_row_count};
 }
 
-std::unique_ptr<SqliteTable::BaseCursor> DbSqliteTable::CreateCursor() {
-  return std::make_unique<Cursor>(this, context_->cache);
+std::unique_ptr<SqliteTableLegacy::BaseCursor> DbSqliteTable::CreateCursor() {
+  return std::make_unique<Cursor>(this);
 }
 
-DbSqliteTable::Cursor::Cursor(DbSqliteTable* sqlite_table, QueryCache* cache)
-    : SqliteTable::BaseCursor(sqlite_table),
-      db_sqlite_table_(sqlite_table),
-      cache_(cache) {
+DbSqliteTable::Cursor::Cursor(DbSqliteTable* sqlite_table)
+    : SqliteTableLegacy::BaseCursor(sqlite_table),
+      db_sqlite_table_(sqlite_table) {
   switch (db_sqlite_table_->context_->computation) {
     case TableComputation::kStatic:
       upstream_table_ = db_sqlite_table_->context_->static_table;
@@ -472,25 +471,13 @@ DbSqliteTable::Cursor::~Cursor() = default;
 void DbSqliteTable::Cursor::TryCacheCreateSortedTable(
     const QueryConstraints& qc,
     FilterHistory history) {
-  // Check if we have a cache. Some subclasses (e.g. the flamegraph table) may
-  // pass nullptr to disable caching.
-  if (!cache_)
-    return;
-
   if (history == FilterHistory::kDifferent) {
     repeated_cache_count_ = 0;
-
-    // Check if the new constraint set is cached by another cursor.
-    sorted_cache_table_ =
-        cache_->GetIfCached(upstream_table_, qc.constraints());
+    sorted_cache_table_ = std::nullopt;
     return;
   }
 
   PERFETTO_DCHECK(history == FilterHistory::kSame);
-
-  // TODO(lalitm): all of the caching policy below should live in QueryCache and
-  // not here. This is only here temporarily to allow migration of sched without
-  // regressing UI performance and should be removed ASAP.
 
   // Only try and create the cached table on exactly the third time we see this
   // constraint set.
@@ -506,7 +493,7 @@ void DbSqliteTable::Cursor::TryCacheCreateSortedTable(
   // If the constraing is not an equality constraint, there's little
   // benefit to caching
   const auto& c = qc.constraints().front();
-  if (!sqlite_utils::IsOpEq(c.op))
+  if (!sqlite::utils::IsOpEq(c.op))
     return;
 
   // If the column is already sorted, we don't need to cache at all.
@@ -515,10 +502,7 @@ void DbSqliteTable::Cursor::TryCacheCreateSortedTable(
     return;
 
   // Try again to get the result or start caching it.
-  sorted_cache_table_ =
-      cache_->GetOrCache(upstream_table_, qc.constraints(), [this, col]() {
-        return upstream_table_->Sort({Order{col, false}});
-      });
+  sorted_cache_table_ = upstream_table_->Sort({Order{col, false}});
 }
 
 base::Status DbSqliteTable::Cursor::Filter(const QueryConstraints& qc,
@@ -705,28 +689,22 @@ void DbSqliteTable::Cursor::FilterAndSortMetatrace(metatrace::Record* r) {
   }
 }
 
-DbSqliteTableContext::DbSqliteTableContext(QueryCache* query_cache,
-                                           const Table* table,
+DbSqliteTableContext::DbSqliteTableContext(const Table* table,
                                            Table::Schema schema)
-    : cache(query_cache),
-      computation(Computation::kStatic),
+    : computation(Computation::kStatic),
       static_table(table),
       static_schema(std::move(schema)) {}
 
 DbSqliteTableContext::DbSqliteTableContext(
-    QueryCache* query_cache,
     std::function<RuntimeTable*(std::string)> get_table,
     std::function<void(std::string)> erase_table)
-    : cache(query_cache),
-      computation(Computation::kRuntime),
+    : computation(Computation::kRuntime),
       get_runtime_table(std::move(get_table)),
       erase_runtime_table(std::move(erase_table)) {}
 
 DbSqliteTableContext::DbSqliteTableContext(
-    QueryCache* query_cache,
     std::unique_ptr<StaticTableFunction> table)
-    : cache(query_cache),
-      computation(Computation::kTableFunction),
+    : computation(Computation::kTableFunction),
       static_table_function(std::move(table)) {}
 
 }  // namespace perfetto::trace_processor

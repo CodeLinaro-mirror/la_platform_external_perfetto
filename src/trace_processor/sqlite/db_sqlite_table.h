@@ -34,7 +34,6 @@
 #include "src/trace_processor/db/runtime_table.h"
 #include "src/trace_processor/db/table.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/table_functions/static_table_function.h"
-#include "src/trace_processor/sqlite/query_cache.h"
 #include "src/trace_processor/sqlite/query_constraints.h"
 #include "src/trace_processor/sqlite/sqlite_table.h"
 #include "src/trace_processor/sqlite/sqlite_utils.h"
@@ -54,16 +53,11 @@ struct DbSqliteTableContext {
     // Table is defined in runtime.
     kRuntime
   };
-  DbSqliteTableContext(QueryCache* query_cache,
-                       const Table* table,
-                       Table::Schema schema);
-  DbSqliteTableContext(QueryCache* query_cache,
-                       std::function<RuntimeTable*(std::string)> get_table,
+  DbSqliteTableContext(const Table* table, Table::Schema schema);
+  DbSqliteTableContext(std::function<RuntimeTable*(std::string)> get_table,
                        std::function<void(std::string)> erase_table);
-  DbSqliteTableContext(QueryCache* query_cache,
-                       std::unique_ptr<StaticTableFunction> table);
+  explicit DbSqliteTableContext(std::unique_ptr<StaticTableFunction> table);
 
-  QueryCache* cache;
   Computation computation;
 
   // Only valid when computation == TableComputation::kStatic.
@@ -89,9 +83,9 @@ class DbSqliteTable final
   using Context = DbSqliteTableContext;
   using TableComputation = Context::Computation;
 
-  class Cursor final : public SqliteTable::BaseCursor {
+  class Cursor final : public SqliteTableLegacy::BaseCursor {
    public:
-    Cursor(DbSqliteTable*, QueryCache*);
+    explicit Cursor(DbSqliteTable*);
     ~Cursor() final;
 
     Cursor(const Cursor&) = delete;
@@ -100,7 +94,7 @@ class DbSqliteTable final
     Cursor(Cursor&&) noexcept = delete;
     Cursor& operator=(Cursor&&) = delete;
 
-    // Implementation of SqliteTable::Cursor.
+    // Implementation of SqliteTableLegacy::Cursor.
     base::Status Filter(const QueryConstraints& qc,
                         sqlite3_value** argv,
                         FilterHistory);
@@ -128,8 +122,8 @@ class DbSqliteTable final
       // long as we don't call Next(). However, that only happens when Next() is
       // called on the Cursor itself, at which point SQLite no longer cares
       // about the bytes pointer.
-      sqlite_utils::ReportSqlValue(ctx, value, sqlite_utils::kSqliteStatic,
-                                   sqlite_utils::kSqliteStatic);
+      sqlite::utils::ReportSqlValue(ctx, value, sqlite::utils::kSqliteStatic,
+                                    sqlite::utils::kSqliteStatic);
     }
 
    private:
@@ -156,7 +150,6 @@ class DbSqliteTable final
     void FilterAndSortMetatrace(metatrace::Record* record);
 
     DbSqliteTable* db_sqlite_table_ = nullptr;
-    QueryCache* cache_ = nullptr;
     std::vector<uint32_t> argument_index_per_column_;
 
     const Table* upstream_table_ = nullptr;
@@ -176,7 +169,7 @@ class DbSqliteTable final
     // Stores a sorted version of |db_table_| sorted on a repeated equals
     // constraint. This allows speeding up repeated subqueries in joins
     // significantly.
-    std::shared_ptr<Table> sorted_cache_table_;
+    std::optional<Table> sorted_cache_table_;
 
     // Stores the count of repeated equality queries to decide whether it is
     // wortwhile to sort |db_table_| to create |sorted_cache_table_|.
@@ -197,15 +190,15 @@ class DbSqliteTable final
   virtual ~DbSqliteTable() final;
 
   // Table implementation.
-  base::Status Init(int, const char* const*, SqliteTable::Schema*) final;
-  std::unique_ptr<SqliteTable::BaseCursor> CreateCursor() final;
+  base::Status Init(int, const char* const*, SqliteTableLegacy::Schema*) final;
+  std::unique_ptr<SqliteTableLegacy::BaseCursor> CreateCursor() final;
   base::Status ModifyConstraints(QueryConstraints*) final;
   int BestIndex(const QueryConstraints&, BestIndexInfo*) final;
 
   // These static functions are useful to allow other callers to make use
   // of them.
-  static SqliteTable::Schema ComputeSchema(const Table::Schema&,
-                                           const char* table_name);
+  static SqliteTableLegacy::Schema ComputeSchema(const Table::Schema&,
+                                                 const char* table_name);
   static void ModifyConstraints(const Table::Schema&, QueryConstraints*);
   static void BestIndex(const Table::Schema&,
                         uint32_t row_count,
