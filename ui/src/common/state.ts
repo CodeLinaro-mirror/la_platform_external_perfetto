@@ -148,7 +148,8 @@ export const MAX_TIME = 180;
 // 49. Remove currentTab, which is only relevant to TabsV1.
 // 50. Remove ftrace filter state.
 // 51. Changed structure of FlamegraphState.expandedCallsiteByViewingOption.
-export const STATE_VERSION = 51;
+// 52. Update track group state - don't make the summary track the first track.
+export const STATE_VERSION = 52;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
 
@@ -290,6 +291,7 @@ export interface TrackGroupState {
   collapsed: boolean;
   tracks: string[]; // Child track ids.
   fixedOrdering?: boolean; // Render tracks without sorting.
+  summaryTrack: string | undefined;
 }
 
 export interface EngineConfig {
@@ -580,7 +582,16 @@ export declare type RecordMode =
   | 'LONG_TRACE';
 
 // 'Q','P','O' for Android, 'L' for Linux, 'C' for Chrome.
-export declare type TargetOs = 'S' | 'R' | 'Q' | 'P' | 'O' | 'C' | 'L' | 'CrOS';
+export declare type TargetOs =
+  | 'S'
+  | 'R'
+  | 'Q'
+  | 'P'
+  | 'O'
+  | 'C'
+  | 'L'
+  | 'CrOS'
+  | 'Win';
 
 export function isAndroidP(target: RecordingTarget) {
   return target.os === 'P';
@@ -600,6 +611,10 @@ export function isCrOSTarget(target: RecordingTarget) {
 
 export function isLinuxTarget(target: RecordingTarget) {
   return target.os === 'L';
+}
+
+export function isWindowsTarget(target: RecordingTarget) {
+  return target.os === 'Win';
 }
 
 export function isAdbTarget(
@@ -638,6 +653,7 @@ export function getDefaultRecordingTargets(): RecordingTarget[] {
     {os: 'C', name: 'Chrome'},
     {os: 'CrOS', name: 'Chrome OS (system trace)'},
     {os: 'L', name: 'Linux desktop'},
+    {os: 'Win', name: 'Windows desktop'},
   ];
 }
 
