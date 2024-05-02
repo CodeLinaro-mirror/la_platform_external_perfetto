@@ -18,12 +18,14 @@
 #define SRC_TRACE_REDACTION_TRACE_REDACTION_FRAMEWORK_H_
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
 #include "perfetto/base/flat_set.h"
 #include "perfetto/base/status.h"
 #include "perfetto/ext/base/status_or.h"
+#include "src/trace_redaction/process_thread_timeline.h"
 
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
 
@@ -156,27 +158,49 @@ class Context {
   //  3.  In this example, a cpu_idle event populates the one-of slot in the
   //      ftrace event
   base::FlatSet<uint32_t> ftrace_packet_allow_list;
+
+  // The timeline is a query-focused data structure that connects a pid to a
+  // uid at specific point in time.
+  //
+  // A timeline has two modes:
+  //
+  //    1. write-only
+  //    2. read-only
+  //
+  // Attempting to use the timeline incorrectly results in undefined behaviour.
+  //
+  // To use a timeline, the primitive needs to be "built" (add events) and then
+  // "sealed" (transition to read-only).
+  //
+  // A timeline must have Sort() called to change from write-only to read-only.
+  // After Sort(), Flatten() and Reduce() can be called (optional) to improve
+  // the practical look-up times (compared to theoretical look-up times).
+  std::unique_ptr<ProcessThreadTimeline> timeline;
 };
 
-// Responsible for extracting low-level data from the trace and storing it in
-// the context.
+// Extracts low-level data from the trace and writes it into the context. The
+// life cycle of a collect primitive is:
+//
+//  primitive.Begin(&context);
+//
+//  for (auto& packet : packets) {
+//    primitive.Collect(packet, &context);
+//  }
+//
+//  primitive.End(&context);
 class CollectPrimitive {
  public:
-  // When a collect primitive has collected all necessary information, it can
-  // stop processing packets by returning kRetire. If the primitives wants to
-  // continue processing packets, it will return kNextPacket.
-  //
-  // If a collector encounters an unrecoverable error, base::ErrStatus() is
-  // returned.
-  enum class ContinueCollection : bool { kRetire = false, kNextPacket = true };
-
   virtual ~CollectPrimitive();
 
-  // Processes a packet and writes low-level data to the context. Returns
-  // kContinue if the primitive wants more data (i.e. next packet).
-  virtual base::StatusOr<ContinueCollection> Collect(
-      const protos::pbzero::TracePacket::Decoder& packet,
-      Context* context) const = 0;
+  // Called once before the first call to Collect(...).
+  virtual base::Status Begin(Context*) const;
+
+  // Reads a trace packet and updates the context.
+  virtual base::Status Collect(const protos::pbzero::TracePacket::Decoder&,
+                               Context*) const = 0;
+
+  // Called once after the last call to Collect(...).
+  virtual base::Status End(Context*) const;
 };
 
 // Responsible for converting low-level data from the context and storing it in

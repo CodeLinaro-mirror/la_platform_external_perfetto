@@ -38,7 +38,6 @@ import {SliceDetailsPanel} from '../../frontend/slice_details_panel';
 import {
   EngineProxy,
   Plugin,
-  PluginContext,
   PluginContextTrace,
   PluginDescriptor,
   Track,
@@ -524,16 +523,25 @@ class CpuSliceTrack implements Track {
     const id = index === -1 ? undefined : data.ids[index];
     // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     if (!id || this.utidHoveredInThisTrack === -1) return false;
-    globals.makeSelection(Actions.selectSlice({id, trackKey: this.trackKey}));
+
+    globals.setLegacySelection(
+      {
+        kind: 'SLICE',
+        id,
+        trackKey: this.trackKey,
+      },
+      {
+        clearSearch: true,
+        pendingScrollId: undefined,
+        switchToCurrentSelectionTab: true,
+      },
+    );
+
     return true;
   }
 }
 
 class CpuSlices implements Plugin {
-  onActivate(_ctx: PluginContext): void {
-    // No-op
-  }
-
   async onTraceLoad(ctx: PluginContextTrace): Promise<void> {
     const cpus = await ctx.engine.getCpus();
     const cpuToSize = await this.guessCpuSizes(ctx.engine);

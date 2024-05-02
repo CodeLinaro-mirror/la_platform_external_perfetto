@@ -14,7 +14,7 @@
 
 import {Draft} from 'immer';
 
-import {assertExists, assertTrue, assertUnreachable} from '../base/logging';
+import {assertExists, assertTrue} from '../base/logging';
 import {duration, time} from '../base/time';
 import {RecordConfig} from '../controller/record_config_types';
 import {
@@ -40,7 +40,6 @@ import {createEmptyState} from './empty_state';
 import {defaultViewingOption} from './flamegraph_util';
 import {
   MetatraceTrackId,
-  traceEvent,
   traceEventBegin,
   traceEventEnd,
   TraceEventScope,
@@ -51,12 +50,10 @@ import {
   CallsiteInfo,
   EngineMode,
   FlamegraphStateViewingOption,
-  FtraceFilterPatch,
   LoadedConfig,
   NewEngineMode,
   OmniboxMode,
   OmniboxState,
-  Pagination,
   PendingDeeplinkState,
   PivotTableResult,
   ProfileType,
@@ -82,6 +79,7 @@ export interface AddTrackArgs {
   trackSortKey: TrackSortKey;
   trackGroup?: string;
   params?: unknown;
+  closeable?: boolean;
 }
 
 export interface PostedTrace {
@@ -95,8 +93,8 @@ export interface PostedTrace {
 }
 
 export interface PostedScrollToRange {
-  timeStart: time;
-  timeEnd: time;
+  timeStart: number;
+  timeEnd: number;
   viewPercentage?: number;
 }
 
@@ -213,6 +211,7 @@ export const StateActions = {
         labels: track.labels,
         uri: track.uri,
         params: track.params,
+        closeable: track.closeable,
       };
       if (track.trackGroup === SCROLLING_TRACK_GROUP) {
         state.scrollingTracks.push(trackKey);
@@ -256,7 +255,7 @@ export const StateActions = {
     args: {
       name: string;
       id: string;
-      summaryTrackKey: string;
+      summaryTrackKey?: string;
       collapsed: boolean;
       fixedOrdering?: boolean;
     },
@@ -265,7 +264,8 @@ export const StateActions = {
       name: args.name,
       id: args.id,
       collapsed: args.collapsed,
-      tracks: [args.summaryTrackKey],
+      tracks: [],
+      summaryTrack: args.summaryTrackKey,
       fixedOrdering: args.fixedOrdering,
     };
   },
@@ -641,21 +641,6 @@ export const StateActions = {
     }
   },
 
-  selectSlice(
-    state: StateDraft,
-    args: {id: number; trackKey: string; scroll?: boolean},
-  ): void {
-    state.selection = {
-      kind: 'legacy',
-      legacySelection: {
-        kind: 'SLICE',
-        id: args.id,
-        trackKey: args.trackKey,
-      },
-    };
-    state.pendingScrollId = args.scroll ? args.id : undefined;
-  },
-
   selectCounter(
     state: StateDraft,
     args: {leftTs: time; rightTs: time; id: number; trackKey: string},
@@ -743,6 +728,7 @@ export const StateActions = {
       type: args.type,
       viewingOption: args.viewingOption,
       focusRegex: '',
+      expandedCallsiteByViewingOption: {},
     };
   },
 
@@ -763,10 +749,15 @@ export const StateActions = {
 
   expandFlamegraphState(
     state: StateDraft,
-    args: {expandedCallsite?: CallsiteInfo},
+    args: {
+      expandedCallsite?: CallsiteInfo;
+      viewingOption: FlamegraphStateViewingOption;
+    },
   ): void {
     if (state.currentFlamegraphState === null) return;
-    state.currentFlamegraphState.expandedCallsite = args.expandedCallsite;
+    state.currentFlamegraphState.expandedCallsiteByViewingOption[
+      args.viewingOption
+    ] = args.expandedCallsite;
   },
 
   changeViewFlamegraphState(
@@ -837,6 +828,10 @@ export const StateActions = {
     };
   },
 
+  setPendingScrollId(state: StateDraft, args: {pendingScrollId: number}): void {
+    state.pendingScrollId = args.pendingScrollId;
+  },
+
   clearPendingScrollId(state: StateDraft, _: {}): void {
     state.pendingScrollId = undefined;
   },
@@ -853,58 +848,6 @@ export const StateActions = {
         trackKey: args.trackKey,
       },
     };
-  },
-
-  selectLog(
-    state: StateDraft,
-    args: {id: number; trackKey: string; scroll?: boolean},
-  ): void {
-    state.selection = {
-      kind: 'legacy',
-      legacySelection: {
-        kind: 'LOG',
-        id: args.id,
-        trackKey: args.trackKey,
-      },
-    };
-    state.pendingScrollId = args.scroll ? args.id : undefined;
-  },
-
-  deselect(state: StateDraft, _: {}): void {
-    state.selection = {
-      kind: 'empty',
-    };
-  },
-
-  updateLogsPagination(state: StateDraft, args: Pagination): void {
-    state.logsPagination = args;
-  },
-
-  updateFtracePagination(state: StateDraft, args: Pagination): void {
-    state.ftracePagination = args;
-  },
-
-  updateFtraceFilter(state: StateDraft, patch: FtraceFilterPatch) {
-    const {excludedNames: diffs} = patch;
-    const excludedNames = state.ftraceFilter.excludedNames;
-    for (const [addRemove, name] of diffs) {
-      switch (addRemove) {
-        case 'add':
-          if (!excludedNames.some((excluded: string) => excluded === name)) {
-            excludedNames.push(name);
-          }
-          break;
-        case 'remove':
-          state.ftraceFilter.excludedNames =
-            state.ftraceFilter.excludedNames.filter(
-              (excluded: string) => excluded !== name,
-            );
-          break;
-        default:
-          assertUnreachable(addRemove);
-          break;
-      }
-    }
   },
 
   startRecording(state: StateDraft, _: {}): void {
@@ -1077,22 +1020,6 @@ export const StateActions = {
     state.hoveredNoteTimestamp = args.ts;
   },
 
-  // Tab V1 specific
-  setCurrentTab(state: StateDraft, args: {tab: string | undefined}) {
-    traceEvent(
-      'setCurrentTab',
-      () => {
-        state.currentTab = args.tab;
-      },
-      {
-        args: {
-          tab: args.tab ?? '<undefined>',
-        },
-      },
-    );
-  },
-
-  // Specific to tabs V2.
   // Add a tab with a given URI to the tab bar and show it.
   // If the tab is already present in the tab bar, just show it.
   showTab(state: StateDraft, args: {uri: string}) {
@@ -1106,7 +1033,6 @@ export const StateActions = {
     state.tabs.currentTab = args.uri;
   },
 
-  // Specific to tabs V2.
   // Hide a tab in the tab bar pick a new tab to show.
   // Note: Attempting to hide the "current_selection" tab doesn't work. This tab
   // is special and cannot be removed.
@@ -1270,31 +1196,6 @@ export const StateActions = {
         ),
         aggregations,
       );
-  },
-
-  setMinimumLogLevel(state: StateDraft, args: {minimumLevel: number}) {
-    state.logFilteringCriteria.minimumLevel = args.minimumLevel;
-  },
-
-  addLogTag(state: StateDraft, args: {tag: string}) {
-    if (!state.logFilteringCriteria.tags.includes(args.tag)) {
-      state.logFilteringCriteria.tags.push(args.tag);
-    }
-  },
-
-  removeLogTag(state: StateDraft, args: {tag: string}) {
-    state.logFilteringCriteria.tags = state.logFilteringCriteria.tags.filter(
-      (t) => t !== args.tag,
-    );
-  },
-
-  updateLogFilterText(state: StateDraft, args: {textEntry: string}) {
-    state.logFilteringCriteria.textEntry = args.textEntry;
-  },
-
-  toggleCollapseByTextEntry(state: StateDraft, _: {}) {
-    state.logFilteringCriteria.hideNonMatching =
-      !state.logFilteringCriteria.hideNonMatching;
   },
 };
 

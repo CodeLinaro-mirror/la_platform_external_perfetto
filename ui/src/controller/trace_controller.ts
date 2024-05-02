@@ -26,25 +26,17 @@ import {
   isMetatracingEnabled,
 } from '../common/metatracing';
 import {pluginManager} from '../common/plugins';
-import {onSelectionChanged} from '../common/selection_observer';
 import {
   defaultTraceTime,
   EngineMode,
   PendingDeeplinkState,
   ProfileType,
-  getLegacySelection,
 } from '../common/state';
 import {featureFlags, Flag, PERF_SAMPLE_FLAG} from '../core/feature_flags';
-import {BottomTabList} from '../frontend/bottom_tab';
-import {
-  FtraceStat,
-  globals,
-  QuantizedLoad,
-  ThreadDesc,
-} from '../frontend/globals';
+import {globals, QuantizedLoad, ThreadDesc} from '../frontend/globals';
 import {
   clearOverviewData,
-  publishFtraceCounters,
+  publishHasFtrace,
   publishMetricError,
   publishOverviewData,
   publishRealtimeOffset,
@@ -89,9 +81,7 @@ import {
   FlowEventsController,
   FlowEventsControllerArgs,
 } from './flow_events_controller';
-import {FtraceController} from './ftrace_controller';
 import {LoadingManager} from './loading_manager';
-import {LogsController} from './logs_controller';
 import {
   PIVOT_TABLE_REDUX_FLAG,
   PivotTableController,
@@ -113,7 +103,6 @@ import {decideTracks} from './track_decider';
 type States = 'init' | 'loading_trace' | 'ready';
 
 const METRICS = [
-  'android_startup',
   'android_ion',
   'android_lmk',
   'android_dma_heap',
@@ -212,23 +201,25 @@ function showJsonWarning() {
 // ensure it's only run once.
 async function defineMaxLayoutDepthSqlFunction(engine: Engine): Promise<void> {
   await engine.query(`
-    select create_function(
-      'max_layout_depth(track_count INT, track_ids STRING)',
-      'INT',
-      '
-        select iif(
-          $track_count = 1,
-          (
-            select max(depth)
-            from slice
-            where track_id = cast($track_ids AS int)
-          ),
-          (
-            select max(layout_depth)
-            from experimental_slice_layout($track_ids)
-          )
-        );
-      '
+    create or replace perfetto table __max_layout_depth_state as
+    select track_id, max(depth) as max_depth
+    from slice
+    group by track_id
+    order by track_id;
+
+    create perfetto function __max_layout_depth(track_count INT, track_ids STRING)
+    returns INT AS
+    select iif(
+      $track_count = 1,
+      (
+        select max_depth
+        from __max_layout_depth_state
+        where track_id = cast($track_ids AS int)
+      ),
+      (
+        select max(layout_depth)
+        from experimental_slice_layout($track_ids)
+      )
     );
   `);
 }
@@ -351,17 +342,6 @@ export class TraceController extends Controller<States> {
         );
 
         childControllers.push(
-          Child('logs', LogsController, {
-            engine,
-            app: globals,
-          }),
-        );
-
-        childControllers.push(
-          Child('ftrace', FtraceController, {engine, app: globals}),
-        );
-
-        childControllers.push(
           Child('traceError', TraceErrorController, {engine}),
         );
 
@@ -421,7 +401,6 @@ export class TraceController extends Controller<States> {
         assertExists(getEnabledMetatracingCategories()),
       );
     }
-    globals.bottomTabList = new BottomTabList(engine.getProxy('BottomTabList'));
 
     globals.engines.set(this.engineId, engine);
     globals.dispatch(
@@ -541,8 +520,9 @@ export class TraceController extends Controller<States> {
 
     await defineMaxLayoutDepthSqlFunction(engine);
 
-    this.updateStatus('Loading plugins');
-    await pluginManager.onTraceLoad(engine);
+    await pluginManager.onTraceLoad(engine, (id) => {
+      this.updateStatus(`Running plugin: ${id}`);
+    });
 
     {
       // When we reload from a permalink don't create extra tracks:
@@ -558,20 +538,15 @@ export class TraceController extends Controller<States> {
     await this.loadTimelineOverview(traceTime);
 
     {
-      // Pull out the counts ftrace events by name
-      const query = `select
-            name,
-            count(name) as cnt
-          from ftrace_event
-          group by name
-          order by cnt desc`;
-      const result = await assertExists(this.engine).query(query);
-      const counters: FtraceStat[] = [];
-      const it = result.iter({name: STR, cnt: NUM});
-      for (let row = 0; it.valid(); it.next(), row++) {
-        counters.push({name: it.name, count: it.cnt});
-      }
-      publishFtraceCounters(counters);
+      // Check if we have any ftrace events at all
+      const query = `
+        select
+          *
+        from ftrace_event
+        limit 1`;
+
+      const res = await engine.query(query);
+      publishHasFtrace(res.numRows() > 0);
     }
 
     {
@@ -671,14 +646,6 @@ export class TraceController extends Controller<States> {
           title: 'Deeplink Query',
         });
       }
-    }
-
-    // If the trace was shared via a permalink, it might already have a
-    // selection. Emit onSelectionChanged to ensure that the components (like
-    // current selection details) react to it.
-    const currentSelection = getLegacySelection(globals.state);
-    if (currentSelection !== null) {
-      onSelectionChanged(currentSelection, true);
     }
 
     globals.dispatch(Actions.maybeExpandOnlyTrackGroup({}));
@@ -786,13 +753,18 @@ export class TraceController extends Controller<States> {
       if (trackKey === undefined) {
         return;
       }
-      globals.makeSelection(
-        Actions.selectChromeSlice({
+      globals.setLegacySelection(
+        {
+          kind: 'CHROME_SLICE',
           id: row.id,
           trackKey,
-          table: '',
-          scroll: true,
-        }),
+          table: 'slice',
+        },
+        {
+          clearSearch: true,
+          pendingScrollId: row.id,
+          switchToCurrentSelectionTab: false,
+        },
       );
     }
   }

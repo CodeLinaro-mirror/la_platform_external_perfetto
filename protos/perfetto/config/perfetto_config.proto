@@ -339,13 +339,10 @@ enum BuiltinClock {
   BUILTIN_CLOCK_MONOTONIC_COARSE = 4;
   BUILTIN_CLOCK_MONOTONIC_RAW = 5;
   BUILTIN_CLOCK_BOOTTIME = 6;
+  BUILTIN_CLOCK_TSC = 9;
   BUILTIN_CLOCK_MAX_ID = 63;
 
   reserved 7, 8;
-
-  // An internal CL (ag/16521245) has taken this for BUILTIN_CLOCK_TSC.
-  // That might get upstreamed later on. Avoid diverging on this ID in future.
-  reserved 9;
 }
 
 // End of protos/perfetto/common/builtin_clock.proto
@@ -3162,23 +3159,27 @@ message TrackEventConfig {
   //   7. Pattern matches in disabled categories.
   //   8. Pattern matches in disabled tags.
   //
-  // If none of the steps produced a match, the category is enabled by default.
+  // If none of the steps produced a match:
+  //  - In the C++ SDK (`perfetto::Category`), categories are enabled by
+  //  default.
+  //  - In the C SDK (`PerfettoTeCategory`), categories are disabled by default.
   //
   // Examples:
   //
   //  - To enable all non-slow/debug categories:
   //
-  //       No configuration needed, happens by default.
+  //       enabled_categories: "*"
   //
-  //  - To enable a specific category:
+  //  - To enable specific categories:
   //
-  //       disabled_categories = ["*"]
-  //       enabled_categories = ["my_category"]
+  //       disabled_categories: "*"
+  //       enabled_categories: "my_category"
+  //       enabled_categories: "my_category2"
   //
   //  - To enable only categories with a specific tag:
   //
-  //       disabled_tags = ["*"]
-  //       enabled_tags = ["my_tag"]
+  //       disabled_tags: "*"
+  //       enabled_tags: "my_tag"
   //
 
   // Default: []
