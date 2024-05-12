@@ -12,14 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {v4 as uuidv4} from 'uuid';
-
 import {BigintMath as BIMath} from '../../base/bigint_math';
 import {search, searchEq, searchSegment} from '../../base/binary_search';
 import {assertExists, assertTrue} from '../../base/logging';
 import {Duration, duration, Time, time} from '../../base/time';
 import {Actions} from '../../common/actions';
-import {calcCachedBucketSize} from '../../common/cache_utils';
 import {getLegacySelection} from '../../common/state';
 import {
   cropText,
@@ -43,14 +40,15 @@ import {
   Track,
 } from '../../public';
 import {LONG, NUM, STR_NULL} from '../../trace_processor/query_result';
+import {uuidv4Sql} from '../../base/uuid';
 
 export const CPU_SLICE_TRACK_KIND = 'CpuSliceTrack';
 
 export interface Data extends TrackData {
   // Slices are stored in a columnar fashion. All fields have the same length.
   ids: Float64Array;
-  starts: BigInt64Array;
-  ends: BigInt64Array;
+  startQs: BigInt64Array;
+  endQs: BigInt64Array;
   utids: Uint32Array;
   flags: Uint8Array;
   lastRowId: number;
@@ -68,13 +66,11 @@ class CpuSliceTrack implements Track {
   private utidHoveredInThisTrack = -1;
   private fetcher = new TimelineFetcher<Data>(this.onBoundsChange.bind(this));
 
-  private uuid = uuidv4();
-  private cachedBucketSize = BIMath.INT64_MAX;
-  private maxDur: duration = 0n;
   private lastRowId = -1;
   private engine: EngineProxy;
   private cpu: number;
   private trackKey: string;
+  private trackUuid = uuidv4Sql();
 
   constructor(engine: EngineProxy, trackKey: string, cpu: number) {
     this.engine = engine;
@@ -82,62 +78,25 @@ class CpuSliceTrack implements Track {
     this.cpu = cpu;
   }
 
-  // Returns a valid SQL table name with the given prefix that should be unique
-  // for each track.
-  private tableName(prefix: string) {
-    // Derive table name from, since that is unique for each track.
-    // Track ID can be UUID but '-' is not valid for sql table name.
-    const idSuffix = this.uuid.split('-').join('_');
-    return `${prefix}_${idSuffix}`;
-  }
-
   async onCreate() {
     await this.engine.query(`
-      create view ${this.tableName('sched')} as
-      select
-        ts,
-        dur,
-        utid,
-        id,
-        dur = -1 as isIncomplete,
-        (case when priority < 100 then 1 else 0 end) as isRealtime
+      create virtual table cpu_slice_${this.trackUuid}
+      using __intrinsic_slice_mipmap((
+        select
+          id,
+          ts,
+          iif(dur = -1, lead(ts, 1, trace_end()) over (order by ts) - ts, dur),
+          0 as depth
+        from sched
+        where cpu = ${this.cpu} and utid != 0
+      ));
+    `);
+    const it = await this.engine.query(`
+      select coalesce(max(id), -1) as lastRowId
       from sched
       where cpu = ${this.cpu} and utid != 0
     `);
-
-    const queryRes = await this.engine.query(`
-      select ifnull(max(dur), 0) as maxDur, count(1) as rowCount
-      from ${this.tableName('sched')}
-    `);
-
-    const queryLastSlice = await this.engine.query(`
-      select ifnull(max(id), -1) as lastSliceId from ${this.tableName('sched')}
-    `);
-    this.lastRowId = queryLastSlice.firstRow({lastSliceId: NUM}).lastSliceId;
-
-    const row = queryRes.firstRow({maxDur: LONG, rowCount: NUM});
-    this.maxDur = row.maxDur;
-    const rowCount = row.rowCount;
-    const bucketSize = calcCachedBucketSize(rowCount);
-    if (bucketSize === undefined) {
-      return;
-    }
-
-    await this.engine.query(`
-      create table ${this.tableName('sched_cached')} as
-      select
-        (ts + ${bucketSize / 2n}) / ${bucketSize} * ${bucketSize} as cached_tsq,
-        ts,
-        max(dur) as dur,
-        utid,
-        id,
-        isIncomplete,
-        isRealtime
-      from ${this.tableName('sched')}
-      group by cached_tsq, isIncomplete
-      order by cached_tsq
-    `);
-    this.cachedBucketSize = bucketSize;
+    this.lastRowId = it.firstRow({lastRowId: NUM}).lastRowId;
   }
 
   async onUpdate() {
@@ -151,30 +110,16 @@ class CpuSliceTrack implements Track {
   ): Promise<Data> {
     assertTrue(BIMath.popcount(resolution) === 1, `${resolution} not pow of 2`);
 
-    const isCached = this.cachedBucketSize <= resolution;
-    const queryTsq = isCached
-      ? `cached_tsq / ${resolution} * ${resolution}`
-      : `(ts + ${resolution / 2n}) / ${resolution} * ${resolution}`;
-    const queryTable = isCached
-      ? this.tableName('sched_cached')
-      : this.tableName('sched');
-    const constraintColumn = isCached ? 'cached_tsq' : 'ts';
-
     const queryRes = await this.engine.query(`
       select
-        ${queryTsq} as tsq,
-        ts,
-        max(dur) as dur,
-        utid,
-        id,
-        isIncomplete,
-        isRealtime
-      from ${queryTable}
-      where
-        ${constraintColumn} >= ${start - this.maxDur} and
-        ${constraintColumn} <= ${end}
-      group by tsq, isIncomplete
-      order by tsq
+        (z.ts / ${resolution}) * ${resolution} as tsQ,
+        (((z.ts + z.dur) / ${resolution}) + 1) * ${resolution} as tsEndQ,
+        s.utid,
+        s.id,
+        s.dur = -1 as isIncomplete,
+        ifnull(s.priority < 100, 0) as isRealtime
+      from cpu_slice_${this.trackUuid}(${start}, ${end}, ${resolution}) z
+      cross join sched s using (id)
     `);
 
     const numRows = queryRes.numRows();
@@ -185,35 +130,23 @@ class CpuSliceTrack implements Track {
       length: numRows,
       lastRowId: this.lastRowId,
       ids: new Float64Array(numRows),
-      starts: new BigInt64Array(numRows),
-      ends: new BigInt64Array(numRows),
+      startQs: new BigInt64Array(numRows),
+      endQs: new BigInt64Array(numRows),
       utids: new Uint32Array(numRows),
       flags: new Uint8Array(numRows),
     };
 
     const it = queryRes.iter({
-      tsq: LONG,
-      ts: LONG,
-      dur: LONG,
+      tsQ: LONG,
+      tsEndQ: LONG,
       utid: NUM,
       id: NUM,
       isIncomplete: NUM,
       isRealtime: NUM,
     });
     for (let row = 0; it.valid(); it.next(), row++) {
-      const startQ = it.tsq;
-      const start = it.ts;
-      const dur = it.dur;
-      const end = start + dur;
-
-      // If the slice is incomplete, the end calculated later.
-      if (!it.isIncomplete) {
-        const minEnd = startQ + resolution;
-        const endQ = BIMath.max(BIMath.quant(end, resolution), minEnd);
-        slices.ends[row] = endQ;
-      }
-
-      slices.starts[row] = startQ;
+      slices.startQs[row] = it.tsQ;
+      slices.endQs[row] = it.tsEndQ;
       slices.utids[row] = it.utid;
       slices.ids[row] = it.id;
 
@@ -225,26 +158,13 @@ class CpuSliceTrack implements Track {
         slices.flags[row] |= CPU_SLICE_FLAGS_REALTIME;
       }
     }
-
-    // If the slice is incomplete and it is the last slice in the track, the end
-    // of the slice would be the end of the visible window. Otherwise we end the
-    // slice with the beginning the next one.
-    for (let row = 0; row < slices.length; row++) {
-      if (!(slices.flags[row] & CPU_SLICE_FLAGS_INCOMPLETE)) {
-        continue;
-      }
-      const endTime = row === slices.length - 1 ? end : slices.starts[row + 1];
-      const minEnd = slices.starts[row] + resolution;
-      const endQ = BIMath.max(BIMath.quant(endTime, resolution), minEnd);
-      slices.ends[row] = endQ;
-    }
     return slices;
   }
 
   async onDestroy() {
     if (this.engine.isAlive) {
       await this.engine.query(
-        `drop table if exists ${this.tableName('sched_cached')}`,
+        `drop table if exists cpu_slice_${this.trackUuid}`,
       );
     }
     this.fetcher.dispose();
@@ -278,8 +198,8 @@ class CpuSliceTrack implements Track {
   renderSlices(ctx: CanvasRenderingContext2D, data: Data): void {
     const {visibleTimeScale, visibleTimeSpan, visibleWindowTime} =
       globals.timeline;
-    assertTrue(data.starts.length === data.ends.length);
-    assertTrue(data.starts.length === data.utids.length);
+    assertTrue(data.startQs.length === data.endQs.length);
+    assertTrue(data.startQs.length === data.utids.length);
 
     const visWindowEndPx = visibleTimeScale.hpTimeToPx(visibleWindowTime.end);
 
@@ -290,15 +210,15 @@ class CpuSliceTrack implements Track {
     const startTime = visibleTimeSpan.start;
     const endTime = visibleTimeSpan.end;
 
-    const rawStartIdx = data.ends.findIndex((end) => end >= startTime);
+    const rawStartIdx = data.endQs.findIndex((end) => end >= startTime);
     const startIdx = rawStartIdx === -1 ? 0 : rawStartIdx;
 
-    const [, rawEndIdx] = searchSegment(data.starts, endTime);
-    const endIdx = rawEndIdx === -1 ? data.starts.length : rawEndIdx;
+    const [, rawEndIdx] = searchSegment(data.startQs, endTime);
+    const endIdx = rawEndIdx === -1 ? data.startQs.length : rawEndIdx;
 
     for (let i = startIdx; i < endIdx; i++) {
-      const tStart = Time.fromRaw(data.starts[i]);
-      let tEnd = Time.fromRaw(data.ends[i]);
+      const tStart = Time.fromRaw(data.startQs[i]);
+      let tEnd = Time.fromRaw(data.endQs[i]);
       const utid = data.utids[i];
 
       // If the last slice is incomplete, it should end with the end of the
@@ -397,8 +317,8 @@ class CpuSliceTrack implements Track {
     if (selection !== null && selection.kind === 'SLICE') {
       const [startIndex, endIndex] = searchEq(data.ids, selection.id);
       if (startIndex !== endIndex) {
-        const tStart = Time.fromRaw(data.starts[startIndex]);
-        const tEnd = Time.fromRaw(data.ends[startIndex]);
+        const tStart = Time.fromRaw(data.startQs[startIndex]);
+        const tEnd = Time.fromRaw(data.endQs[startIndex]);
         const utid = data.utids[startIndex];
         const color = colorForThread(globals.threads.get(utid));
         const rectStart = visibleTimeScale.timeToPx(tStart);
@@ -490,9 +410,9 @@ class CpuSliceTrack implements Track {
     const t = visibleTimeScale.pxToHpTime(pos.x);
     let hoveredUtid = -1;
 
-    for (let i = 0; i < data.starts.length; i++) {
-      const tStart = Time.fromRaw(data.starts[i]);
-      const tEnd = Time.fromRaw(data.ends[i]);
+    for (let i = 0; i < data.startQs.length; i++) {
+      const tStart = Time.fromRaw(data.startQs[i]);
+      const tEnd = Time.fromRaw(data.endQs[i]);
       const utid = data.utids[i];
       if (t.gte(tStart) && t.lt(tEnd)) {
         hoveredUtid = utid;
@@ -519,7 +439,7 @@ class CpuSliceTrack implements Track {
     if (data === undefined) return false;
     const {visibleTimeScale} = globals.timeline;
     const time = visibleTimeScale.pxToHpTime(x);
-    const index = search(data.starts, time.toTime());
+    const index = search(data.startQs, time.toTime());
     const id = index === -1 ? undefined : data.ids[index];
     // eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
     if (!id || this.utidHoveredInThisTrack === -1) return false;
