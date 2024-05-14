@@ -450,7 +450,7 @@ export abstract class BaseCounterTrack implements Track {
     return m(
       PopupMenu2,
       {
-        trigger: m(Button, {icon: 'show_chart', minimal: true, compact: true}),
+        trigger: m(Button, {icon: 'show_chart', compact: true}),
       },
       this.getCounterContextMenuItems(),
     );
@@ -520,6 +520,7 @@ export abstract class BaseCounterTrack implements Track {
       zeroY = effectiveHeight * (yMax / (yMax - yMin)) + MARGIN_TOP;
     }
 
+    // Use hue to differentiate the scale of the counter value
     const exp = Math.ceil(Math.log10(Math.max(yMax, 1)));
     const expCapped = Math.min(exp - 3, 9);
     const hue = (180 - Math.floor(expCapped * (180 / 6)) + 360) % 360;
@@ -963,6 +964,6 @@ export abstract class BaseCounterTrack implements Track {
   }
 
   get unit(): string {
-    return this.getCounterOptions().unit ?? '?';
+    return this.getCounterOptions().unit ?? '';
   }
 }

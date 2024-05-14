@@ -25,8 +25,30 @@
 namespace perfetto::trace_redaction {
 
 base::Status PopulateAllowlists::Build(Context* context) const {
-  if (!context->trace_packet_allow_list.empty()) {
-    return base::ErrStatus("PopulateAllowlists: allow-list should be empty.");
+  // These fields are top-level fields that outside the "oneof data" field.
+  std::initializer_list<uint32_t> required_trace_fields = {
+
+      protos::pbzero::TracePacket::kTimestampFieldNumber,
+      protos::pbzero::TracePacket::kTimestampClockIdFieldNumber,
+      protos::pbzero::TracePacket::kTrustedUidFieldNumber,
+      protos::pbzero::TracePacket::kTrustedPacketSequenceIdFieldNumber,
+      protos::pbzero::TracePacket::kTrustedPidFieldNumber,
+      protos::pbzero::TracePacket::kInternedDataFieldNumber,
+      protos::pbzero::TracePacket::kSequenceFlagsFieldNumber,
+
+      // DEPRECATED. Moved to SequenceFlags::SEQ_INCREMENTAL_STATE_CLEARED. So
+      // there is no reason to include it.
+      //
+      // protos::pbzero::TracePacket::incremental_state_cleared
+
+      protos::pbzero::TracePacket::kTracePacketDefaultsFieldNumber,
+      protos::pbzero::TracePacket::kPreviousPacketDroppedFieldNumber,
+      protos::pbzero::TracePacket::kFirstPacketOnSequenceFieldNumber,
+      protos::pbzero::TracePacket::kMachineIdFieldNumber,
+  };
+
+  for (auto item : required_trace_fields) {
+    context->trace_packet_allow_list.insert(item);
   }
 
   // TRACE PACKET NOTES
@@ -37,8 +59,7 @@ base::Status PopulateAllowlists::Build(Context* context) const {
   //      constraints around keys or values, making fine-grain redaction
   //      difficult. Because this packet's value has no measurable, the safest
   //      option to drop the whole packet.
-
-  context->trace_packet_allow_list = {
+  std::initializer_list<uint32_t> trace_packets = {
       protos::pbzero::TracePacket::kProcessTreeFieldNumber,
       protos::pbzero::TracePacket::kProcessStatsFieldNumber,
       protos::pbzero::TracePacket::kClockSnapshotFieldNumber,
@@ -59,13 +80,16 @@ base::Status PopulateAllowlists::Build(Context* context) const {
       protos::pbzero::TracePacket::kPackagesListFieldNumber,
   };
 
-  context->ftrace_packet_allow_list = {
+  for (auto item : trace_packets) {
+    context->trace_packet_allow_list.insert(item);
+  }
+
+  std::initializer_list<uint32_t> ftrace_events = {
       protos::pbzero::FtraceEvent::kSchedSwitchFieldNumber,
       protos::pbzero::FtraceEvent::kCpuFrequencyFieldNumber,
       protos::pbzero::FtraceEvent::kCpuIdleFieldNumber,
       protos::pbzero::FtraceEvent::kSchedBlockedReasonFieldNumber,
       protos::pbzero::FtraceEvent::kSchedWakingFieldNumber,
-      protos::pbzero::FtraceEvent::kSuspendResumeFieldNumber,
       protos::pbzero::FtraceEvent::kTaskNewtaskFieldNumber,
       protos::pbzero::FtraceEvent::kTaskRenameFieldNumber,
       protos::pbzero::FtraceEvent::kSchedProcessFreeFieldNumber,
@@ -80,21 +104,9 @@ base::Status PopulateAllowlists::Build(Context* context) const {
       protos::pbzero::FtraceEvent::kPrintFieldNumber,
   };
 
-  // TODO: Some ftrace fields should be retained, but they carry too much risk
-  // without additional redaction. This list should be configured in a build
-  // primitive so that they can be optionally included.
-  //
-  // protos::pbzero::FtraceEvent::kPrintFieldNumber,
-  //
-  // TODO: Some fields will create new packets (e.g. binder calls may create
-  // new spans. This is currently not supported (generated packets still
-  // need to be redacted).
-  //
-  // protos::pbzero::FtraceEvent::kBinderTransactionFieldNumber,
-  // protos::pbzero::FtraceEvent::kBinderTransactionReceivedFieldNumber,
-  // protos::pbzero::FtraceEvent::kBinderSetPriorityFieldNumber,
-  // protos::pbzero::FtraceEvent::kBinderLockedFieldNumber,
-  // protos::pbzero::FtraceEvent::kBinderUnlockFieldNumber,
+  for (auto item : ftrace_events) {
+    context->ftrace_packet_allow_list.insert(item);
+  }
 
   return base::OkStatus();
 }

@@ -414,7 +414,7 @@ export class App implements m.ClassComponent {
     },
     {
       id: 'perfetto.ShowSliceTable',
-      name: 'Show slice table',
+      name: 'Open new slice table tab',
       callback: () => {
         addSqlTableTab({
           table: SqlTables.slice,
@@ -452,13 +452,13 @@ export class App implements m.ClassComponent {
     },
     {
       id: 'perfetto.OpenCommandPalette',
-      name: 'Open Command Palette',
+      name: 'Open command palette',
       callback: () => this.enterCommandMode(),
       defaultHotkey: '!Mod+Shift+P',
     },
     {
       id: 'perfetto.RunQuery',
-      name: 'Run Query',
+      name: 'Run query',
       callback: () => this.enterQueryMode(),
       defaultHotkey: '!Mod+O',
     },
@@ -545,7 +545,7 @@ export class App implements m.ClassComponent {
     },
     {
       id: 'perfetto.FocusSelection',
-      name: 'Focus selection',
+      name: 'Focus current selection',
       callback: () => findCurrentSelection(),
       defaultHotkey: 'F',
     },
@@ -804,6 +804,9 @@ export class App implements m.ClassComponent {
         this.addRecentCommand(key);
         cmdMgr.runCommand(key);
       },
+      onGoBack: () => {
+        this.enterSearchMode(false);
+      },
     });
   }
 
@@ -822,6 +825,7 @@ export class App implements m.ClassComponent {
       placeholder: ph,
       inputRef: App.OMNIBOX_INPUT_REF,
       extraClasses: 'query-mode',
+
       onInput: (value) => {
         this.queryText = value;
         raf.scheduleFullRedraw();
@@ -841,6 +845,9 @@ export class App implements m.ClassComponent {
         }
         this.enterSearchMode(false);
         raf.scheduleFullRedraw();
+      },
+      onGoBack: () => {
+        this.enterSearchMode(false);
       },
     });
   }

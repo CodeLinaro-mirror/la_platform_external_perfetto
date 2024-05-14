@@ -16,7 +16,8 @@
 
 #include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
-#include "src/trace_redaction/build_timeline.h"
+#include "src/trace_redaction/collect_frame_cookies.h"
+#include "src/trace_redaction/collect_timeline_events.h"
 #include "src/trace_redaction/filter_ftrace_using_allowlist.h"
 #include "src/trace_redaction/filter_packet_using_allowlist.h"
 #include "src/trace_redaction/filter_print_events.h"
@@ -34,6 +35,7 @@
 #include "src/trace_redaction/scrub_process_stats.h"
 #include "src/trace_redaction/scrub_process_trees.h"
 #include "src/trace_redaction/scrub_trace_packet.h"
+#include "src/trace_redaction/suspend_resume.h"
 #include "src/trace_redaction/trace_redaction_framework.h"
 #include "src/trace_redaction/trace_redactor.h"
 
@@ -47,21 +49,26 @@ static base::Status Main(std::string_view input,
 
   // Add all collectors.
   redactor.emplace_collect<FindPackageUid>();
-  redactor.emplace_collect<BuildTimeline>();
+  redactor.emplace_collect<CollectTimelineEvents>();
+  redactor.emplace_collect<CollectFrameCookies>();
 
   // Add all builders.
   redactor.emplace_build<PopulateAllowlists>();
+  redactor.emplace_build<AllowSuspendResume>();
   redactor.emplace_build<OptimizeTimeline>();
+  redactor.emplace_build<ReduceFrameCookies>();
 
   // Add all transforms.
   auto* scrub_packet = redactor.emplace_transform<ScrubTracePacket>();
   scrub_packet->emplace_back<FilterPacketUsingAllowlist>();
+  scrub_packet->emplace_back<FilterFrameEvents>();
 
   auto* scrub_ftrace_events = redactor.emplace_transform<ScrubFtraceEvents>();
   scrub_ftrace_events->emplace_back<FilterFtraceUsingAllowlist>();
   scrub_ftrace_events->emplace_back<FilterPrintEvents>();
   scrub_ftrace_events->emplace_back<FilterSchedWakingEvents>();
   scrub_ftrace_events->emplace_back<FilterTaskRename>();
+  scrub_ftrace_events->emplace_back<FilterSuspendResume>();
 
   // Scrub packets and ftrace events first as they will remove the largest
   // chucks of data from the trace. This will reduce the amount of data that the
