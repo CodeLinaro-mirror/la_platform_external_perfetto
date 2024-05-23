@@ -19,16 +19,6 @@ export {Store} from '../base/store';
 import {raf} from '../core/raf_scheduler';
 import {globals} from '../frontend/globals';
 
-export {EngineProxy} from '../trace_processor/engine';
-export {
-  LONG,
-  LONG_NULL,
-  NUM,
-  NUM_NULL,
-  STR,
-  STR_NULL,
-} from '../trace_processor/query_result';
-
 type FetchTimeline<Data> = (
   start: time,
   end: time,
@@ -78,6 +68,10 @@ export class TimelineFetcher<Data> implements Disposable {
 
   get data(): Data | undefined {
     return this.data_;
+  }
+
+  invalidate() {
+    this.data_ = undefined;
   }
 
   dispose() {
