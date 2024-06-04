@@ -50,6 +50,9 @@ from diff_tests.parser.android_fs.tests import AndroidFs
 from diff_tests.parser.android.tests import AndroidParser
 from diff_tests.parser.android.tests_bugreport import AndroidBugreport
 from diff_tests.parser.android.tests_games import AndroidGames
+from diff_tests.parser.android.tests_inputmethod_clients import InputMethodClients
+from diff_tests.parser.android.tests_inputmethod_manager_service import InputMethodManagerService
+from diff_tests.parser.android.tests_inputmethod_service import InputMethodService
 from diff_tests.parser.android.tests_protolog import ProtoLog
 from diff_tests.parser.android.tests_shell_transitions import ShellTransitions
 from diff_tests.parser.android.tests_surfaceflinger_layers import SurfaceFlingerLayers
@@ -98,7 +101,7 @@ from diff_tests.stdlib.chrome.chrome_stdlib_testsuites import CHROME_STDLIB_TEST
 from diff_tests.stdlib.common.tests import StdlibCommon
 from diff_tests.stdlib.common.tests import StdlibCommon
 from diff_tests.stdlib.counters.tests import StdlibCounterIntervals
-from diff_tests.stdlib.cpu.tests import CpuStdlib
+from diff_tests.stdlib.cpu.tests import Cpu
 from diff_tests.stdlib.dynamic_tables.tests import DynamicTables
 from diff_tests.stdlib.graphs.dominator_tree_tests import DominatorTree
 from diff_tests.stdlib.graphs.partition_tests import GraphPartitionTests
@@ -183,6 +186,12 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
                            'SmokeComputeMetrics').fetch(),
       *SmokeJson(index_path, 'parser/smoke', 'SmokeJson').fetch(),
       *SmokeSchedEvents(index_path, 'parser/smoke', 'SmokeSchedEvents').fetch(),
+      *InputMethodClients(index_path, 'parser/android',
+                            'InputMethodClients').fetch(),
+      *InputMethodManagerService(index_path, 'parser/android',
+                            'InputMethodManagerService').fetch(),
+      *InputMethodService(index_path, 'parser/android',
+                            'InputMethodService').fetch(),
       *SurfaceFlingerLayers(index_path, 'parser/android',
                             'SurfaceFlingerLayers').fetch(),
       *SurfaceFlingerTransactions(index_path, 'parser/android',
@@ -246,7 +255,7 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
 
   stdlib_tests = [
       *AndroidStdlib(index_path, 'stdlib/android', 'AndroidStdlib').fetch(),
-      *CpuStdlib(index_path, 'stdlib/cpu', 'CpuStdlib').fetch(),
+      *Cpu(index_path, 'stdlib/cpu', 'Cpu').fetch(),
       *DominatorTree(index_path, 'stdlib/graphs', 'DominatorTree').fetch(),
       *Frames(index_path, 'stdlib/android', 'Frames').fetch(),
       *GraphSearchTests(index_path, 'stdlib/graphs',
