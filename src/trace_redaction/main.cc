@@ -28,10 +28,10 @@
 #include "src/trace_redaction/populate_allow_lists.h"
 #include "src/trace_redaction/prune_package_list.h"
 #include "src/trace_redaction/redact_ftrace_event.h"
-#include "src/trace_redaction/redact_process_free.h"
 #include "src/trace_redaction/redact_sched_switch.h"
 #include "src/trace_redaction/redact_task_newtask.h"
 #include "src/trace_redaction/remap_scheduling_events.h"
+#include "src/trace_redaction/remove_process_free_comm.h"
 #include "src/trace_redaction/scrub_ftrace_events.h"
 #include "src/trace_redaction/scrub_process_stats.h"
 #include "src/trace_redaction/scrub_process_trees.h"
@@ -39,6 +39,7 @@
 #include "src/trace_redaction/suspend_resume.h"
 #include "src/trace_redaction/trace_redaction_framework.h"
 #include "src/trace_redaction/trace_redactor.h"
+#include "src/trace_redaction/verify_integrity.h"
 
 namespace perfetto::trace_redaction {
 
@@ -47,6 +48,12 @@ static base::Status Main(std::string_view input,
                          std::string_view output,
                          std::string_view package_name) {
   TraceRedactor redactor;
+
+  // VerifyIntegrity breaks the CollectPrimitive pattern. Instead of writing to
+  // the context, its job is to read trace packets and return errors if any
+  // packet does not look "correct". This primitive is added first in an effort
+  // to detect and react to bad input before other collectors run.
+  redactor.emplace_collect<VerifyIntegrity>();
 
   // Add all collectors.
   redactor.emplace_collect<FindPackageUid>();
@@ -79,13 +86,22 @@ static base::Status Main(std::string_view input,
   redactor.emplace_transform<PrunePackageList>();
   redactor.emplace_transform<ScrubProcessStats>();
 
+  auto* comms_harness = redactor.emplace_transform<RedactSchedSwitchHarness>();
+  comms_harness->emplace_transform<ClearComms>();
+
   auto* redact_ftrace_events = redactor.emplace_transform<RedactFtraceEvent>();
   redact_ftrace_events
-      ->emplace_back<RedactSchedSwitch::kFieldId, RedactSchedSwitch>();
-  redact_ftrace_events
-      ->emplace_back<RedactTaskNewTask::kFieldId, RedactTaskNewTask>();
-  redact_ftrace_events
-      ->emplace_back<RedactProcessFree::kFieldId, RedactProcessFree>();
+      ->emplace_back<RemoveProcessFreeComm::kFieldId, RemoveProcessFreeComm>();
+
+  // By default, the comm value is cleared. However, when thread merging is
+  // enabled (kTaskNewtaskFieldNumber + ThreadMergeDropField), the event is
+  // dropped, meaning that this primitive was effectivly a no-op. This primitive
+  // remains so that removing thread merging won't leak thread names via new
+  // task events.
+  auto* redact_new_task =
+      redact_ftrace_events
+          ->emplace_back<RedactTaskNewTask::kFieldId, RedactTaskNewTask>();
+  redact_new_task->emplace_back<ClearComms>();
 
   // This set of transformations will change pids. This will break the
   // connections between pids and the timeline (the synth threads are not in the

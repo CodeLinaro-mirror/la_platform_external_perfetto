@@ -56,6 +56,7 @@ import {SliceSqlId} from './sql_types';
 import {PxSpan, TimeScale} from './time_scale';
 import {SelectionManager, LegacySelection} from '../core/selection_manager';
 import {exists} from '../base/utils';
+import {OmniboxManager} from './omnibox_manager';
 
 const INSTANT_FOCUS_DURATION = 1n;
 const INCOMPLETE_SLICE_DURATION = 30_000n;
@@ -221,7 +222,7 @@ export interface LegacySelectionArgs {
   pendingScrollId: number | undefined;
 }
 
-export interface TraceTime {
+export interface TraceContext {
   readonly start: time;
   readonly end: time;
 
@@ -237,14 +238,22 @@ export interface TraceTime {
   // Trace TZ is like UTC but keeps into account also the timezone_off_mins
   // recorded into the trace, to show timestamps in the device local time.
   readonly traceTzOffset: time;
+
+  // The list of CPUs in the trace
+  readonly cpus: number[];
+
+  // The number of gpus in the trace
+  readonly gpuCount: number;
 }
 
-export const defaultTraceTime: TraceTime = {
+export const defaultTraceContext: TraceContext = {
   start: Time.ZERO,
   end: Time.fromSeconds(10),
   realtimeOffset: Time.ZERO,
   utcOffset: Time.ZERO,
   traceTzOffset: Time.ZERO,
+  cpus: [],
+  gpuCount: 0,
 };
 
 /**
@@ -291,12 +300,15 @@ class Globals {
   private _selectionManager = new SelectionManager(this._store);
   private _hasFtrace: boolean = false;
 
+  omnibox = new OmniboxManager();
+
   scrollToTrackKey?: string | number;
   httpRpcState: HttpRpcState = {connected: false};
   newVersionAvailable = false;
   showPanningHint = false;
+  permalinkHash?: string;
 
-  traceTime = defaultTraceTime;
+  traceContext = defaultTraceContext;
 
   // TODO(hjd): Remove once we no longer need to update UUID on redraw.
   private _publishRedraw?: () => void = undefined;
@@ -716,19 +728,19 @@ class Globals {
 
   // Get a timescale that covers the entire trace
   getTraceTimeScale(pxSpan: PxSpan): TimeScale {
-    const {start, end} = this.traceTime;
+    const {start, end} = this.traceContext;
     const traceTime = HighPrecisionTimeSpan.fromTime(start, end);
     return TimeScale.fromHPTimeSpan(traceTime, pxSpan);
   }
 
   // Get the trace time bounds
   stateTraceTime(): Span<HighPrecisionTime> {
-    const {start, end} = this.traceTime;
+    const {start, end} = this.traceContext;
     return HighPrecisionTimeSpan.fromTime(start, end);
   }
 
   stateTraceTimeTP(): Span<time, duration> {
-    const {start, end} = this.traceTime;
+    const {start, end} = this.traceContext;
     return new TimeSpan(start, end);
   }
 
@@ -762,14 +774,14 @@ class Globals {
     switch (fmt) {
       case TimestampFormat.Timecode:
       case TimestampFormat.Seconds:
-        return this.traceTime.start;
+        return this.traceContext.start;
       case TimestampFormat.Raw:
       case TimestampFormat.RawLocale:
         return Time.ZERO;
       case TimestampFormat.UTC:
-        return this.traceTime.utcOffset;
+        return this.traceContext.utcOffset;
       case TimestampFormat.TraceTz:
-        return this.traceTime.traceTzOffset;
+        return this.traceContext.traceTzOffset;
       default:
         const x: never = fmt;
         throw new Error(`Unsupported format ${x}`);
@@ -856,6 +868,17 @@ function findTimeRangeOfSlice(slice: Partial<SliceLike>): {
     }
   } else {
     return {start: Time.INVALID, end: Time.INVALID};
+  }
+}
+
+// Returns the time span of the current selection, or the visible window if
+// there is no current selection.
+export function getTimeSpanOfSelectionOrVisibleWindow(): Span<time, duration> {
+  const range = globals.findTimeRangeOfSelection();
+  if (exists(range)) {
+    return new TimeSpan(range.start, range.end);
+  } else {
+    return globals.stateVisibleTime();
   }
 }
 
