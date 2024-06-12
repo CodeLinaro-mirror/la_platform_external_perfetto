@@ -20,67 +20,32 @@
 #include "protos/perfetto/trace/ftrace/ftrace_event.pbzero.h"
 #include "protos/perfetto/trace/ftrace/ftrace_event_bundle.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
+#include "src/trace_processor/util/status_macros.h"
 
 namespace perfetto::trace_redaction {
-namespace {
-// All constants are from
-// "system/core/libcutils/include/private/android_filesystem_config.h"
-//
-// AID 1000 == system (those are probably frame_timeline packets you will see
-// those on) AID 9999 is nobody == traced/traced_probes
-constexpr int32_t kAidSystem = 1000;
-constexpr int32_t kAidNobody = 9999;
-}  // namespace
 
 base::Status VerifyIntegrity::Collect(
     const protos::pbzero::TracePacket::Decoder& packet,
-    Context*) const {
+    Context* context) const {
   if (!packet.has_trusted_uid()) {
     return base::ErrStatus(
         "VerifyIntegrity: missing field (TracePacket::kTrustedUid).");
   }
 
-  if (packet.trusted_uid() != kAidSystem &&
-      packet.trusted_uid() != kAidNobody) {
-    return base::ErrStatus(
-        "VerifyIntegrity: invalid field (TracePacket::kTrustedUid).");
+  // Use an empty list as "trust everyone".
+  const auto& trusted_uids = context->trusted_uids;
+
+  if (!trusted_uids.empty()) {
+    auto trusted_uid = packet.trusted_uid();
+
+    if (std::find(trusted_uids.begin(), trusted_uids.end(), trusted_uid) ==
+        trusted_uids.end()) {
+      return base::ErrStatus("VerifyIntegrity: untrusted uid.");
+    }
   }
 
   if (packet.has_ftrace_events()) {
-    protos::pbzero::FtraceEventBundle::Decoder ftrace_events(
-        packet.ftrace_events());
-
-    // The other clocks in ftrace are only used on very old kernel versions. No
-    // device with V should have such an old version. As a failsafe though,
-    // check that the ftrace_clock field is unset to ensure no invalid
-    // timestamps get by.
-    if (ftrace_events.has_ftrace_clock()) {
-      return base::ErrStatus(
-          "VerifyIntegrity: unexpected field "
-          "(FtraceEventBundle::kFtraceClock).");
-    }
-
-    // Every ftrace event bundle should have a CPU field. This is necessary for
-    // switch/waking redaction to work.
-    if (!ftrace_events.has_cpu()) {
-      return base::ErrStatus(
-          "VerifyIntegrity: missing field (FtraceEventBundle::kCpu).");
-    }
-
-    for (auto event_buffer = ftrace_events.event(); event_buffer;
-         ++event_buffer) {
-      protos::pbzero::FtraceEvent::Decoder event(*event_buffer);
-
-      if (!event.has_timestamp()) {
-        return base::ErrStatus(
-            "VerifyIntegrity: missing field (FtraceEvent::kTimestamp).");
-      }
-
-      if (!event.has_pid()) {
-        return base::ErrStatus(
-            "VerifyIntegrity: missing field (FtraceEvent::kPid).");
-      }
-    }
+    RETURN_IF_ERROR(OnFtraceEvents(packet.ftrace_events()));
   }
 
   // If there is a process tree, there should be a timestamp on the packet. This
@@ -101,4 +66,62 @@ base::Status VerifyIntegrity::Collect(
 
   return base::OkStatus();
 }
+
+base::Status VerifyIntegrity::OnFtraceEvents(
+    const protozero::ConstBytes bytes) const {
+  protos::pbzero::FtraceEventBundle::Decoder events(bytes);
+
+  // Any ftrace lost events should cause the trace to be dropped:
+  // protos/perfetto/trace/ftrace/ftrace_event_bundle.proto
+  if (events.has_lost_events() && events.has_lost_events()) {
+    return base::ErrStatus(
+        "VerifyIntegrity: detected FtraceEventBundle error.");
+  }
+
+  // The other clocks in ftrace are only used on very old kernel versions. No
+  // device with V should have such an old version. As a failsafe though,
+  // check that the ftrace_clock field is unset to ensure no invalid
+  // timestamps get by.
+  if (events.has_ftrace_clock()) {
+    return base::ErrStatus(
+        "VerifyIntegrity: unexpected field (FtraceEventBundle::kFtraceClock).");
+  }
+
+  // Every ftrace event bundle should have a CPU field. This is necessary for
+  // switch/waking redaction to work.
+  if (!events.has_cpu()) {
+    return base::ErrStatus(
+        "VerifyIntegrity: missing field (FtraceEventBundle::kCpu).");
+  }
+
+  // Any ftrace errors should cause the trace to be dropped:
+  // protos/perfetto/trace/ftrace/ftrace_event_bundle.proto
+  if (events.has_error()) {
+    return base::ErrStatus("VerifyIntegrity: detected FtraceEvent errors.");
+  }
+
+  for (auto it = events.event(); it; ++it) {
+    RETURN_IF_ERROR(OnFtraceEvent(*it));
+  }
+
+  return base::OkStatus();
+}
+
+base::Status VerifyIntegrity::OnFtraceEvent(
+    const protozero::ConstBytes bytes) const {
+  protos::pbzero::FtraceEvent::Decoder event(bytes);
+
+  if (!event.has_timestamp()) {
+    return base::ErrStatus(
+        "VerifyIntegrity: missing field (FtraceEvent::kTimestamp).");
+  }
+
+  if (!event.has_pid()) {
+    return base::ErrStatus(
+        "VerifyIntegrity: missing field (FtraceEvent::kPid).");
+  }
+
+  return base::OkStatus();
+}
+
 }  // namespace perfetto::trace_redaction
