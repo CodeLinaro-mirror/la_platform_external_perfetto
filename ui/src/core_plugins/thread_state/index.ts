@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {uuidv4} from '../../base/uuid';
+import {THREAD_STATE_TRACK_KIND} from '../../public';
 import {asThreadStateSqlId} from '../../frontend/sql_types';
 import {ThreadStateTab} from '../../frontend/thread_state_tab';
 import {
@@ -24,9 +25,7 @@ import {
 import {getTrackName} from '../../public/utils';
 import {NUM, NUM_NULL, STR_NULL} from '../../trace_processor/query_result';
 
-import {ThreadStateTrack as ThreadStateTrackV2} from './thread_state_v2';
-
-export const THREAD_STATE_TRACK_KIND = 'ThreadStateTrack';
+import {ThreadStateTrack} from './thread_state_track';
 
 class ThreadState implements Plugin {
   async onTraceLoad(ctx: PluginContextTrace): Promise<void> {
@@ -64,7 +63,7 @@ class ThreadState implements Plugin {
         kind: THREAD_STATE_TRACK_KIND,
         utid,
         trackFactory: ({trackKey}) => {
-          return new ThreadStateTrackV2(
+          return new ThreadStateTrack(
             {
               engine: ctx.engine,
               trackKey,

@@ -14,13 +14,13 @@
 
 import {v4 as uuidv4} from 'uuid';
 
-import {Disposable, Trash} from '../base/disposable';
+import {Disposable, DisposableStack} from '../base/disposable';
 import {Registry} from '../base/registry';
 import {Span, duration, time} from '../base/time';
-import {globals} from '../frontend/globals';
+import {TraceContext, globals} from '../frontend/globals';
 import {
   Command,
-  DetailsPanel,
+  LegacyDetailsPanel,
   MetricVisualisation,
   Migrate,
   Plugin,
@@ -45,13 +45,14 @@ import {assertExists} from '../base/logging';
 import {raf} from '../core/raf_scheduler';
 import {defaultPlugins} from '../core/default_plugins';
 import {HighPrecisionTimeSpan} from './high_precision_time';
+import {PromptOption} from '../frontend/omnibox_manager';
 
 // Every plugin gets its own PluginContext. This is how we keep track
 // what each plugin is doing and how we can blame issues on particular
 // plugins.
 // The PluginContext exists for the whole duration a plugin is active.
 export class PluginContextImpl implements PluginContext, Disposable {
-  private trash = new Trash();
+  private trash = new DisposableStack();
   private alive = true;
 
   readonly sidebar = {
@@ -79,7 +80,7 @@ export class PluginContextImpl implements PluginContext, Disposable {
     if (!this.alive) return;
 
     const disposable = globals.commandManager.registerCommand(cmd);
-    this.trash.add(disposable);
+    this.trash.use(disposable);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -100,13 +101,13 @@ export class PluginContextImpl implements PluginContext, Disposable {
 // The PluginContextTrace exists for the whole duration a plugin is active AND a
 // trace is loaded.
 class PluginContextTraceImpl implements PluginContextTrace, Disposable {
-  private trash = new Trash();
+  private trash = new DisposableStack();
   private alive = true;
   readonly engine: Engine;
 
   constructor(private ctx: PluginContext, engine: EngineBase) {
     const engineProxy = engine.getProxy(ctx.pluginId);
-    this.trash.add(engineProxy);
+    this.trash.use(engineProxy);
     this.engine = engineProxy;
   }
 
@@ -115,7 +116,7 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
     if (!this.alive) return;
 
     const dispose = globals.commandManager.registerCommand(cmd);
-    this.trash.add(dispose);
+    this.trash.use(dispose);
   }
 
   registerTrack(trackDesc: TrackDescriptor): void {
@@ -123,7 +124,7 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
     if (!this.alive) return;
 
     const dispose = globals.trackManager.registerTrack(trackDesc);
-    this.trash.add(dispose);
+    this.trash.use(dispose);
   }
 
   addDefaultTrack(track: TrackRef): void {
@@ -131,7 +132,7 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
     if (!this.alive) return;
 
     const dispose = globals.trackManager.addPotentialTrack(track);
-    this.trash.add(dispose);
+    this.trash.use(dispose);
   }
 
   registerStaticTrack(track: TrackDescriptor & TrackRef): void {
@@ -148,20 +149,20 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
     if (!this.alive) return;
 
     const unregister = globals.tabManager.registerTab(desc);
-    this.trash.add(unregister);
+    this.trash.use(unregister);
   }
 
   addDefaultTab(uri: string): void {
     const remove = globals.tabManager.addDefaultTab(uri);
-    this.trash.add(remove);
+    this.trash.use(remove);
   }
 
-  registerDetailsPanel(section: DetailsPanel): void {
+  registerDetailsPanel(detailsPanel: LegacyDetailsPanel): void {
     if (!this.alive) return;
 
     const tabMan = globals.tabManager;
-    const unregister = tabMan.registerDetailsPanel(section);
-    this.trash.add(unregister);
+    const unregister = tabMan.registerLegacyDetailsPanel(detailsPanel);
+    this.trash.use(unregister);
   }
 
   get sidebar() {
@@ -188,14 +189,13 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
 
   readonly timeline = {
     // Add a new track to the timeline, returning its key.
-    addTrack(uri: string, displayName: string, params?: unknown): string {
+    addTrack(uri: string, displayName: string): string {
       const trackKey = uuidv4();
       globals.dispatch(
         Actions.addTrack({
           key: trackKey,
           uri,
           name: displayName,
-          params,
           trackSortKey: PrimaryTrackSortKey.ORDINARY_TRACK,
           trackGroup: SCROLLING_TRACK_GROUP,
         }),
@@ -221,9 +221,12 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
 
     pinTracksByPredicate(predicate: TrackPredicate) {
       const tracks = Object.values(globals.state.tracks);
+      const groups = globals.state.trackGroups;
       for (const track of tracks) {
         const tags = {
           name: track.name,
+          groupName: (track.trackGroup ? groups[track.trackGroup] : undefined)
+            ?.name,
         };
         if (predicate(tags) && !isPinned(track.key)) {
           globals.dispatch(
@@ -275,10 +278,10 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
           };
           return predicate(ref);
         })
-        .map((group) => group.id);
+        .map((group) => group.key);
 
-      for (const trackGroupId of groupsToExpand) {
-        globals.dispatch(Actions.toggleTrackGroupCollapsed({trackGroupId}));
+      for (const groupKey of groupsToExpand) {
+        globals.dispatch(Actions.toggleTrackGroupCollapsed({groupKey}));
       }
     },
 
@@ -293,10 +296,10 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
           };
           return predicate(ref);
         })
-        .map((group) => group.id);
+        .map((group) => group.key);
 
-      for (const trackGroupId of groupsToCollapse) {
-        globals.dispatch(Actions.toggleTrackGroupCollapsed({trackGroupId}));
+      for (const groupKey of groupsToCollapse) {
+        globals.dispatch(Actions.toggleTrackGroupCollapsed({groupKey}));
       }
     },
 
@@ -311,7 +314,6 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
         return {
           displayName: trackState.name,
           uri: trackState.uri,
-          params: trackState.params,
           key: trackState.key,
           groupName: group?.name,
           isPinned: pinnedTracks.includes(trackState.key),
@@ -342,11 +344,24 @@ class PluginContextTraceImpl implements PluginContextTrace, Disposable {
     return globals.store.createSubStore(['plugins', this.pluginId], migrate);
   }
 
-  readonly trace = {
-    get span(): Span<time, duration> {
-      return globals.stateTraceTimeTP();
-    },
-  };
+  get trace(): TraceContext {
+    return globals.traceContext;
+  }
+
+  get openerPluginArgs(): {[key: string]: unknown} | undefined {
+    if (globals.state.engine?.source.type !== 'ARRAY_BUFFER') {
+      return undefined;
+    }
+    const pluginArgs = globals.state.engine?.source.pluginArgs;
+    return (pluginArgs ?? {})[this.pluginId];
+  }
+
+  async prompt(
+    text: string,
+    options?: PromptOption[] | undefined,
+  ): Promise<string> {
+    return globals.omnibox.prompt(text, options);
+  }
 }
 
 function isPinned(trackId: string): boolean {

@@ -39,7 +39,6 @@ import {DISMISSED_PANNING_HINT_KEY} from './topbar';
 import {TrackGroupPanel} from './track_group_panel';
 import {TrackPanel} from './track_panel';
 import {assertExists} from '../base/logging';
-import {getLegacySelection} from '../common/state';
 
 const OVERVIEW_PANEL_FLAG = featureFlags.register({
   id: 'overviewVisible',
@@ -51,13 +50,13 @@ const OVERVIEW_PANEL_FLAG = featureFlags.register({
 // Checks if the mousePos is within 3px of the start or end of the
 // current selected time range.
 function onTimeRangeBoundary(mousePos: number): 'START' | 'END' | null {
-  const selection = getLegacySelection(globals.state);
-  if (selection !== null && selection.kind === 'AREA') {
+  const selection = globals.state.selection;
+  if (selection.kind === 'area') {
     // If frontend selectedArea exists then we are in the process of editing the
     // time range and need to use that value instead.
     const area = globals.timeline.selectedArea
       ? globals.timeline.selectedArea
-      : globals.state.areas[selection.areaId];
+      : selection;
     const {visibleTimeScale} = globals.timeline;
     const start = visibleTimeScale.timeToPx(area.start);
     const end = visibleTimeScale.timeToPx(area.end);
@@ -82,11 +81,11 @@ class TraceViewer implements m.ClassComponent {
   // Used to prevent global deselection if a pan/drag select occurred.
   private keepCurrentSelection = false;
 
-  private overviewTimelinePanel = new OverviewTimelinePanel('overview');
-  private timeAxisPanel = new TimeAxisPanel('timeaxis');
-  private timeSelectionPanel = new TimeSelectionPanel('timeselection');
-  private notesPanel = new NotesPanel('notes');
-  private tickmarkPanel = new TickmarkPanel('searchTickmarks');
+  private overviewTimelinePanel = new OverviewTimelinePanel();
+  private timeAxisPanel = new TimeAxisPanel();
+  private timeSelectionPanel = new TimeSelectionPanel();
+  private notesPanel = new NotesPanel();
+  private tickmarkPanel = new TickmarkPanel();
 
   private readonly PAN_ZOOM_CONTENT_REF = 'pan-and-zoom-content';
 
@@ -128,15 +127,15 @@ class TraceViewer implements m.ClassComponent {
         currentY: number,
         editing: boolean,
       ) => {
-        const traceTime = globals.traceTime;
+        const traceTime = globals.traceContext;
         const {visibleTimeScale} = timeline;
         this.keepCurrentSelection = true;
         if (editing) {
-          const selection = getLegacySelection(globals.state);
-          if (selection !== null && selection.kind === 'AREA') {
+          const selection = globals.state.selection;
+          if (selection.kind === 'area') {
             const area = globals.timeline.selectedArea
               ? globals.timeline.selectedArea
-              : globals.state.areas[selection.areaId];
+              : selection;
             let newTime = visibleTimeScale
               .pxToHpTime(currentX - TRACK_SHELL_WIDTH)
               .toTime();
@@ -161,7 +160,7 @@ class TraceViewer implements m.ClassComponent {
             timeline.selectArea(
               Time.max(Time.min(keepTime, newTime), traceTime.start),
               Time.min(Time.max(keepTime, newTime), traceTime.end),
-              globals.state.areas[selection.areaId].tracks,
+              selection.tracks,
             );
           }
         } else {
@@ -188,14 +187,12 @@ class TraceViewer implements m.ClassComponent {
         // If we are editing we need to pass the current id through to ensure
         // the marked area with that id is also updated.
         if (edit) {
-          const selection = getLegacySelection(globals.state);
-          if (selection !== null && selection.kind === 'AREA' && area) {
-            globals.dispatch(
-              Actions.editArea({area, areaId: selection.areaId}),
-            );
+          const selection = globals.state.selection;
+          if (selection.kind === 'area' && area) {
+            globals.dispatch(Actions.selectArea({...area}));
           }
         } else if (area) {
-          globals.makeSelection(Actions.selectArea({area}));
+          globals.makeSelection(Actions.selectArea({...area}));
         }
         // Now the selection has ended we stored the final selected area in the
         // global state and can remove the in progress selection from the
@@ -231,8 +228,7 @@ class TraceViewer implements m.ClassComponent {
       if (key) {
         const trackBundle = this.resolveTrack(key);
         headerPanel = new TrackGroupPanel({
-          trackGroupId: group.id,
-          key: `trackgroup-${group.id}`,
+          groupKey: group.key,
           trackFSM: trackBundle.trackFSM,
           labels: trackBundle.labels,
           tags: trackBundle.tags,
@@ -241,8 +237,7 @@ class TraceViewer implements m.ClassComponent {
         });
       } else {
         headerPanel = new TrackGroupPanel({
-          trackGroupId: group.id,
-          key: `trackgroup-${group.id}`,
+          groupKey: group.key,
           collapsed: group.collapsed,
           title: group.name,
         });
@@ -268,7 +263,6 @@ class TraceViewer implements m.ClassComponent {
         collapsed: group.collapsed,
         childPanels: childTracks,
         header: headerPanel,
-        trackGroupId: group.id,
       });
     }
 
@@ -339,10 +333,10 @@ class TraceViewer implements m.ClassComponent {
   // Resolve a track and its metadata through the track cache
   private resolveTrack(key: string): TrackBundle {
     const trackState = globals.state.tracks[key];
-    const {uri, params, name, labels, closeable} = trackState;
+    const {uri, name, labels, closeable} = trackState;
     const trackDesc = globals.trackManager.resolveTrackInfo(uri);
     const trackCacheEntry =
-      trackDesc && globals.trackManager.resolveTrack(key, trackDesc, params);
+      trackDesc && globals.trackManager.resolveTrack(key, trackDesc);
     const trackFSM = trackCacheEntry;
     const tags = trackCacheEntry?.desc.tags;
     const trackIds = trackCacheEntry?.desc.trackIds;

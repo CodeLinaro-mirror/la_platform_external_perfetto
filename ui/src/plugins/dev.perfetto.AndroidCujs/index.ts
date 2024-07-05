@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {runQuery} from '../../common/queries';
 import {addDebugSliceTrack} from '../../public';
 import {Plugin, PluginContextTrace, PluginDescriptor} from '../../public';
 
@@ -170,9 +169,9 @@ class AndroidCujs implements Plugin {
       id: 'dev.perfetto.AndroidCujs#PinJankCUJs',
       name: 'Add track: Android jank CUJs',
       callback: () => {
-        runQuery(JANK_CUJ_QUERY_PRECONDITIONS, ctx.engine).then(() => {
+        ctx.engine.query(JANK_CUJ_QUERY_PRECONDITIONS).then(() => {
           addDebugSliceTrack(
-            ctx.engine,
+            ctx,
             {
               sqlSource: JANK_CUJ_QUERY,
               columns: JANK_COLUMNS,
@@ -189,9 +188,9 @@ class AndroidCujs implements Plugin {
       id: 'dev.perfetto.AndroidCujs#ListJankCUJs',
       name: 'Run query: Android jank CUJs',
       callback: () => {
-        runQuery(JANK_CUJ_QUERY_PRECONDITIONS, ctx.engine).then(() =>
-          ctx.tabs.openQuery(JANK_CUJ_QUERY, 'Android Jank CUJs'),
-        );
+        ctx.engine
+          .query(JANK_CUJ_QUERY_PRECONDITIONS)
+          .then(() => ctx.tabs.openQuery(JANK_CUJ_QUERY, 'Android Jank CUJs'));
       },
     });
 
@@ -200,7 +199,7 @@ class AndroidCujs implements Plugin {
       name: 'Add track: Android latency CUJs',
       callback: () => {
         addDebugSliceTrack(
-          ctx.engine,
+          ctx,
           {
             sqlSource: LATENCY_CUJ_QUERY,
             columns: LATENCY_COLUMNS,
@@ -223,9 +222,9 @@ class AndroidCujs implements Plugin {
       id: 'dev.perfetto.AndroidCujs#PinBlockingCalls',
       name: 'Add track: Android Blocking calls during CUJs',
       callback: () => {
-        runQuery(JANK_CUJ_QUERY_PRECONDITIONS, ctx.engine).then(() =>
+        ctx.engine.query(JANK_CUJ_QUERY_PRECONDITIONS).then(() =>
           addDebugSliceTrack(
-            ctx.engine,
+            ctx,
             {
               sqlSource: BLOCKING_CALLS_DURING_CUJS_QUERY,
               columns: BLOCKING_CALLS_DURING_CUJS_COLUMNS,

@@ -16,7 +16,6 @@ import m from 'mithril';
 import {Attributes} from 'mithril';
 
 import {assertExists} from '../base/logging';
-import {Actions} from '../common/actions';
 import {RecordingConfigUtils} from '../common/recordingV2/recording_config_utils';
 import {
   ChromeTargetInfo,
@@ -57,6 +56,7 @@ import {RecordingSectionAttrs} from './recording/recording_sections';
 import {RecordingSettings} from './recording/recording_settings';
 import {FORCE_RESET_MESSAGE} from './recording/recording_ui_utils';
 import {showAddNewTargetModal} from './recording/reset_target_modal';
+import {createPermalink} from './permalink';
 
 const START_RECORDING_MESSAGE = 'Start Recording';
 
@@ -186,9 +186,7 @@ function Instructions(cssClass: string) {
           'button.permalinkconfig',
           {
             onclick: () => {
-              globals.dispatch(
-                Actions.createPermalink({isRecordingConfig: true}),
-              );
+              createPermalink({isRecordingConfig: true});
             },
           },
           'Share recording settings',
@@ -320,7 +318,7 @@ function RecordingNotes() {
 
 function RecordingSnippet(targetInfo: TargetInfo) {
   // We don't need commands to start tracing on chrome
-  if (isChromeTargetInfo(targetInfo)) {
+  if (isChromeTargetInfo(targetInfo) || targetInfo.targetType === 'WINDOWS') {
     if (controller.getState() > RecordingState.AUTH_P2) {
       // If the UI has started tracing, don't display a message guiding the user
       // to start recording.

@@ -16,7 +16,7 @@ import m from 'mithril';
 
 import {Icons} from '../base/semantic_icons';
 import {Actions} from '../common/actions';
-import {getContainingTrackId, getLegacySelection} from '../common/state';
+import {getContainingGroupKey} from '../common/state';
 import {TrackCacheEntry} from '../common/track_cache';
 import {TrackTags} from '../public';
 
@@ -38,8 +38,7 @@ import {canvasClip} from '../common/canvas_utils';
 import {Button} from '../widgets/button';
 
 interface Attrs {
-  trackGroupId: string;
-  key: string;
+  groupKey: string;
   title: string;
   collapsed: boolean;
   trackFSM?: TrackCacheEntry;
@@ -50,16 +49,14 @@ interface Attrs {
 export class TrackGroupPanel implements Panel {
   readonly kind = 'panel';
   readonly selectable = true;
-  readonly key: string;
-  readonly trackGroupId: string;
+  readonly groupKey: string;
 
   constructor(private attrs: Attrs) {
-    this.trackGroupId = attrs.trackGroupId;
-    this.key = attrs.key;
+    this.groupKey = attrs.groupKey;
   }
 
   render(): m.Children {
-    const {trackGroupId, title, labels, tags, collapsed, trackFSM} = this.attrs;
+    const {groupKey, title, labels, tags, collapsed, trackFSM} = this.attrs;
 
     let name = title;
     if (name[0] === '/') {
@@ -72,26 +69,25 @@ export class TrackGroupPanel implements Panel {
     const searchIndex = globals.state.searchIndex;
     if (searchIndex !== -1) {
       const trackKey = globals.currentSearchResults.trackKeys[searchIndex];
-      const parentTrackId = getContainingTrackId(globals.state, trackKey);
-      if (parentTrackId === trackGroupId) {
+      const containingGroupKey = getContainingGroupKey(globals.state, trackKey);
+      if (containingGroupKey === groupKey) {
         highlightClass = 'flash';
       }
     }
 
-    const selection = getLegacySelection(globals.state);
+    const selection = globals.state.selection;
 
-    const trackGroup = globals.state.trackGroups[trackGroupId];
+    const trackGroup = globals.state.trackGroups[groupKey];
     let checkBox = Icons.BlankCheckbox;
-    if (selection !== null && selection.kind === 'AREA') {
-      const selectedArea = globals.state.areas[selection.areaId];
+    if (selection.kind === 'area') {
       if (
-        selectedArea.tracks.includes(trackGroupId) &&
-        trackGroup.tracks.every((id) => selectedArea.tracks.includes(id))
+        selection.tracks.includes(groupKey) &&
+        trackGroup.tracks.every((id) => selection.tracks.includes(id))
       ) {
         checkBox = Icons.Checkbox;
       } else if (
-        selectedArea.tracks.includes(trackGroupId) ||
-        trackGroup.tracks.some((id) => selectedArea.tracks.includes(id))
+        selection.tracks.includes(groupKey) ||
+        trackGroup.tracks.some((id) => selection.tracks.includes(id))
       ) {
         checkBox = Icons.IndeterminateCheckbox;
       }
@@ -107,7 +103,7 @@ export class TrackGroupPanel implements Panel {
     return m(
       `.track-group-panel[collapsed=${collapsed}]`,
       {
-        id: 'track_' + trackGroupId,
+        id: 'track_' + groupKey,
         oncreate: () => this.onupdate(),
         onupdate: () => this.onupdate(),
       },
@@ -118,7 +114,7 @@ export class TrackGroupPanel implements Panel {
             if (e.defaultPrevented) return;
             globals.dispatch(
               Actions.toggleTrackGroupCollapsed({
-                trackGroupId,
+                groupKey,
               }),
             ),
               e.stopPropagation();
@@ -137,13 +133,12 @@ export class TrackGroupPanel implements Panel {
         m(
           '.track-buttons',
           error && m(CrashButton, {error}),
-          selection &&
-            selection.kind === 'AREA' &&
+          selection.kind === 'area' &&
             m(Button, {
               onclick: (e: MouseEvent) => {
                 globals.dispatch(
                   Actions.toggleTrackSelection({
-                    id: trackGroupId,
+                    key: groupKey,
                     isTrackGroup: true,
                   }),
                 );
@@ -176,14 +171,13 @@ export class TrackGroupPanel implements Panel {
 
   highlightIfTrackSelected(ctx: CanvasRenderingContext2D, size: PanelSize) {
     const {visibleTimeScale} = globals.timeline;
-    const selection = getLegacySelection(globals.state);
-    if (!selection || selection.kind !== 'AREA') return;
-    const selectedArea = globals.state.areas[selection.areaId];
-    const selectedAreaDuration = selectedArea.end - selectedArea.start;
-    if (selectedArea.tracks.includes(this.trackGroupId)) {
+    const selection = globals.state.selection;
+    if (selection.kind !== 'area') return;
+    const selectedAreaDuration = selection.end - selection.start;
+    if (selection.tracks.includes(this.groupKey)) {
       ctx.fillStyle = 'rgba(131, 152, 230, 0.3)';
       ctx.fillRect(
-        visibleTimeScale.timeToPx(selectedArea.start) + TRACK_SHELL_WIDTH,
+        visibleTimeScale.timeToPx(selection.start) + TRACK_SHELL_WIDTH,
         0,
         visibleTimeScale.durationToPx(selectedAreaDuration),
         size.height,

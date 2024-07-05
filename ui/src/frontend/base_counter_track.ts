@@ -15,29 +15,23 @@
 import m from 'mithril';
 
 import {searchSegment} from '../base/binary_search';
-import {Disposable, NullDisposable} from '../base/disposable';
+import {AsyncDisposable, AsyncDisposableStack} from '../base/disposable';
 import {assertTrue, assertUnreachable} from '../base/logging';
 import {Time, time} from '../base/time';
+import {uuidv4Sql} from '../base/uuid';
 import {drawTrackHoverTooltip} from '../common/canvas_utils';
 import {raf} from '../core/raf_scheduler';
-import {Engine, LONG, NUM, Track} from '../public';
+import {CacheKey} from '../core/timeline_cache';
+import {Track} from '../public';
 import {Button} from '../widgets/button';
-import {MenuItem, MenuDivider, PopupMenu2} from '../widgets/menu';
+import {MenuDivider, MenuItem, PopupMenu2} from '../widgets/menu';
+import {Engine} from '../trace_processor/engine';
+import {LONG, NUM} from '../trace_processor/query_result';
 
 import {checkerboardExcept} from './checkerboard';
 import {globals} from './globals';
 import {PanelSize} from './panel';
 import {NewTrackArgs} from './track';
-import {CacheKey} from '../core/timeline_cache';
-import {featureFlags} from '../core/feature_flags';
-import {uuidv4Sql} from '../base/uuid';
-
-export const COUNTER_DEBUG_MENU_ITEMS = featureFlags.register({
-  id: 'counterDebugMenuItems',
-  name: 'Counter debug menu items',
-  description: 'Extra counter menu items for debugging purposes.',
-  defaultValue: false,
-});
 
 function roundAway(n: number): number {
   const exp = Math.ceil(Math.log10(Math.max(Math.abs(n), 1)));
@@ -209,15 +203,14 @@ export abstract class BaseCounterTrack implements Track {
     displayValueRange: [0, 0],
   };
 
-  // Cleanup hook for onInit.
-  private initState?: Disposable;
-
   private limits?: CounterLimits;
 
   private mousePos = {x: 0, y: 0};
   private hover?: CounterTooltipState;
   private defaultOptions: Partial<CounterOptions>;
   private options?: CounterOptions;
+
+  private readonly trash: AsyncDisposableStack;
 
   private getCounterOptions(): CounterOptions {
     if (this.options === undefined) {
@@ -240,9 +233,7 @@ export abstract class BaseCounterTrack implements Track {
   // queries using the result of getSqlSource(). All persistent
   // state in trace_processor should be cleaned up when dispose is
   // called on the returned hook.
-  async onInit(): Promise<Disposable> {
-    return new NullDisposable();
-  }
+  async onInit(): Promise<AsyncDisposable | void> {}
 
   // This should be an SQL expression returning the columns `ts` and `value`.
   abstract getSqlSource(): string;
@@ -260,6 +251,7 @@ export abstract class BaseCounterTrack implements Track {
     this.engine = args.engine;
     this.trackKey = args.trackKey;
     this.defaultOptions = args.options ?? {};
+    this.trash = new AsyncDisposableStack();
   }
 
   getHeight() {
@@ -355,65 +347,63 @@ export abstract class BaseCounterTrack implements Track {
           },
         }),
 
-      COUNTER_DEBUG_MENU_ITEMS.get() && [
-        m(MenuDivider),
-        m(
-          MenuItem,
-          {
-            label: `Mode (currently: ${options.yMode})`,
-          },
+      m(MenuDivider),
+      m(
+        MenuItem,
+        {
+          label: `Mode (currently: ${options.yMode})`,
+        },
 
-          m(MenuItem, {
-            label: 'Value',
-            icon:
-              options.yMode === 'value'
-                ? 'radio_button_checked'
-                : 'radio_button_unchecked',
-            onclick: () => {
-              options.yMode = 'value';
-              this.invalidate();
-            },
-          }),
-
-          m(MenuItem, {
-            label: 'Delta',
-            icon:
-              options.yMode === 'delta'
-                ? 'radio_button_checked'
-                : 'radio_button_unchecked',
-            onclick: () => {
-              options.yMode = 'delta';
-              this.invalidate();
-            },
-          }),
-
-          m(MenuItem, {
-            label: 'Rate',
-            icon:
-              options.yMode === 'rate'
-                ? 'radio_button_checked'
-                : 'radio_button_unchecked',
-            onclick: () => {
-              options.yMode = 'rate';
-              this.invalidate();
-            },
-          }),
-        ),
         m(MenuItem, {
-          label: 'Round y-axis scale',
+          label: 'Value',
           icon:
-            options.yRangeRounding === 'human_readable'
-              ? 'check_box'
-              : 'check_box_outline_blank',
+            options.yMode === 'value'
+              ? 'radio_button_checked'
+              : 'radio_button_unchecked',
           onclick: () => {
-            options.yRangeRounding =
-              options.yRangeRounding === 'human_readable'
-                ? 'strict'
-                : 'human_readable';
+            options.yMode = 'value';
             this.invalidate();
           },
         }),
-      ],
+
+        m(MenuItem, {
+          label: 'Delta',
+          icon:
+            options.yMode === 'delta'
+              ? 'radio_button_checked'
+              : 'radio_button_unchecked',
+          onclick: () => {
+            options.yMode = 'delta';
+            this.invalidate();
+          },
+        }),
+
+        m(MenuItem, {
+          label: 'Rate',
+          icon:
+            options.yMode === 'rate'
+              ? 'radio_button_checked'
+              : 'radio_button_unchecked',
+          onclick: () => {
+            options.yMode = 'rate';
+            this.invalidate();
+          },
+        }),
+      ),
+      m(MenuItem, {
+        label: 'Round y-axis scale',
+        icon:
+          options.yRangeRounding === 'human_readable'
+            ? 'check_box'
+            : 'check_box_outline_blank',
+        onclick: () => {
+          options.yRangeRounding =
+            options.yRangeRounding === 'human_readable'
+              ? 'strict'
+              : 'human_readable';
+          this.invalidate();
+        },
+      }),
     ];
   }
 
@@ -450,7 +440,8 @@ export abstract class BaseCounterTrack implements Track {
   }
 
   async onCreate(): Promise<void> {
-    this.initState = await this.onInit();
+    const result = await this.onInit();
+    result && this.trash.use(result);
     this.limits = await this.createTableAndFetchLimits(false);
   }
 
@@ -694,13 +685,7 @@ export abstract class BaseCounterTrack implements Track {
   }
 
   async onDestroy(): Promise<void> {
-    if (this.initState) {
-      this.initState.dispose();
-      this.initState = undefined;
-    }
-    if (this.engine.isAlive) {
-      await this.engine.query(`drop table if exists ${this.getTableName()}`);
-    }
+    await this.trash.disposeAsync();
   }
 
   // Compute the range of values to display and range label.
@@ -904,6 +889,10 @@ export abstract class BaseCounterTrack implements Track {
         trace_start(), trace_end(), trace_dur()
       );
     `);
+
+    this.trash.defer(async () => {
+      this.engine.tryQuery(`drop table if exists ${this.getTableName()}`);
+    });
 
     const {minDisplayValue, maxDisplayValue} = displayValueQuery.firstRow({
       minDisplayValue: NUM,
