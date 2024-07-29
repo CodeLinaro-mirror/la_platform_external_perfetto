@@ -365,7 +365,10 @@ type Options = {
 };
 
 class EnumOption {
-  constructor(public initial: string, public options: string[]) {}
+  constructor(
+    public initial: string,
+    public options: string[],
+  ) {}
 }
 
 interface WidgetTitleAttrs {
@@ -609,7 +612,7 @@ function TagInputDemo() {
           tagInputValue = value;
         },
         onTagRemove: (index) => {
-          tags.splice(index);
+          tags.splice(index, 1);
           raf.scheduleFullRedraw();
         },
       });
