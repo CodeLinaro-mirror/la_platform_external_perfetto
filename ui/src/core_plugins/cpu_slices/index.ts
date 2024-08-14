@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import m from 'mithril';
+
 import {CPU_SLICE_TRACK_KIND} from '../../public';
 import {SliceDetailsPanel} from '../../frontend/slice_details_panel';
 import {
@@ -30,13 +32,15 @@ class CpuSlices implements Plugin {
 
     for (const cpu of cpus) {
       const size = cpuToSize.get(cpu);
-      const uri = `perfetto.CpuSlices#cpu${cpu}`;
+      const uri = `/sched_cpu${cpu}`;
       const name = size === undefined ? `Cpu ${cpu}` : `Cpu ${cpu} (${size})`;
       ctx.registerTrack({
         uri,
-        displayName: name,
-        kind: CPU_SLICE_TRACK_KIND,
-        cpu,
+        title: name,
+        tags: {
+          kind: CPU_SLICE_TRACK_KIND,
+          cpu,
+        },
         trackFactory: ({trackKey}) => {
           return new CpuSliceTrack(ctx.engine, trackKey, cpu);
         },
@@ -48,6 +52,7 @@ class CpuSlices implements Plugin {
         if (sel.kind === 'SCHED_SLICE') {
           return m(SliceDetailsPanel);
         }
+        return undefined;
       },
     });
   }

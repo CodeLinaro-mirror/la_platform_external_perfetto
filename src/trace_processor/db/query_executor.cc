@@ -84,12 +84,14 @@ void QueryExecutor::FilterColumn(const Constraint& c,
     }
   }
 
-  // Comparison of NULL with any operation apart from |IS_NULL| and
-  // |IS_NOT_NULL| should return no rows.
-  if (c.value.is_null() && c.op != FilterOp::kIsNull &&
-      c.op != FilterOp::kIsNotNull) {
-    rm->Clear();
-    return;
+  switch (chain.ValidateSearchConstraints(c.op, c.value)) {
+    case SearchValidationResult::kNoData:
+      rm->Clear();
+      return;
+    case SearchValidationResult::kAllData:
+      return;
+    case SearchValidationResult::kOk:
+      break;
   }
 
   uint32_t rm_last = rm->Get(rm_size - 1);
@@ -233,7 +235,7 @@ void QueryExecutor::SortLegacy(const Table* table,
   // Setup the sort token payload to match the input vector of indices. The
   // value of the payload will be untouched by the algorithm even while the
   // order changes to match the ordering defined by the input constraint set.
-  std::vector<column::DataLayerChain::SortToken> rows(out.size());
+  std::vector<Token> rows(out.size());
   for (uint32_t i = 0; i < out.size(); ++i) {
     rows[i].payload = out[i];
   }
@@ -274,10 +276,9 @@ void QueryExecutor::SortLegacy(const Table* table,
       rows[i].index = rows[i].payload;
     }
     table->ChainForColumn(it->col_idx)
-        .StableSort(rows.data(), rows.data() + rows.size(),
-                    it->desc
-                        ? column::DataLayerChain::SortDirection::kDescending
-                        : column::DataLayerChain::SortDirection::kAscending);
+        .StableSort(
+            rows.data(), rows.data() + rows.size(),
+            it->desc ? SortDirection::kDescending : SortDirection::kAscending);
   }
 
   // Recapture the payload from each of the sort tokens whose order now
