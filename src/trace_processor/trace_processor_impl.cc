@@ -46,7 +46,6 @@
 #include "src/trace_processor/importers/android_bugreport/android_log_event_parser_impl.h"
 #include "src/trace_processor/importers/android_bugreport/android_log_reader.h"
 #include "src/trace_processor/importers/common/clock_tracker.h"
-#include "src/trace_processor/importers/common/metadata_tracker.h"
 #include "src/trace_processor/importers/common/trace_file_tracker.h"
 #include "src/trace_processor/importers/common/trace_parser.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_parser.h"
@@ -105,21 +104,17 @@
 #include "src/trace_processor/perfetto_sql/intrinsics/table_functions/experimental_sched_upid.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/table_functions/experimental_slice_layout.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/table_functions/table_info.h"
-#include "src/trace_processor/perfetto_sql/prelude/tables_views.h"
 #include "src/trace_processor/perfetto_sql/stdlib/stdlib.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_aggregate_function.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_result.h"
-#include "src/trace_processor/sqlite/scoped_db.h"
 #include "src/trace_processor/sqlite/sql_source.h"
 #include "src/trace_processor/sqlite/sql_stats_table.h"
 #include "src/trace_processor/sqlite/stats_table.h"
-#include "src/trace_processor/storage/metadata.h"
 #include "src/trace_processor/storage/trace_storage.h"
 #include "src/trace_processor/tp_metatrace.h"
 #include "src/trace_processor/trace_processor_storage_impl.h"
 #include "src/trace_processor/trace_reader_registry.h"
 #include "src/trace_processor/types/trace_processor_context.h"
-#include "src/trace_processor/types/variadic.h"
 #include "src/trace_processor/util/descriptors.h"
 #include "src/trace_processor/util/gzip_utils.h"
 #include "src/trace_processor/util/protozero_to_json.h"
@@ -134,7 +129,6 @@
 #include "protos/perfetto/trace/perfetto/perfetto_metatrace.pbzero.h"
 #include "protos/perfetto/trace/trace.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
-#include "protos/perfetto/trace_processor/metatrace_categories.pbzero.h"
 
 namespace perfetto::trace_processor {
 namespace {
@@ -308,15 +302,59 @@ sql_modules::NameToModule GetStdlibModules() {
   return modules;
 }
 
-void InitializePreludeTablesViews(sqlite3* db) {
-  for (const auto& file_to_sql : prelude::tables_views::kFileToSql) {
-    char* errmsg_raw = nullptr;
-    int err = sqlite3_exec(db, file_to_sql.sql, nullptr, nullptr, &errmsg_raw);
-    ScopedSqliteString errmsg(errmsg_raw);
-    if (err != SQLITE_OK) {
-      PERFETTO_FATAL("Failed to initialize prelude %s", errmsg_raw);
-    }
+std::pair<int64_t, int64_t> GetTraceTimestampBoundsNs(
+    const TraceStorage& storage) {
+  int64_t start_ns = std::numeric_limits<int64_t>::max();
+  int64_t end_ns = std::numeric_limits<int64_t>::min();
+  for (auto it = storage.raw_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts(), end_ns);
   }
+  for (auto it = storage.sched_slice_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts() + it.dur(), end_ns);
+  }
+  for (auto it = storage.counter_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts(), end_ns);
+  }
+  for (auto it = storage.slice_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts() + it.dur(), end_ns);
+  }
+  for (auto it = storage.heap_profile_allocation_table().IterateRows(); it;
+       ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts(), end_ns);
+  }
+  for (auto it = storage.thread_state_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts() + it.dur(), end_ns);
+  }
+  for (auto it = storage.android_log_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts(), end_ns);
+  }
+  for (auto it = storage.heap_graph_object_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.graph_sample_ts(), start_ns);
+    end_ns = std::max(it.graph_sample_ts(), end_ns);
+  }
+  for (auto it = storage.perf_sample_table().IterateRows(); it; ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts(), end_ns);
+  }
+  for (auto it = storage.cpu_profile_stack_sample_table().IterateRows(); it;
+       ++it) {
+    start_ns = std::min(it.ts(), start_ns);
+    end_ns = std::max(it.ts(), end_ns);
+  }
+  if (start_ns == std::numeric_limits<int64_t>::max()) {
+    return std::make_pair(0, 0);
+  }
+  if (start_ns == end_ns) {
+    end_ns += 1;
+  }
+  return std::make_pair(start_ns, end_ns);
 }
 
 }  // namespace
@@ -420,7 +458,7 @@ void TraceProcessorImpl::SetCurrentTraceName(const std::string& name) {
 void TraceProcessorImpl::Flush() {
   TraceProcessorStorageImpl::Flush();
   BuildBoundsTable(engine_->sqlite_engine()->db(),
-                   context_.storage->GetTraceTimestampBoundsNs());
+                   GetTraceTimestampBoundsNs(*context_.storage));
 }
 
 base::Status TraceProcessorImpl::NotifyEndOfFile() {
@@ -448,7 +486,7 @@ base::Status TraceProcessorImpl::NotifyEndOfFile() {
   // trace bounds: this is important for parsers like ninja which wait until
   // the end to flush all their data.
   BuildBoundsTable(engine_->sqlite_engine()->db(),
-                   context_.storage->GetTraceTimestampBoundsNs());
+                   GetTraceTimestampBoundsNs(*context_.storage));
 
   TraceProcessorStorageImpl::DestroyContext();
   return base::OkStatus();
@@ -772,9 +810,6 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
           "__intrinsic_ii_with_interval_tree",
           std::make_unique<IntervalIntersectOperator::Context>(engine_.get()));
 
-  // Initalize the tables and views in the prelude.
-  InitializePreludeTablesViews(db);
-
   // Register stdlib modules.
   auto stdlib_modules = GetStdlibModules();
   for (auto module_it = stdlib_modules.GetIterator(); module_it; ++module_it) {
@@ -975,12 +1010,6 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
   // Metrics.
   RegisterAllProtoBuilderFunctions(&pool_, engine_.get(), this);
 
-  for (const auto& metric : sql_metrics_) {
-    if (metric.proto_field_name) {
-      InsertIntoTraceMetricsTable(db, *metric.proto_field_name);
-    }
-  }
-
   // Import prelude module.
   {
     auto result = engine_->Execute(SqlSource::FromTraceProcessorImplementation(
@@ -991,8 +1020,14 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
     }
   }
 
+  for (const auto& metric : sql_metrics_) {
+    if (metric.proto_field_name) {
+      InsertIntoTraceMetricsTable(db, *metric.proto_field_name);
+    }
+  }
+
   // Fill trace bounds table.
-  BuildBoundsTable(db, context_.storage->GetTraceTimestampBoundsNs());
+  BuildBoundsTable(db, GetTraceTimestampBoundsNs(*context_.storage));
 }
 
 namespace {
