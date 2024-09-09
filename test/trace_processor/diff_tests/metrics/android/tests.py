@@ -369,12 +369,12 @@ class AndroidMetrics(TestSuite):
         query=Metric("android_broadcasts"),
         out=Path('android_broadcasts.out'))
 
-  def test_wattson_app_startup_output(self):
+  def test_wattson_app_startup_rails_output(self):
     return DiffTestBlueprint(
         trace=DataPath('android_calculator_startup.pb'),
-        query=Metric("wattson_app_startup"),
+        query=Metric("wattson_app_startup_rails"),
         out=Csv("""
-        wattson_app_startup {
+        wattson_app_startup_rails {
           metric_version: 2
           period_info {
             period_id: 1
@@ -457,8 +457,55 @@ class AndroidMetrics(TestSuite):
         }
         """))
 
+  def test_wattson_trace_threads_output(self):
+    return DiffTestBlueprint(
+        trace=DataPath('android_cpu_eos.pb'),
+        query=Metric("wattson_trace_threads"),
+        out=Path('wattson_trace_threads.out'))
+
   def test_anomaly_metric(self):
     return DiffTestBlueprint(
         trace=DataPath('android_binder_metric_trace.atr'),
         query=Metric('android_anomaly'),
         out=Path('android_anomaly_metric.out'))
+
+  def test_wattson_markers_threads_output(self):
+    return DiffTestBlueprint(
+        trace=DataPath('wattson_w_packages_Imarkers.pb'),
+        query=Metric("wattson_markers_threads"),
+        out=Path('wattson_markers_threads.out'))
+
+  def test_wattson_markers_rails_output(self):
+    return DiffTestBlueprint(
+        trace=DataPath('wattson_w_packages_Imarkers.pb'),
+        query=Metric("wattson_markers_rails"),
+        out=Csv("""
+        wattson_markers_rails {
+          metric_version: 2
+          period_info {
+            period_id: 1
+            period_dur: 2031870211
+            cpu_subsystem {
+              estimate_mw: 46.524994
+              policy0 {
+                estimate_mw: 34.021542
+                cpu0 {
+                  estimate_mw: 14.416650
+                }
+                cpu1 {
+                  estimate_mw: 6.641433
+                }
+                cpu2 {
+                  estimate_mw: 8.134795
+                }
+                cpu3 {
+                  estimate_mw: 4.828665
+                }
+              }
+              dsu_scu {
+                estimate_mw: 12.503452
+              }
+            }
+          }
+        }
+        """))
