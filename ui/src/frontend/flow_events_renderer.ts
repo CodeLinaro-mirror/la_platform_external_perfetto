@@ -13,13 +13,13 @@
 // limitations under the License.
 
 import {ArrowHeadStyle, drawBezierArrow} from '../base/canvas/bezier_arrow';
-import {Size, Vector} from '../base/geom';
+import {Size2D, Point2D} from '../base/geom';
 import {Optional} from '../base/utils';
-import {SCROLLING_TRACK_GROUP, TrackState} from '../common/state';
 import {ALL_CATEGORIES, getFlowCategories} from './flow_events_panel';
 import {Flow, globals} from './globals';
 import {RenderedPanelInfo} from './panel_container';
-import {PxSpan, TimeScale} from './time_scale';
+import {TimeScale} from '../base/time_scale';
+import {TrackNode} from '../public/workspace';
 
 const TRACK_GROUP_CONNECTION_OFFSET = 5;
 const TRIANGLE_SIZE = 5;
@@ -37,8 +37,8 @@ const FOCUSED_FLOW_INTENSITY = 55;
 const DEFAULT_FLOW_INTENSITY = 70;
 
 type VerticalEdgeOrPoint =
-  | ({kind: 'vertical_edge'} & Vector)
-  | ({kind: 'point'} & Vector);
+  | ({kind: 'vertical_edge'} & Point2D)
+  | ({kind: 'point'} & Point2D);
 
 /**
  * Renders the flows overlay on top of the timeline, given the set of panels and
@@ -53,20 +53,33 @@ type VerticalEdgeOrPoint =
  */
 export function renderFlows(
   ctx: CanvasRenderingContext2D,
-  size: Size,
+  size: Size2D,
   panels: ReadonlyArray<RenderedPanelInfo>,
 ): void {
-  const timescale = new TimeScale(
-    globals.timeline.visibleWindow,
-    new PxSpan(0, size.width),
-  );
+  const timescale = new TimeScale(globals.timeline.visibleWindow, {
+    left: 0,
+    right: size.width,
+  });
 
   // Create indexes for the tracks and groups by key for quick access
   const trackPanelsByKey = new Map(
-    panels.map((panel) => [panel.panel.trackKey, panel]),
+    panels.map((panel) => [panel.panel.trackUri, panel]),
   );
   const groupPanelsByKey = new Map(
-    panels.map((panel) => [panel.panel.groupKey, panel]),
+    panels.map((panel) => [panel.panel.groupUri, panel]),
+  );
+
+  // Build a track index on trackIds. Note: We need to find the track nodes
+  // specifically here (not just the URIs) because we might need to navigate up
+  // the tree to find containing groups.
+
+  const trackIdToTrack = new Map<number, TrackNode>();
+  globals.workspace.flatTracks.forEach((track) =>
+    globals.trackManager
+      .getTrack(track.uri)
+      ?.tags?.trackIds?.forEach((trackId) =>
+        trackIdToTrack.set(trackId, track),
+      ),
   );
 
   const drawFlow = (flow: Flow, hue: number) => {
@@ -122,12 +135,12 @@ export function renderFlows(
     depth: number,
     x: number,
   ): Optional<VerticalEdgeOrPoint> => {
-    const trackKey = globals.trackManager.trackKeyByTrackId.get(trackId);
-    if (!trackKey) {
+    const track = trackIdToTrack.get(trackId);
+    if (!track) {
       return undefined;
     }
 
-    const trackPanel = trackPanelsByKey.get(trackKey);
+    const trackPanel = trackPanelsByKey.get(track.uri);
     if (trackPanel) {
       const trackRect = trackPanel.rect;
       const sliceRectRaw = trackPanel.panel.getSliceVerticalBounds?.(depth);
@@ -151,21 +164,15 @@ export function renderFlows(
         };
       }
     } else {
-      // If we didn't find a panel for this track, it might inside a group, so
-      // try to place the target on the group instead
-      const trackState = globals.state.tracks[trackKey] as Optional<TrackState>;
-      if (trackState) {
-        if (trackState.trackGroup !== SCROLLING_TRACK_GROUP) {
-          const groupKey = trackState.trackGroup;
-          const groupPanel = groupPanelsByKey.get(groupKey);
-          if (groupPanel) {
-            return {
-              kind: 'point',
-              x,
-              y: groupPanel.rect.bottom - TRACK_GROUP_CONNECTION_OFFSET,
-            };
-          }
-        }
+      // If we didn't find a track, it might inside a group, so check for the group
+      const group = track.closestVisibleAncestor;
+      const groupPanel = group && groupPanelsByKey.get(group.uri);
+      if (groupPanel) {
+        return {
+          kind: 'point',
+          x,
+          y: groupPanel.rect.bottom - TRACK_GROUP_CONNECTION_OFFSET,
+        };
       }
     }
 
