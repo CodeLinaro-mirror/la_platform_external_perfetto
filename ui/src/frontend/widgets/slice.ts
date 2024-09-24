@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import m from 'mithril';
-
 import {Time, duration, time} from '../../base/time';
 import {
   asSliceSqlId,
@@ -51,10 +50,11 @@ export class SliceRef implements m.ClassComponent<SliceRefAttrs> {
       {
         icon: Icons.UpdateSelection,
         onclick: () => {
-          const trackKeyByTrackId = globals.trackManager.trackKeyByTrackId;
-          const trackKey = trackKeyByTrackId.get(vnode.attrs.sqlTrackId);
-          if (trackKey === undefined) return;
-          verticalScrollToTrack(trackKey, true);
+          const track = globals.trackManager.findTrack((td) => {
+            return td.tags?.trackIds?.includes(vnode.attrs.sqlTrackId);
+          });
+          if (track === undefined) return;
+          verticalScrollToTrack(track.uri, true);
           // Clamp duration to 1 - i.e. for instant events
           const dur = BigintMath.max(1n, vnode.attrs.dur);
           focusHorizontalRange(
@@ -66,7 +66,7 @@ export class SliceRef implements m.ClassComponent<SliceRefAttrs> {
             {
               kind: 'SLICE',
               id: vnode.attrs.id,
-              trackKey,
+              trackUri: track.uri,
               table: 'slice',
             },
             {
