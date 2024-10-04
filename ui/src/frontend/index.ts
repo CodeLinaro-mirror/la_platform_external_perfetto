@@ -58,6 +58,8 @@ import {WidgetsPage} from './widgets_page';
 import {HttpRpcEngine} from '../trace_processor/http_rpc_engine';
 import {showModal} from '../widgets/modal';
 import {initAnalytics} from './analytics';
+import {IdleDetector} from './idle_detector';
+import {IdleDetectorWindow} from './idle_detector_interface';
 
 const EXTENSION_ID = 'lfmkphfpdbjijhpomgecfikhfohaoine';
 
@@ -178,8 +180,6 @@ function setupExtentionPort(extensionLocalChannel: MessageChannel) {
     extensionPort.onDisconnect.addListener((_) => {
       setExtensionAvailability(false);
       clearInterval(interval);
-      // Retry connection.
-      setupExtentionPort(extensionLocalChannel);
       void chrome.runtime.lastError; // Needed to not receive an error log.
     });
     // This forwards the messages from the extension to the controller.
@@ -275,6 +275,10 @@ function main() {
   if (globals.testing) {
     document.body.classList.add('testing');
   }
+
+  (window as {} as IdleDetectorWindow).waitForPerfettoIdle = (ms?: number) => {
+    return new IdleDetector().waitForPerfettoIdle(ms);
+  };
 }
 
 function onCssLoaded() {
