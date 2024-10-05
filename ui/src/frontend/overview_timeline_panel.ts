@@ -24,7 +24,7 @@ import {BorderDragStrategy} from './drag/border_drag_strategy';
 import {DragStrategy} from './drag/drag_strategy';
 import {InnerDragStrategy} from './drag/inner_drag_strategy';
 import {OuterDragStrategy} from './drag/outer_drag_strategy';
-import {DragGestureHandler} from './drag_gesture_handler';
+import {DragGestureHandler} from '../base/drag_gesture_handler';
 import {globals} from './globals';
 import {
   getMaxMajorTicks,
@@ -273,14 +273,20 @@ function renderTimestamp(
     case TimestampFormat.Timecode:
       renderTimecode(ctx, time, x, y, minWidth);
       break;
-    case TimestampFormat.Raw:
+    case TimestampFormat.TraceNs:
       ctx.fillText(time.toString(), x, y, minWidth);
       break;
-    case TimestampFormat.RawLocale:
+    case TimestampFormat.TraceNsLocale:
       ctx.fillText(time.toLocaleString(), x, y, minWidth);
       break;
     case TimestampFormat.Seconds:
       ctx.fillText(Time.formatSeconds(time), x, y, minWidth);
+      break;
+    case TimestampFormat.Milliseoncds:
+      ctx.fillText(Time.formatMilliseconds(time), x, y, minWidth);
+      break;
+    case TimestampFormat.Microseconds:
+      ctx.fillText(Time.formatMicroseconds(time), x, y, minWidth);
       break;
     default:
       const z: never = fmt;

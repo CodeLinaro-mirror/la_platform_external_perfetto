@@ -146,6 +146,7 @@ class CounterPlugin implements PerfettoPlugin {
     await this.addCounterTracks(ctx);
     await this.addGpuFrequencyTracks(ctx);
     await this.addCpuFreqLimitCounterTracks(ctx);
+    await this.addCpuTimeCounterTracks(ctx);
     await this.addCpuPerfCounterTracks(ctx);
     await this.addThreadCounterTracks(ctx);
     await this.addProcessCounterTracks(ctx);
@@ -181,7 +182,7 @@ class CounterPlugin implements PerfettoPlugin {
       const unit = it.unit ?? undefined;
 
       const uri = `/counter_${trackId}`;
-      ctx.registerTrack({
+      ctx.tracks.registerTrack({
         uri,
         title: displayName,
         tags: {
@@ -202,9 +203,7 @@ class CounterPlugin implements PerfettoPlugin {
           return await getCounterEventBounds(ctx.engine, trackId, id);
         },
       });
-      ctx.timeline.workspace.insertChildInOrder(
-        new TrackNode(uri, displayName),
-      );
+      ctx.workspace.insertChildInOrder(new TrackNode(uri, displayName));
     }
   }
 
@@ -218,6 +217,17 @@ class CounterPlugin implements PerfettoPlugin {
     `;
 
     this.addCpuCounterTracks(ctx, cpuFreqLimitCounterTracksSql, 'cpuFreqLimit');
+  }
+
+  async addCpuTimeCounterTracks(ctx: Trace): Promise<void> {
+    const cpuTimeCounterTracksSql = `
+      select name, id
+      from cpu_counter_track
+      join _counter_track_summary using (id)
+      where name glob "cpu.times.*"
+      order by name asc
+    `;
+    this.addCpuCounterTracks(ctx, cpuTimeCounterTracksSql, 'cpuTime');
   }
 
   async addCpuPerfCounterTracks(ctx: Trace): Promise<void> {
@@ -252,7 +262,7 @@ class CounterPlugin implements PerfettoPlugin {
       const name = it.name;
       const trackId = it.id;
       const uri = `counter.cpu.${trackId}`;
-      ctx.registerTrack({
+      ctx.tracks.registerTrack({
         uri,
         title: name,
         tags: {
@@ -273,7 +283,7 @@ class CounterPlugin implements PerfettoPlugin {
       });
       const trackNode = new TrackNode(uri, name);
       trackNode.sortOrder = -20;
-      ctx.timeline.workspace.insertChildInOrder(trackNode);
+      ctx.workspace.insertChildInOrder(trackNode);
     }
   }
 
@@ -321,7 +331,7 @@ class CounterPlugin implements PerfettoPlugin {
         threadTrack: true,
       });
       const uri = `${getThreadUriPrefix(upid, utid)}_counter_${trackId}`;
-      ctx.registerTrack({
+      ctx.tracks.registerTrack({
         uri,
         title: name,
         tags: {
@@ -342,7 +352,7 @@ class CounterPlugin implements PerfettoPlugin {
           return await getCounterEventBounds(ctx.engine, trackId, id);
         },
       });
-      const group = getOrCreateGroupForThread(ctx.timeline.workspace, utid);
+      const group = getOrCreateGroupForThread(ctx.workspace, utid);
       const track = new TrackNode(uri, name);
       track.sortOrder = 30;
       group.insertChildInOrder(track);
@@ -384,7 +394,7 @@ class CounterPlugin implements PerfettoPlugin {
         ...(exists(trackName) && {trackName}),
       });
       const uri = `/process_${upid}/counter_${trackId}`;
-      ctx.registerTrack({
+      ctx.tracks.registerTrack({
         uri,
         title: name,
         tags: {
@@ -404,7 +414,7 @@ class CounterPlugin implements PerfettoPlugin {
           return await getCounterEventBounds(ctx.engine, trackId, id);
         },
       });
-      const group = getOrCreateGroupForProcess(ctx.timeline.workspace, upid);
+      const group = getOrCreateGroupForProcess(ctx.workspace, upid);
       const track = new TrackNode(uri, name);
       track.sortOrder = 20;
       group.insertChildInOrder(track);
@@ -413,7 +423,7 @@ class CounterPlugin implements PerfettoPlugin {
 
   private async addGpuFrequencyTracks(ctx: Trace) {
     const engine = ctx.engine;
-    const numGpus = ctx.trace.gpuCount;
+    const numGpus = ctx.traceInfo.gpuCount;
 
     for (let gpu = 0; gpu < numGpus; gpu++) {
       // Only add a gpu freq track if we have
@@ -429,7 +439,7 @@ class CounterPlugin implements PerfettoPlugin {
         const trackId = freqExistsResult.firstRow({id: NUM}).id;
         const uri = `/gpu_frequency_${gpu}`;
         const name = `Gpu ${gpu} Frequency`;
-        ctx.registerTrack({
+        ctx.tracks.registerTrack({
           uri,
           title: name,
           tags: {
@@ -450,7 +460,7 @@ class CounterPlugin implements PerfettoPlugin {
         });
         const trackNode = new TrackNode(uri, name);
         trackNode.sortOrder = -20;
-        ctx.timeline.workspace.insertChildInOrder(trackNode);
+        ctx.workspace.insertChildInOrder(trackNode);
       }
     }
   }

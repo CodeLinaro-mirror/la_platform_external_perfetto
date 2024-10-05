@@ -154,7 +154,9 @@ const ITEMS: ContextMenuItem[] = [
             // plugin's context object.
             {
               engine,
-              registerTrack: (x) => globals.trackManager.registerTrack(x),
+              tracks: {
+                registerTrack: (x) => globals.trackManager.registerTrack(x),
+              },
             },
             {
               sqlSource: `
@@ -435,7 +437,7 @@ export class ThreadSliceDetailsTab extends BottomTab<ThreadSliceDetailsTabConfig
               title: 'Delay',
               render: (flow: Flow) =>
                 m(DurationWidget, {
-                  dur: flow.end.sliceEndTs - flow.end.sliceStartTs,
+                  dur: flow.end.sliceStartTs - flow.begin.sliceEndTs,
                 }),
             },
             {
