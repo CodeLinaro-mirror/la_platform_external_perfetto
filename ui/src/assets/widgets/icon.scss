@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {assertExists} from '../base/logging';
-import {Engine} from '../trace_processor/engine';
-import {globals} from './globals';
+@import "../typefaces";
 
-// TODO(stevegolton): Find a way to make this more elegant.
-export function getEngine(tag: string): Engine {
-  const engConfig = globals.getCurrentEngine();
-  const engineId = assertExists(engConfig).id;
-  return assertExists(globals.engines.get(engineId)).getProxy(tag);
+.pf-icon {
+  @include icon;
+  &.pf-filled {
+    @include icon-filled;
+  }
+  line-height: 1;
+  font-size: inherit;
 }

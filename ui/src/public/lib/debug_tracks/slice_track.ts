@@ -13,32 +13,48 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {BaseCounterTrack} from '../../frontend/base_counter_track';
-import {TrackContext} from '../../public/track';
-import {Engine} from '../../trace_processor/engine';
-import {Button} from '../../widgets/button';
-import {globals} from '../globals';
-import {Icons} from '../../base/semantic_icons';
+import {
+  CustomSqlDetailsPanelConfig,
+  CustomSqlTableDefConfig,
+  CustomSqlTableSliceTrack,
+} from '../../../frontend/tracks/custom_sql_table_slice_track';
+import {TrackContext} from '../../track';
+import {DebugSliceDetailsTab} from './details_tab';
+import {Button} from '../../../widgets/button';
+import {Icons} from '../../../base/semantic_icons';
+import {Trace} from '../../trace';
 
-export class DebugCounterTrack extends BaseCounterTrack {
+export class DebugSliceTrack extends CustomSqlTableSliceTrack {
   private readonly sqlTableName: string;
 
-  constructor(engine: Engine, ctx: TrackContext, tableName: string) {
+  constructor(trace: Trace, ctx: TrackContext, tableName: string) {
     super({
-      engine,
+      trace,
       uri: ctx.trackUri,
     });
     this.sqlTableName = tableName;
   }
 
-  getSqlSource(): string {
-    return `select * from ${this.sqlTableName}`;
+  async getSqlDataSource(): Promise<CustomSqlTableDefConfig> {
+    return {
+      sqlTableName: this.sqlTableName,
+    };
+  }
+
+  getDetailsPanel(): CustomSqlDetailsPanelConfig {
+    return {
+      kind: DebugSliceDetailsTab.kind,
+      config: {
+        sqlTableName: this.sqlTableName,
+        title: 'Debug Slice',
+      },
+    };
   }
 
   getTrackShellButtons(): m.Children {
     return m(Button, {
       onclick: () => {
-        globals.workspace.getTrackByUri(this.uri)?.remove();
+        this.trace.workspace.findTrackByUri(this.uri)?.remove();
       },
       icon: Icons.Close,
       title: 'Close',
