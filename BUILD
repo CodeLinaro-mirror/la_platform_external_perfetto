@@ -1803,6 +1803,8 @@ perfetto_filegroup(
         "src/trace_processor/importers/perf/etm_tokenizer.h",
         "src/trace_processor/importers/perf/features.cc",
         "src/trace_processor/importers/perf/features.h",
+        "src/trace_processor/importers/perf/itrace_start_record.cc",
+        "src/trace_processor/importers/perf/itrace_start_record.h",
         "src/trace_processor/importers/perf/mmap_record.cc",
         "src/trace_processor/importers/perf/mmap_record.h",
         "src/trace_processor/importers/perf/perf_data_tokenizer.cc",
@@ -1814,6 +1816,12 @@ perfetto_filegroup(
         "src/trace_processor/importers/perf/sample.h",
         "src/trace_processor/importers/perf/sample_id.cc",
         "src/trace_processor/importers/perf/sample_id.h",
+        "src/trace_processor/importers/perf/spe.h",
+        "src/trace_processor/importers/perf/spe_record_parser.cc",
+        "src/trace_processor/importers/perf/spe_record_parser.h",
+        "src/trace_processor/importers/perf/spe_tokenizer.cc",
+        "src/trace_processor/importers/perf/spe_tokenizer.h",
+        "src/trace_processor/importers/perf/time_conv_record.h",
         "src/trace_processor/importers/perf/util.h",
     ],
 )
@@ -2859,6 +2867,7 @@ perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_linux_perf_perf",
     srcs = [
         "src/trace_processor/perfetto_sql/stdlib/linux/perf/samples.sql",
+        "src/trace_processor/perfetto_sql/stdlib/linux/perf/spe.sql",
     ],
 )
 
@@ -3153,6 +3162,7 @@ perfetto_cc_tp_tables(
         "src/trace_processor/tables/jit_tables.py",
         "src/trace_processor/tables/memory_tables.py",
         "src/trace_processor/tables/metadata_tables.py",
+        "src/trace_processor/tables/perf_tables.py",
         "src/trace_processor/tables/profiler_tables.py",
         "src/trace_processor/tables/sched_tables.py",
         "src/trace_processor/tables/slice_tables.py",
@@ -3168,6 +3178,7 @@ perfetto_cc_tp_tables(
         "src/trace_processor/tables/jit_tables_py.h",
         "src/trace_processor/tables/memory_tables_py.h",
         "src/trace_processor/tables/metadata_tables_py.h",
+        "src/trace_processor/tables/perf_tables_py.h",
         "src/trace_processor/tables/profiler_tables_py.h",
         "src/trace_processor/tables/sched_tables_py.h",
         "src/trace_processor/tables/slice_tables_py.h",
