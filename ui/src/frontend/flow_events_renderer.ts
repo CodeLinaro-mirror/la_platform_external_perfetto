@@ -16,10 +16,12 @@ import {ArrowHeadStyle, drawBezierArrow} from '../base/canvas/bezier_arrow';
 import {Size2D, Point2D, HorizontalBounds} from '../base/geom';
 import {Optional} from '../base/utils';
 import {ALL_CATEGORIES, getFlowCategories} from './flow_events_panel';
-import {Flow, globals} from './globals';
+import {globals} from './globals';
+import {Flow} from 'src/core/flow_types';
 import {RenderedPanelInfo} from './panel_container';
 import {TimeScale} from '../base/time_scale';
 import {TrackNode} from '../public/workspace';
+import {TraceImpl} from '../core/app_trace_impl';
 
 const TRACK_GROUP_CONNECTION_OFFSET = 5;
 const TRIANGLE_SIZE = 5;
@@ -44,42 +46,44 @@ type VerticalEdgeOrPoint =
  * Renders the flows overlay on top of the timeline, given the set of panels and
  * a canvas to draw on.
  *
- * Note: the actual flow data is retrieved from globals, which are produced by
- * the flow events controller.
+ * Note: the actual flow data is retrieved from trace.flows, which are produced
+ * by FlowManager.
  *
+ * @param trace - The Trace instance, which holds onto the FlowManager.
  * @param ctx - The canvas to draw on.
  * @param size - The size of the canvas.
  * @param panels - A list of panels and their locations on the canvas.
  */
 export function renderFlows(
+  trace: TraceImpl,
   ctx: CanvasRenderingContext2D,
   size: Size2D,
   panels: ReadonlyArray<RenderedPanelInfo>,
 ): void {
-  const timescale = new TimeScale(globals.timeline.visibleWindow, {
+  const timescale = new TimeScale(trace.timeline.visibleWindow, {
     left: 0,
     right: size.width,
   });
 
-  // Create indexes for the tracks and groups by key for quick access
-  const trackPanelsByKey = new Map(
-    panels.map((panel) => [panel.panel.trackUri, panel]),
-  );
-  const groupPanelsByKey = new Map(
-    panels.map((panel) => [panel.panel.groupUri, panel]),
+  // Create an index of track node instances to panels. This doesn't need to be
+  // a WeakMap because it's thrown away every render cycle.
+  const panelsByTrackNode = new Map(
+    panels.map((panel) => [panel.panel.trackNode, panel]),
   );
 
   // Build a track index on trackIds. Note: We need to find the track nodes
   // specifically here (not just the URIs) because we might need to navigate up
   // the tree to find containing groups.
 
-  const trackIdToTrack = new Map<number, TrackNode>();
-  globals.workspace.flatTracks.forEach((track) =>
-    globals.trackManager
-      .getTrack(track.uri)
-      ?.tags?.trackIds?.forEach((trackId) =>
-        trackIdToTrack.set(trackId, track),
-      ),
+  const sqlTrackIdToTrack = new Map<number, TrackNode>();
+  trace.workspace.flatTracks.forEach((track) =>
+    track.uri
+      ? trace.tracks
+          .getTrack(track.uri)
+          ?.tags?.trackIds?.forEach((trackId) =>
+            sqlTrackIdToTrack.set(trackId, track),
+          )
+      : undefined,
   );
 
   const drawFlow = (flow: Flow, hue: number) => {
@@ -106,8 +110,8 @@ export function renderFlows(
       flow.end.sliceId === globals.state.highlightedSliceId ||
       flow.begin.sliceId === globals.state.highlightedSliceId;
     const focused =
-      flow.id === globals.state.focusedFlowIdLeft ||
-      flow.id === globals.state.focusedFlowIdRight;
+      flow.id === globals.trace.flows.focusedFlowIdLeft ||
+      flow.id === globals.trace.flows.focusedFlowIdRight;
 
     let intensity = DEFAULT_FLOW_INTENSITY;
     let width = DEFAULT_FLOW_WIDTH;
@@ -136,12 +140,12 @@ export function renderFlows(
     depth: number,
     x: number,
   ): Optional<VerticalEdgeOrPoint> => {
-    const track = trackIdToTrack.get(trackId);
+    const track = sqlTrackIdToTrack.get(trackId);
     if (!track) {
       return undefined;
     }
 
-    const trackPanel = trackPanelsByKey.get(track.uri);
+    const trackPanel = panelsByTrackNode.get(track);
     if (trackPanel) {
       const trackRect = trackPanel.rect;
       const sliceRectRaw = trackPanel.panel.getSliceVerticalBounds?.(depth);
@@ -166,8 +170,8 @@ export function renderFlows(
       }
     } else {
       // If we didn't find a track, it might inside a group, so check for the group
-      const group = track.closestVisibleAncestor;
-      const groupPanel = group && groupPanelsByKey.get(group.uri);
+      const containerNode = track.findClosestVisibleAncestor();
+      const groupPanel = panelsByTrackNode.get(containerNode);
       if (groupPanel) {
         return {
           kind: 'point',
@@ -181,17 +185,17 @@ export function renderFlows(
   };
 
   // Render the connected flows
-  globals.connectedFlows.forEach((flow) => {
+  globals.trace.flows.connectedFlows.forEach((flow) => {
     drawFlow(flow, CONNECTED_FLOW_HUE);
   });
 
   // Render the selected flows
-  globals.selectedFlows.forEach((flow) => {
+  globals.trace.flows.selectedFlows.forEach((flow) => {
     const categories = getFlowCategories(flow);
     for (const cat of categories) {
       if (
-        globals.visibleFlowCategories.get(cat) ||
-        globals.visibleFlowCategories.get(ALL_CATEGORIES)
+        globals.trace.flows.visibleCategories.get(cat) ||
+        globals.trace.flows.visibleCategories.get(ALL_CATEGORIES)
       ) {
         drawFlow(flow, SELECTED_FLOW_HUE);
         break;
