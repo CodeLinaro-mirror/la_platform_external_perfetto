@@ -14,14 +14,14 @@
 
 import {assertExists} from '../base/logging';
 import {clamp, floatEqual} from '../base/math_utils';
-import {Time, time} from '../base/time';
+import {Duration, Time, time} from '../base/time';
 import {exists, Optional} from '../base/utils';
 import {Actions} from '../common/actions';
 import {drawIncompleteSlice, drawTrackHoverTooltip} from '../base/canvas_utils';
 import {cropText} from '../base/string_utils';
 import {colorCompare} from '../public/color';
 import {UNEXPECTED_PINK} from '../core/colorizer';
-import {LegacySelection, SelectionKind} from '../public/selection';
+import {TrackEventDetails} from '../public/selection';
 import {featureFlags} from '../core/feature_flags';
 import {raf} from '../core/raf_scheduler';
 import {Track} from '../public/track';
@@ -277,16 +277,6 @@ export abstract class BaseSliceTrack<
     }
   }
 
-  protected isSelectionHandled(selection: LegacySelection): boolean {
-    // TODO(hjd): Remove when updating selection.
-    // We shouldn't know here about THREAD_SLICE. Maybe should be set by
-    // whatever deals with that. Dunno the namespace of selection is weird. For
-    // most cases in non-ambiguous (because most things are a 'slice'). But some
-    // others (e.g. THREAD_SLICE) have their own ID namespace so we need this.
-    const supportedSelectionKinds: SelectionKind[] = ['SCHED_SLICE', 'SLICE'];
-    return supportedSelectionKinds.includes(selection.kind);
-  }
-
   private getTitleFont(): string {
     const size = this.sliceLayout.titleSizePx ?? 12;
     return `${size}px Roboto Condensed`;
@@ -403,11 +393,12 @@ export abstract class BaseSliceTrack<
       visibleWindow.end.toTime('ceil'),
     );
 
-    let selection = globals.selectionManager.legacySelection;
-    if (!selection || !this.isSelectionHandled(selection)) {
-      selection = null;
-    }
-    const selectedId = selection ? (selection as {id: number}).id : undefined;
+    const selection = globals.selectionManager.selection;
+    const selectedId =
+      selection.kind === 'track_event' && selection.trackUri === this.uri
+        ? selection.eventId
+        : undefined;
+
     if (selectedId === undefined) {
       this.selectedSlice = undefined;
     }
@@ -962,6 +953,28 @@ export abstract class BaseSliceTrack<
 
   protected get engine() {
     return this.trace.engine;
+  }
+
+  async getSelectionDetails(
+    id: number,
+  ): Promise<TrackEventDetails | undefined> {
+    const query = `
+      SELECT
+        ts,
+        dur
+      FROM (${this.getSqlSource()})
+      WHERE id = ${id}
+    `;
+
+    const result = await this.engine.query(query);
+    if (result.numRows() === 0) {
+      return undefined;
+    }
+    const row = result.iter({
+      ts: LONG,
+      dur: LONG,
+    });
+    return {ts: Time.fromRaw(row.ts), dur: Duration.fromRaw(row.dur)};
   }
 }
 

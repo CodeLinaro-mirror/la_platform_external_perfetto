@@ -156,7 +156,6 @@ if (enable_perfetto_trace_processor_sqlite) {
       "trace_processor_impl.cc",
       "trace_processor_impl.h",
     ]
-
     deps = [
       ":metatrace",
       ":storage_minimal",
@@ -169,6 +168,7 @@ if (enable_perfetto_trace_processor_sqlite) {
       "../protozero",
       "db",
       "importers/android_bugreport",
+      "importers/art_method",
       "importers/common",
       "importers/etw:full",
       "importers/ftrace:full",
@@ -206,6 +206,9 @@ if (enable_perfetto_trace_processor_sqlite) {
     ]
     if (enable_perfetto_trace_processor_mac_instruments) {
       deps += [ "importers/instruments" ]
+    }
+    if (enable_perfetto_trace_processor_json) {
+      deps += [ "importers/gecko" ]
     }
   }
 

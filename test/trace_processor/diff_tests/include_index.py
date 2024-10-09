@@ -60,6 +60,7 @@ from diff_tests.parser.android.tests_surfaceflinger_layers import SurfaceFlinger
 from diff_tests.parser.android.tests_surfaceflinger_transactions import SurfaceFlingerTransactions
 from diff_tests.parser.android.tests_viewcapture import ViewCapture
 from diff_tests.parser.android.tests_windowmanager import WindowManager
+from diff_tests.parser.art_method.tests import ArtMethodParser
 from diff_tests.parser.atrace.tests import Atrace
 from diff_tests.parser.atrace.tests_error_handling import AtraceErrorHandling
 from diff_tests.parser.chrome.tests import ChromeParser
@@ -69,6 +70,7 @@ from diff_tests.parser.cros.tests import Cros
 from diff_tests.parser.fs.tests import Fs
 from diff_tests.parser.ftrace.ftrace_crop_tests import FtraceCrop
 from diff_tests.parser.fuchsia.tests import Fuchsia
+from diff_tests.parser.gecko.tests import GeckoParser
 from diff_tests.parser.graphics.tests import GraphicsParser
 from diff_tests.parser.graphics.tests_drm_related_ftrace_events import GraphicsDrmRelatedFtraceEvents
 from diff_tests.parser.graphics.tests_gpu_trace import GraphicsGpuTrace
@@ -240,6 +242,9 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
                          'AndroidInputEvent').fetch(),
       *Instruments(index_path, 'parser/instruments', 'Instruments').fetch(),
       *Gzip(index_path, 'parser/gzip', 'Gzip').fetch(),
+      *GeckoParser(index_path, 'parser/gecko', 'GeckoParser').fetch(),
+      *ArtMethodParser(index_path, 'parser/art_method',
+                       'ArtMethodParser').fetch(),
   ]
 
   metrics_tests = [

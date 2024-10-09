@@ -223,6 +223,8 @@ perfetto_cc_library(
         ":src_trace_processor_export_json",
         ":src_trace_processor_importers_android_bugreport_android_bugreport",
         ":src_trace_processor_importers_android_bugreport_android_log_event",
+        ":src_trace_processor_importers_art_method_art_method",
+        ":src_trace_processor_importers_art_method_art_method_event",
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_trace_parser_hdr",
@@ -234,6 +236,8 @@ perfetto_cc_library(
         ":src_trace_processor_importers_fuchsia_fuchsia_record",
         ":src_trace_processor_importers_fuchsia_full",
         ":src_trace_processor_importers_fuchsia_minimal",
+        ":src_trace_processor_importers_gecko_gecko",
+        ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_gzip_full",
         ":src_trace_processor_importers_i2c_full",
         ":src_trace_processor_importers_instruments_instruments",
@@ -1513,6 +1517,25 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/trace_processor/importers/art_method:art_method
+perfetto_filegroup(
+    name = "src_trace_processor_importers_art_method_art_method",
+    srcs = [
+        "src/trace_processor/importers/art_method/art_method_parser_impl.cc",
+        "src/trace_processor/importers/art_method/art_method_parser_impl.h",
+        "src/trace_processor/importers/art_method/art_method_tokenizer.cc",
+        "src/trace_processor/importers/art_method/art_method_tokenizer.h",
+    ],
+)
+
+# GN target: //src/trace_processor/importers/art_method:art_method_event
+perfetto_filegroup(
+    name = "src_trace_processor_importers_art_method_art_method_event",
+    srcs = [
+        "src/trace_processor/importers/art_method/art_method_event.h",
+    ],
+)
+
 # GN target: //src/trace_processor/importers/common:common
 perfetto_filegroup(
     name = "src_trace_processor_importers_common_common",
@@ -1700,6 +1723,25 @@ perfetto_filegroup(
     name = "src_trace_processor_importers_fuchsia_minimal",
     srcs = [
         "src/trace_processor/importers/fuchsia/fuchsia_trace_utils.h",
+    ],
+)
+
+# GN target: //src/trace_processor/importers/gecko:gecko
+perfetto_filegroup(
+    name = "src_trace_processor_importers_gecko_gecko",
+    srcs = [
+        "src/trace_processor/importers/gecko/gecko_trace_parser_impl.cc",
+        "src/trace_processor/importers/gecko/gecko_trace_parser_impl.h",
+        "src/trace_processor/importers/gecko/gecko_trace_tokenizer.cc",
+        "src/trace_processor/importers/gecko/gecko_trace_tokenizer.h",
+    ],
+)
+
+# GN target: //src/trace_processor/importers/gecko:gecko_event
+perfetto_filegroup(
+    name = "src_trace_processor_importers_gecko_gecko_event",
+    srcs = [
+        "src/trace_processor/importers/gecko/gecko_event.h",
     ],
 )
 
@@ -2836,6 +2878,7 @@ perfetto_filegroup(
     srcs = [
         "src/trace_processor/perfetto_sql/stdlib/linux/cpu/utilization/general.sql",
         "src/trace_processor/perfetto_sql/stdlib/linux/cpu/utilization/process.sql",
+        "src/trace_processor/perfetto_sql/stdlib/linux/cpu/utilization/slice.sql",
         "src/trace_processor/perfetto_sql/stdlib/linux/cpu/utilization/system.sql",
         "src/trace_processor/perfetto_sql/stdlib/linux/cpu/utilization/thread.sql",
     ],
@@ -2935,6 +2978,14 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/trace_processor/perfetto_sql/stdlib/stacks:stacks
+perfetto_filegroup(
+    name = "src_trace_processor_perfetto_sql_stdlib_stacks_stacks",
+    srcs = [
+        "src/trace_processor/perfetto_sql/stdlib/stacks/cpu_profiling.sql",
+    ],
+)
+
 # GN target: //src/trace_processor/perfetto_sql/stdlib/time:time
 perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_time_time",
@@ -2980,6 +3031,8 @@ perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_wattson_wattson",
     srcs = [
         "src/trace_processor/perfetto_sql/stdlib/wattson/arm_dsu.sql",
+        "src/trace_processor/perfetto_sql/stdlib/wattson/cpu_freq.sql",
+        "src/trace_processor/perfetto_sql/stdlib/wattson/cpu_freq_idle.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu_idle.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu_split.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/curves/device.sql",
@@ -3024,6 +3077,7 @@ perfetto_cc_amalgamated_sql(
         ":src_trace_processor_perfetto_sql_stdlib_sched_sched",
         ":src_trace_processor_perfetto_sql_stdlib_slices_slices",
         ":src_trace_processor_perfetto_sql_stdlib_stack_trace_stack_trace",
+        ":src_trace_processor_perfetto_sql_stdlib_stacks_stacks",
         ":src_trace_processor_perfetto_sql_stdlib_time_time",
         ":src_trace_processor_perfetto_sql_stdlib_v8_v8",
         ":src_trace_processor_perfetto_sql_stdlib_viz_summary_summary",
@@ -5311,6 +5365,7 @@ perfetto_proto_library(
         "protos/perfetto/trace/ftrace/cpuhp.proto",
         "protos/perfetto/trace/ftrace/cros_ec.proto",
         "protos/perfetto/trace/ftrace/dcvsh.proto",
+        "protos/perfetto/trace/ftrace/devfreq.proto",
         "protos/perfetto/trace/ftrace/dma_fence.proto",
         "protos/perfetto/trace/ftrace/dmabuf_heap.proto",
         "protos/perfetto/trace/ftrace/dpu.proto",
@@ -6323,6 +6378,8 @@ perfetto_cc_library(
         ":src_trace_processor_export_json",
         ":src_trace_processor_importers_android_bugreport_android_bugreport",
         ":src_trace_processor_importers_android_bugreport_android_log_event",
+        ":src_trace_processor_importers_art_method_art_method",
+        ":src_trace_processor_importers_art_method_art_method_event",
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_trace_parser_hdr",
@@ -6334,6 +6391,8 @@ perfetto_cc_library(
         ":src_trace_processor_importers_fuchsia_fuchsia_record",
         ":src_trace_processor_importers_fuchsia_full",
         ":src_trace_processor_importers_fuchsia_minimal",
+        ":src_trace_processor_importers_gecko_gecko",
+        ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_gzip_full",
         ":src_trace_processor_importers_i2c_full",
         ":src_trace_processor_importers_instruments_instruments",
@@ -6520,6 +6579,8 @@ perfetto_cc_binary(
         ":src_trace_processor_export_json",
         ":src_trace_processor_importers_android_bugreport_android_bugreport",
         ":src_trace_processor_importers_android_bugreport_android_log_event",
+        ":src_trace_processor_importers_art_method_art_method",
+        ":src_trace_processor_importers_art_method_art_method_event",
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_trace_parser_hdr",
@@ -6531,6 +6592,8 @@ perfetto_cc_binary(
         ":src_trace_processor_importers_fuchsia_fuchsia_record",
         ":src_trace_processor_importers_fuchsia_full",
         ":src_trace_processor_importers_fuchsia_minimal",
+        ":src_trace_processor_importers_gecko_gecko",
+        ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_gzip_full",
         ":src_trace_processor_importers_i2c_full",
         ":src_trace_processor_importers_instruments_instruments",
@@ -6774,6 +6837,8 @@ perfetto_cc_binary(
         ":src_trace_processor_export_json",
         ":src_trace_processor_importers_android_bugreport_android_bugreport",
         ":src_trace_processor_importers_android_bugreport_android_log_event",
+        ":src_trace_processor_importers_art_method_art_method",
+        ":src_trace_processor_importers_art_method_art_method_event",
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_trace_parser_hdr",
@@ -6785,6 +6850,8 @@ perfetto_cc_binary(
         ":src_trace_processor_importers_fuchsia_fuchsia_record",
         ":src_trace_processor_importers_fuchsia_full",
         ":src_trace_processor_importers_fuchsia_minimal",
+        ":src_trace_processor_importers_gecko_gecko",
+        ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_gzip_full",
         ":src_trace_processor_importers_i2c_full",
         ":src_trace_processor_importers_instruments_instruments",
