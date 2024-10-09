@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include "perfetto/base/build_config.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
 #include "perfetto/base/time.h"
@@ -50,6 +51,8 @@
 #include "src/trace_processor/importers/common/trace_parser.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_parser.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.h"
+#include "src/trace_processor/importers/gecko/gecko_trace_parser_impl.h"
+#include "src/trace_processor/importers/gecko/gecko_trace_tokenizer.h"
 #include "src/trace_processor/importers/gzip/gzip_trace_parser.h"
 #include "src/trace_processor/importers/json/json_trace_parser_impl.h"
 #include "src/trace_processor/importers/json/json_trace_tokenizer.h"
@@ -415,7 +418,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
       std::make_unique<instruments_importer::RowParser>(&context_);
 #endif
 
-  if (util::IsGzipSupported()) {
+  if constexpr (util::IsGzipSupported()) {
     context_.reader_registry->RegisterTraceReader<GzipTraceParser>(
         kGzipTraceType);
     context_.reader_registry->RegisterTraceReader<GzipTraceParser>(
@@ -423,11 +426,19 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
     context_.reader_registry->RegisterTraceReader<ZipTraceReader>(kZipFile);
   }
 
-  if (json::IsJsonSupported()) {
+  if constexpr (json::IsJsonSupported()) {
     context_.reader_registry->RegisterTraceReader<JsonTraceTokenizer>(
         kJsonTraceType);
     context_.json_trace_parser =
         std::make_unique<JsonTraceParserImpl>(&context_);
+
+#if PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
+    context_.reader_registry
+        ->RegisterTraceReader<gecko_importer::GeckoTraceTokenizer>(
+            kGeckoTraceType);
+    context_.gecko_trace_parser =
+        std::make_unique<gecko_importer::GeckoTraceParserImpl>(&context_);
+#endif
   }
 
   if (context_.config.analyze_trace_proto_content) {
@@ -574,10 +585,10 @@ bool TraceProcessorImpl::IsRootMetricField(const std::string& metric_name) {
   return field_idx != nullptr;
 }
 
-base::Status TraceProcessorImpl::RegisterSqlModule(SqlModule sql_module) {
-  sql_modules::RegisteredModule new_module;
-  std::string name = sql_module.name;
-  if (engine_->FindModule(name) && !sql_module.allow_module_override) {
+base::Status TraceProcessorImpl::RegisterSqlModule(SqlModule sql_package) {
+  sql_modules::RegisteredModule new_package;
+  std::string name = sql_package.name;
+  if (engine_->FindModule(name) && !sql_package.allow_module_override) {
     return base::ErrStatus(
         "Module '%s' is already registered. Choose a different name.\n"
         "If you want to replace the existing module using trace processor "
@@ -586,7 +597,7 @@ base::Status TraceProcessorImpl::RegisterSqlModule(SqlModule sql_module) {
         "to pass the module path.",
         name.c_str());
   }
-  for (auto const& name_and_sql : sql_module.files) {
+  for (auto const& name_and_sql : sql_package.files) {
     if (sql_modules::GetModuleName(name_and_sql.first) != name) {
       return base::ErrStatus(
           "File import key doesn't match the module name. First part of "
@@ -594,10 +605,11 @@ base::Status TraceProcessorImpl::RegisterSqlModule(SqlModule sql_module) {
           "key should be module name. Import key: %s, module name: %s.",
           name_and_sql.first.c_str(), name.c_str());
     }
-    new_module.include_key_to_file.Insert(name_and_sql.first,
-                                          {name_and_sql.second, false});
+    new_package.include_key_to_file.Insert(name_and_sql.first,
+                                           {name_and_sql.second, false});
   }
-  engine_->RegisterModule(name, std::move(new_module));
+  manually_registered_sql_packages_.push_back(SqlModule(sql_package));
+  engine_->RegisterModule(name, std::move(new_package));
   return base::OkStatus();
 }
 
@@ -1072,6 +1084,11 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
 
   // Fill trace bounds table.
   BuildBoundsTable(db, GetTraceTimestampBoundsNs(*context_.storage));
+
+  // Reregister overriden/added custom stdlib modules
+  for (const auto& module : manually_registered_sql_packages_) {
+    RegisterSqlModule(module);
+  }
 }
 
 namespace {
