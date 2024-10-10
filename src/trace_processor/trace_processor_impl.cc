@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include "perfetto/base/build_config.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
 #include "perfetto/base/time.h"
@@ -45,11 +46,15 @@
 #include "perfetto/trace_processor/trace_processor.h"
 #include "src/trace_processor/importers/android_bugreport/android_log_event_parser_impl.h"
 #include "src/trace_processor/importers/android_bugreport/android_log_reader.h"
+#include "src/trace_processor/importers/art_method/art_method_parser_impl.h"
+#include "src/trace_processor/importers/art_method/art_method_tokenizer.h"
 #include "src/trace_processor/importers/common/clock_tracker.h"
 #include "src/trace_processor/importers/common/trace_file_tracker.h"
 #include "src/trace_processor/importers/common/trace_parser.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_parser.h"
 #include "src/trace_processor/importers/fuchsia/fuchsia_trace_tokenizer.h"
+#include "src/trace_processor/importers/gecko/gecko_trace_parser_impl.h"
+#include "src/trace_processor/importers/gecko/gecko_trace_tokenizer.h"
 #include "src/trace_processor/importers/gzip/gzip_trace_parser.h"
 #include "src/trace_processor/importers/json/json_trace_parser_impl.h"
 #include "src/trace_processor/importers/json/json_trace_tokenizer.h"
@@ -311,14 +316,15 @@ void InsertIntoTraceMetricsTable(sqlite3* db, const std::string& metric_name) {
   }
 }
 
-sql_modules::NameToModule GetStdlibModules() {
-  sql_modules::NameToModule modules;
+sql_modules::NameToPackage GetStdlibPackages() {
+  sql_modules::NameToPackage packages;
   for (const auto& file_to_sql : stdlib::kFileToSql) {
-    std::string import_key = sql_modules::GetIncludeKey(file_to_sql.path);
-    std::string module = sql_modules::GetModuleName(import_key);
-    modules.Insert(module, {}).first->push_back({import_key, file_to_sql.sql});
+    std::string module_name = sql_modules::GetIncludeKey(file_to_sql.path);
+    std::string package_name = sql_modules::GetPackageName(module_name);
+    packages.Insert(package_name, {})
+        .first->push_back({module_name, file_to_sql.sql});
   }
-  return modules;
+  return packages;
 }
 
 std::pair<int64_t, int64_t> GetTraceTimestampBoundsNs(
@@ -415,7 +421,7 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
       std::make_unique<instruments_importer::RowParser>(&context_);
 #endif
 
-  if (util::IsGzipSupported()) {
+  if constexpr (util::IsGzipSupported()) {
     context_.reader_registry->RegisterTraceReader<GzipTraceParser>(
         kGzipTraceType);
     context_.reader_registry->RegisterTraceReader<GzipTraceParser>(
@@ -423,12 +429,25 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
     context_.reader_registry->RegisterTraceReader<ZipTraceReader>(kZipFile);
   }
 
-  if (json::IsJsonSupported()) {
+  if constexpr (json::IsJsonSupported()) {
     context_.reader_registry->RegisterTraceReader<JsonTraceTokenizer>(
         kJsonTraceType);
     context_.json_trace_parser =
         std::make_unique<JsonTraceParserImpl>(&context_);
+
+#if PERFETTO_BUILDFLAG(PERFETTO_TP_JSON)
+    context_.reader_registry
+        ->RegisterTraceReader<gecko_importer::GeckoTraceTokenizer>(
+            kGeckoTraceType);
+    context_.gecko_trace_parser =
+        std::make_unique<gecko_importer::GeckoTraceParserImpl>(&context_);
+#endif
   }
+
+  context_.reader_registry->RegisterTraceReader<art_method::ArtMethodTokenizer>(
+      kArtMethodTraceType);
+  context_.art_method_parser =
+      std::make_unique<art_method::ArtMethodParserImpl>(&context_);
 
   if (context_.config.analyze_trace_proto_content) {
     context_.content_analyzer =
@@ -574,30 +593,30 @@ bool TraceProcessorImpl::IsRootMetricField(const std::string& metric_name) {
   return field_idx != nullptr;
 }
 
-base::Status TraceProcessorImpl::RegisterSqlModule(SqlModule sql_module) {
-  sql_modules::RegisteredModule new_module;
-  std::string name = sql_module.name;
-  if (engine_->FindModule(name) && !sql_module.allow_module_override) {
+base::Status TraceProcessorImpl::RegisterSqlPackage(SqlPackage sql_package) {
+  sql_modules::RegisteredPackage new_package;
+  std::string name = sql_package.name;
+  if (engine_->FindPackage(name) && !sql_package.allow_override) {
     return base::ErrStatus(
-        "Module '%s' is already registered. Choose a different name.\n"
-        "If you want to replace the existing module using trace processor "
+        "Package '%s' is already registered. Choose a different name.\n"
+        "If you want to replace the existing package using trace processor "
         "shell, you need to pass the --dev flag and use "
         "--override-sql-module "
         "to pass the module path.",
         name.c_str());
   }
-  for (auto const& name_and_sql : sql_module.files) {
-    if (sql_modules::GetModuleName(name_and_sql.first) != name) {
+  for (auto const& module_name_and_sql : sql_package.modules) {
+    if (sql_modules::GetPackageName(module_name_and_sql.first) != name) {
       return base::ErrStatus(
-          "File import key doesn't match the module name. First part of "
-          "import "
-          "key should be module name. Import key: %s, module name: %s.",
-          name_and_sql.first.c_str(), name.c_str());
+          "Module name doesn't match the package name. First part of module "
+          "name should be package name. Import key: '%s', package name: '%s'.",
+          module_name_and_sql.first.c_str(), name.c_str());
     }
-    new_module.include_key_to_file.Insert(name_and_sql.first,
-                                          {name_and_sql.second, false});
+    new_package.modules.Insert(module_name_and_sql.first,
+                               {module_name_and_sql.second, false});
   }
-  engine_->RegisterModule(name, std::move(new_module));
+  manually_registered_sql_packages_.push_back(SqlPackage(sql_package));
+  engine_->RegisterPackage(name, std::move(new_package));
   return base::OkStatus();
 }
 
@@ -845,11 +864,12 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
       "__intrinsic_slice_mipmap",
       std::make_unique<SliceMipmapOperator::Context>(engine_.get()));
 
-  // Register stdlib modules.
-  auto stdlib_modules = GetStdlibModules();
-  for (auto module_it = stdlib_modules.GetIterator(); module_it; ++module_it) {
+  // Register stdlib packages.
+  auto packages = GetStdlibPackages();
+  for (auto package = packages.GetIterator(); package; ++package) {
     base::Status status =
-        RegisterSqlModule({module_it.key(), module_it.value(), false});
+        RegisterSqlPackage({/*name=*/package.key(), /*modules=*/package.value(),
+                            /*allow_override=*/false});
     if (!status.ok())
       PERFETTO_ELOG("%s", status.c_message());
   }
@@ -1054,7 +1074,7 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
     }
   }
 
-  // Import prelude module.
+  // Import prelude package.
   {
     auto result = engine_->Execute(SqlSource::FromTraceProcessorImplementation(
         "INCLUDE PERFETTO MODULE prelude.*"));
@@ -1072,6 +1092,11 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
 
   // Fill trace bounds table.
   BuildBoundsTable(db, GetTraceTimestampBoundsNs(*context_.storage));
+
+  // Reregister manually added stdlib packages.
+  for (const auto& package : manually_registered_sql_packages_) {
+    RegisterSqlPackage(package);
+  }
 }
 
 namespace {

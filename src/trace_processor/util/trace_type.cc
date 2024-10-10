@@ -17,13 +17,14 @@
 #include "src/trace_processor/util/trace_type.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_utils.h"
-#include "perfetto/ext/base/string_view.h"
+#include "perfetto/protozero/proto_utils.h"
 #include "src/trace_processor/importers/android_bugreport/android_log_event.h"
 
 #include "protos/perfetto/trace/trace.pbzero.h"
@@ -36,10 +37,9 @@ namespace {
 constexpr char kFuchsiaMagic[] = {'\x10', '\x00', '\x04', '\x46',
                                   '\x78', '\x54', '\x16', '\x00'};
 constexpr char kPerfMagic[] = {'P', 'E', 'R', 'F', 'I', 'L', 'E', '2'};
-
 constexpr char kZipMagic[] = {'P', 'K', '\x03', '\x04'};
-
 constexpr char kGzipMagic[] = {'\x1f', '\x8b'};
+constexpr char kArtMethodStreamingMagic[] = {'S', 'L', 'O', 'W'};
 
 constexpr uint8_t kTracePacketTag =
     protozero::proto_utils::MakeTagLengthDelimited(
@@ -127,6 +127,10 @@ const char* TraceTypeToString(TraceType trace_type) {
       return "android_dumpstate";
     case kAndroidBugreportTraceType:
       return "android_bugreport";
+    case kGeckoTraceType:
+      return "gecko";
+    case kArtMethodTraceType:
+      return "art_method";
     case kUnknownTraceType:
       return "unknown";
   }
@@ -154,14 +158,24 @@ TraceType GuessTraceType(const uint8_t* data, size_t size) {
     return kGzipTraceType;
   }
 
+  if (MatchesMagic(data, size, kArtMethodStreamingMagic)) {
+    return kArtMethodTraceType;
+  }
+
   std::string start(reinterpret_cast<const char*>(data),
                     std::min<size_t>(size, kGuessTraceMaxLookahead));
 
   std::string start_minus_white_space = RemoveWhitespace(start);
+  if (base::StartsWith(start_minus_white_space, "{\"meta\""))
+    return kGeckoTraceType;
   if (base::StartsWith(start_minus_white_space, "{\""))
     return kJsonTraceType;
   if (base::StartsWith(start_minus_white_space, "[{\""))
     return kJsonTraceType;
+
+  // ART method traces (non-streaming).
+  if (base::StartsWith(start, "*version\n"))
+    return kArtMethodTraceType;
 
   // Systrace with header but no leading HTML.
   if (base::Contains(start, "# tracer"))

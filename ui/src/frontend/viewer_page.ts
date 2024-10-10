@@ -22,7 +22,6 @@ import {assertExists} from '../base/logging';
 import {clamp} from '../base/math_utils';
 import {Time, TimeSpan} from '../base/time';
 import {TimeScale} from '../base/time_scale';
-import {exists} from '../base/utils';
 import {featureFlags} from '../core/feature_flags';
 import {raf} from '../core/raf_scheduler';
 import {TrackNode} from '../public/workspace';
@@ -92,7 +91,7 @@ export class ViewerPage implements m.ClassComponent<PageWithTraceAttrs> {
   // Used to prevent global deselection if a pan/drag select occurred.
   private keepCurrentSelection = false;
 
-  private overviewTimelinePanel = new OverviewTimelinePanel();
+  private overviewTimelinePanel: OverviewTimelinePanel;
   private timeAxisPanel = new TimeAxisPanel();
   private timeSelectionPanel = new TimeSelectionPanel();
   private notesPanel = new NotesPanel();
@@ -103,6 +102,7 @@ export class ViewerPage implements m.ClassComponent<PageWithTraceAttrs> {
 
   constructor(vnode: m.CVnode<PageWithTraceAttrs>) {
     this.tickmarkPanel = new TickmarkPanel(vnode.attrs.trace);
+    this.overviewTimelinePanel = new OverviewTimelinePanel(vnode.attrs.trace);
   }
 
   oncreate(vnode: m.CVnodeDOM<PageWithTraceAttrs>) {
@@ -441,7 +441,7 @@ export function drawGridLines(
 
   if (size.width > 0 && timespan.duration > 0n) {
     const maxMajorTicks = getMaxMajorTicks(size.width);
-    const offset = globals.timestampOffset();
+    const offset = globals.trace.timeline.timestampOffset();
     for (const {type, time} of generateTicks(timespan, maxMajorTicks, offset)) {
       const px = Math.floor(timescale.timeToPx(time));
       if (type === TickType.MAJOR) {
@@ -459,11 +459,11 @@ export function renderHoveredCursorVertical(
   timescale: TimeScale,
   size: Size2D,
 ) {
-  if (globals.state.hoverCursorTimestamp !== -1n) {
+  if (globals.trace.timeline.hoverCursorTimestamp !== undefined) {
     drawVerticalLineAtTime(
       ctx,
       timescale,
-      globals.state.hoverCursorTimestamp,
+      globals.trace.timeline.hoverCursorTimestamp,
       size.height,
       `#344596`,
     );
@@ -491,22 +491,15 @@ export function renderWakeupVertical(
   timescale: TimeScale,
   size: Size2D,
 ) {
-  const currentSelection = globals.selectionManager.legacySelection;
-  const sliceDetails = globals.selectionManager.legacySelectionDetails;
-  if (currentSelection !== null) {
-    if (
-      currentSelection.kind === 'SCHED_SLICE' &&
-      exists(sliceDetails) &&
-      sliceDetails.wakeupTs !== undefined
-    ) {
-      drawVerticalLineAtTime(
-        ctx,
-        timescale,
-        sliceDetails.wakeupTs,
-        size.height,
-        `black`,
-      );
-    }
+  const selection = globals.selectionManager.selection;
+  if (selection.kind === 'track_event' && selection.wakeupTs) {
+    drawVerticalLineAtTime(
+      ctx,
+      timescale,
+      selection.wakeupTs,
+      size.height,
+      `black`,
+    );
   }
 }
 

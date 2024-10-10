@@ -67,7 +67,7 @@ class TraceProcessorImpl : public TraceProcessor,
   base::Status RegisterMetric(const std::string& path,
                               const std::string& sql) override;
 
-  base::Status RegisterSqlModule(SqlModule sql_module) override;
+  base::Status RegisterSqlPackage(SqlPackage) override;
 
   base::Status ExtendMetricsProto(const uint8_t* data, size_t size) override;
 
@@ -97,6 +97,15 @@ class TraceProcessorImpl : public TraceProcessor,
   base::Status DisableAndReadMetatrace(
       std::vector<uint8_t>* trace_proto) override;
 
+  base::Status RegisterSqlModule(SqlModule module) override {
+    SqlPackage package;
+    package.name = std::move(module.name);
+    package.modules = std::move(module.files);
+    package.allow_override = module.allow_module_override;
+
+    return RegisterSqlPackage(package);
+  }
+
  private:
   // Needed for iterators to be able to access the context.
   friend class IteratorImpl;
@@ -117,6 +126,11 @@ class TraceProcessorImpl : public TraceProcessor,
   DescriptorPool pool_;
 
   std::vector<metrics::SqlMetricFile> sql_metrics_;
+
+  // Manually registeres SQL packages are stored here, to be able to restore
+  // them when running |RestoreInitialTables()|.
+  std::vector<SqlPackage> manually_registered_sql_packages_;
+
   std::unordered_map<std::string, std::string> proto_field_to_sql_metric_path_;
   std::unordered_map<std::string, std::string> proto_fn_name_to_path_;
 

@@ -15,28 +15,7 @@
 import {ConversionJobStatusUpdate} from '../common/conversion_jobs';
 import {raf} from '../core/raf_scheduler';
 import {HttpRpcState} from '../trace_processor/http_rpc_engine';
-import {globals, QuantizedLoad, ThreadDesc} from './globals';
-
-export function publishOverviewData(data: {
-  [key: string]: QuantizedLoad | QuantizedLoad[];
-}) {
-  for (const [key, value] of Object.entries(data)) {
-    if (!globals.overviewStore.has(key)) {
-      globals.overviewStore.set(key, []);
-    }
-    if (value instanceof Array) {
-      globals.overviewStore.get(key)!.push(...value);
-    } else {
-      globals.overviewStore.get(key)!.push(value);
-    }
-  }
-  raf.scheduleRedraw();
-}
-
-export function clearOverviewData() {
-  globals.overviewStore.clear();
-  raf.scheduleRedraw();
-}
+import {globals, ThreadDesc} from './globals';
 
 export function publishTrackData(args: {id: string; data: {}}) {
   globals.setTrackData(args.id, args.data);
@@ -58,13 +37,6 @@ export function publishConversionJobStatusUpdate(
 ) {
   globals.setConversionJobStatus(job.jobName, job.jobStatus);
   globals.publishRedraw();
-}
-
-export function publishLoading(numQueuedQueries: number) {
-  globals.numQueuedQueries = numQueuedQueries;
-  // TODO(hjd): Clean up loadingAnimation given that this now causes a full
-  // redraw anyways. Also this should probably just go via the global state.
-  raf.scheduleFullRedraw();
 }
 
 export function publishBufferUsage(args: {percentage: number}) {
