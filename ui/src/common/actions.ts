@@ -13,7 +13,6 @@
 // limitations under the License.
 
 import {Draft} from 'immer';
-import {time} from '../base/time';
 import {RecordConfig} from '../controller/record_config_types';
 import {createEmptyState} from './empty_state';
 import {
@@ -22,20 +21,11 @@ import {
   RecordingTarget,
   State,
 } from './state';
-import {SerializedAppState} from '../public/state_serialization_schema';
-import {PostedTrace} from '../public/trace_source';
 
 type StateDraft = Draft<State>;
 
-function generateNextId(draft: StateDraft): string {
-  const nextId = String(Number(draft.nextId) + 1);
-  draft.nextId = nextId;
-  return nextId;
-}
-
 export const StateActions = {
   clearState(state: StateDraft, _args: {}) {
-    const nextId = state.nextId;
     const recordConfig = state.recordConfig;
     const recordingTarget = state.recordingTarget;
     const fetchChromeCategories = state.fetchChromeCategories;
@@ -44,56 +34,12 @@ export const StateActions = {
     const chromeCategories = state.chromeCategories;
 
     Object.assign(state, createEmptyState());
-    state.nextId = nextId;
     state.recordConfig = recordConfig;
     state.recordingTarget = recordingTarget;
     state.fetchChromeCategories = fetchChromeCategories;
     state.extensionInstalled = extensionInstalled;
     state.availableAdbDevices = availableAdbDevices;
     state.chromeCategories = chromeCategories;
-  },
-
-  openTraceFromFile(state: StateDraft, args: {file: File}): void {
-    this.clearState(state, {});
-    const id = generateNextId(state);
-    state.engine = {
-      id,
-      source: {type: 'FILE', file: args.file},
-    };
-  },
-
-  openTraceFromBuffer(state: StateDraft, args: PostedTrace): void {
-    this.clearState(state, {});
-    const id = generateNextId(state);
-    state.engine = {
-      id,
-      source: {type: 'ARRAY_BUFFER', ...args},
-    };
-  },
-
-  openTraceFromUrl(
-    state: StateDraft,
-    args: {url: string; serializedAppState?: SerializedAppState},
-  ): void {
-    this.clearState(state, {});
-    const id = generateNextId(state);
-    state.engine = {
-      id,
-      source: {
-        type: 'URL',
-        url: args.url,
-        serializedAppState: args.serializedAppState,
-      },
-    };
-  },
-
-  openTraceFromHttpRpc(state: StateDraft, _args: {}): void {
-    this.clearState(state, {});
-    const id = generateNextId(state);
-    state.engine = {
-      id,
-      source: {type: 'HTTP_RPC'},
-    };
   },
 
   requestTrackReload(state: StateDraft, _: {}) {
@@ -179,19 +125,6 @@ export const StateActions = {
 
   setSidebar(state: StateDraft, args: {visible: boolean}): void {
     state.sidebarVisible = args.visible;
-  },
-
-  setHoveredUtidAndPid(state: StateDraft, args: {utid: number; pid: number}) {
-    state.hoveredPid = args.pid;
-    state.hoveredUtid = args.utid;
-  },
-
-  setHighlightedSliceId(state: StateDraft, args: {sliceId: number}) {
-    state.highlightedSliceId = args.sliceId;
-  },
-
-  setHoveredNoteTimestamp(state: StateDraft, args: {ts: time}) {
-    state.hoveredNoteTimestamp = args.ts;
   },
 
   dismissFlamegraphModal(state: StateDraft, _: {}) {

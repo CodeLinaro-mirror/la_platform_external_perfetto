@@ -23,7 +23,7 @@ import {defer} from '../base/deferred';
 import {addErrorHandler, reportError} from '../base/logging';
 import {Store} from '../base/store';
 import {Actions, DeferredAction, StateActions} from '../common/actions';
-import {traceEvent} from '../common/metatracing';
+import {traceEvent} from '../core/metatracing';
 import {State} from '../common/state';
 import {initController, runControllers} from '../controller';
 import {isGetCategoriesResponse} from '../controller/chrome_proxy_record_controller';
@@ -47,7 +47,7 @@ import {postMessageHandler} from './post_message_handler';
 import {QueryPage} from './query_page';
 import {RecordPage, updateAvailableAdbDevices} from './record_page';
 import {RecordPageV2} from './record_page_v2';
-import {Route, Router} from './router';
+import {Route, Router} from '../core/router';
 import {CheckHttpRpcConnection} from './rpc_http_dialog';
 import {TraceInfoPage} from './trace_info_page';
 import {maybeOpenTraceFromRoute} from './trace_url_handler';
@@ -61,9 +61,15 @@ import {IdleDetector} from './idle_detector';
 import {IdleDetectorWindow} from './idle_detector_interface';
 import {pageWithTrace} from './pages';
 import {AppImpl} from '../core/app_impl';
-import {setAddSqlTableTabImplFunction} from './sql_table_tab_interface';
-import {addSqlTableTabImpl} from './sql_table_tab';
+import {addSqlTableTab} from './sql_table_tab';
 import {getServingRoot} from '../base/http_utils';
+import {configureExtensions} from '../public/lib/extensions';
+import {
+  addDebugCounterTrack,
+  addDebugSliceTrack,
+} from '../public/lib/debug_tracks/debug_tracks';
+import {addVisualisedArgTracks} from './visualized_args_tracks';
+import {addQueryResultsTab} from '../public/lib/query_table/query_result_tab';
 
 const EXTENSION_ID = 'lfmkphfpdbjijhpomgecfikhfohaoine';
 
@@ -371,11 +377,6 @@ function onCssLoaded() {
   // Force one initial render to get everything in place
   m.render(document.body, m(UiMain, router.resolve()));
 
-  // TODO(primiano): this injection is to break a cirular dependency. See
-  // comment in sql_table_tab_interface.ts. Remove once we add an extension
-  // point for context menus.
-  setAddSqlTableTabImplFunction(addSqlTableTabImpl);
-
   // Initialize plugins, now that we are ready to go.
   const pluginManager = AppImpl.instance.plugins;
   CORE_PLUGINS.forEach((p) => pluginManager.registerPlugin(p));
@@ -444,5 +445,16 @@ function scheduleRafAndRunControllersOnStateChange(
   // Run in a separate task to avoid avoid reentry.
   setTimeout(runControllers, 0);
 }
+
+// TODO(primiano): this injection is to break a cirular dependency. See
+// comment in sql_table_tab_interface.ts. Remove once we add an extension
+// point for context menus.
+configureExtensions({
+  addDebugCounterTrack,
+  addDebugSliceTrack,
+  addVisualisedArgTracks,
+  addSqlTableTab,
+  addQueryResultsTab,
+});
 
 main();
