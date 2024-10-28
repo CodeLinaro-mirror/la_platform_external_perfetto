@@ -378,7 +378,7 @@ class WattsonStdlib(TestSuite):
             """))
 
   # Tests that DSU devfreq calculations are merged correctly
-  def test_wattson_dsu_devfreq(self):
+  def test_wattson_dsu_devfreq_system_state(self):
     return DiffTestBlueprint(
         trace=DataPath('wattson_tk4_pcmark.pb'),
         query=("""
@@ -409,4 +409,27 @@ class WattsonStdlib(TestSuite):
             4108587650809,95296,205.600000,2.670000,2.670000,205.600000,674.240000,674.240000,674.240000,3327.560000,1166.740927
             4108587746105,12451,2.670000,2.670000,2.670000,205.600000,674.240000,674.240000,674.240000,3327.560000,1166.556475
             4108587758556,28524,2.670000,2.670000,205.600000,205.600000,674.240000,674.240000,674.240000,3327.560000,1166.680924
+            """))
+
+  def test_wattson_time_window_api(self):
+    return DiffTestBlueprint(
+        trace=DataPath('wattson_dsu_pmu.pb'),
+        query="""
+        INCLUDE PERFETTO MODULE wattson.curves.estimates;
+
+        SELECT
+          cpu0_mw,
+          cpu1_mw,
+          cpu2_mw,
+          cpu3_mw,
+          cpu4_mw,
+          cpu5_mw,
+          cpu6_mw,
+          cpu7_mw,
+          dsu_scu_mw
+        FROM _windowed_system_state_mw(362426061658, 5067704349)
+        """,
+        out=Csv("""
+            "cpu0_mw","cpu1_mw","cpu2_mw","cpu3_mw","cpu4_mw","cpu5_mw","cpu6_mw","cpu7_mw","dsu_scu_mw"
+            13.025673,6.270190,5.448549,8.796540,8.937174,10.717942,29.482823,30.239208,26.121213
             """))
