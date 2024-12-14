@@ -46,6 +46,7 @@
 #include "perfetto/trace_processor/iterator.h"
 #include "perfetto/trace_processor/trace_blob_view.h"
 #include "perfetto/trace_processor/trace_processor.h"
+#include "src/trace_processor/importers/android_bugreport/android_dumpstate_event_parser_impl.h"
 #include "src/trace_processor/importers/android_bugreport/android_log_event_parser_impl.h"
 #include "src/trace_processor/importers/android_bugreport/android_log_reader.h"
 #include "src/trace_processor/importers/archive/gzip_trace_parser.h"
@@ -65,6 +66,7 @@
 #include "src/trace_processor/importers/json/json_utils.h"
 #include "src/trace_processor/importers/ninja/ninja_log_parser.h"
 #include "src/trace_processor/importers/perf/perf_data_tokenizer.h"
+#include "src/trace_processor/importers/perf/perf_tracker.h"
 #include "src/trace_processor/importers/perf/record_parser.h"
 #include "src/trace_processor/importers/perf/spe_record_parser.h"
 #include "src/trace_processor/importers/perf_text/perf_text_trace_parser_impl.h"
@@ -396,6 +398,9 @@ std::pair<int64_t, int64_t> GetTraceTimestampBoundsNs(
 
 TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
     : TraceProcessorStorageImpl(cfg), config_(cfg) {
+  context_.android_dumpstate_event_parser =
+      std::make_unique<AndroidDumpstateEventParserImpl>(&context_);
+
   context_.reader_registry->RegisterTraceReader<AndroidLogReader>(
       kAndroidLogcatTraceType);
   context_.android_log_event_parser =
@@ -541,6 +546,9 @@ base::Status TraceProcessorImpl::NotifyEndOfFile() {
   Flush();
 
   RETURN_IF_ERROR(TraceProcessorStorageImpl::NotifyEndOfFile());
+  if (context_.perf_tracker) {
+    perf_importer::PerfTracker::GetOrCreate(&context_)->NotifyEndOfFile();
+  }
   context_.storage->ShrinkToFitTables();
 
   // Rebuild the bounds table once everything has been completed: we do this
@@ -939,13 +947,7 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
 
   RegisterStaticTable(storage->mutable_counter_table());
 
-  RegisterStaticTable(storage->mutable_counter_track_table());
-  RegisterStaticTable(storage->mutable_process_counter_track_table());
-  RegisterStaticTable(storage->mutable_thread_counter_track_table());
-  RegisterStaticTable(storage->mutable_cpu_counter_track_table());
-  RegisterStaticTable(storage->mutable_gpu_counter_track_table());
   RegisterStaticTable(storage->mutable_gpu_counter_group_table());
-  RegisterStaticTable(storage->mutable_perf_counter_track_table());
 
   RegisterStaticTable(storage->mutable_heap_graph_object_table());
   RegisterStaticTable(storage->mutable_heap_graph_reference_table());
@@ -992,6 +994,7 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
   RegisterStaticTable(storage->mutable_jit_frame_table());
 
   RegisterStaticTable(storage->mutable_spe_record_table());
+  RegisterStaticTable(storage->mutable_mmap_record_table());
 
   RegisterStaticTable(storage->mutable_inputmethod_clients_table());
   RegisterStaticTable(storage->mutable_inputmethod_manager_service_table());
