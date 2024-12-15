@@ -24,6 +24,13 @@ import {
   SqlTable,
   SqlTableFunction,
 } from './sql_modules';
+import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
+import {TableColumn} from '../../components/widgets/sql/table/column';
+import {
+  DurationColumn,
+  StandardColumn,
+  TimestampColumn,
+} from '../../components/widgets/sql/table/well_known_columns';
 
 export class SqlModulesImpl implements SqlModules {
   readonly packages: SqlPackage[];
@@ -33,16 +40,12 @@ export class SqlModulesImpl implements SqlModules {
   }
 
   listTables(): string[] {
-    const tables: string[] = [];
-    for (const stdlibPackage of this.packages) {
-      tables.concat(stdlibPackage.listTables());
-    }
-    return tables;
+    return this.packages.flatMap((p) => p.listTables());
   }
 
-  getTable(tableName: string): SqlTable | undefined {
+  getModuleForTable(tableName: string): SqlModule | undefined {
     for (const stdlibPackage of this.packages) {
-      const maybeTable = stdlibPackage.getTable(tableName);
+      const maybeTable = stdlibPackage.getModuleForTable(tableName);
       if (maybeTable) {
         return maybeTable;
       }
@@ -63,11 +66,11 @@ export class StdlibPackageImpl implements SqlPackage {
     }
   }
 
-  getTable(tableName: string): SqlTable | undefined {
+  getModuleForTable(tableName: string): SqlModule | undefined {
     for (const module of this.modules) {
       for (const dataObj of module.dataObjects) {
         if (dataObj.name == tableName) {
-          return dataObj;
+          return module;
         }
       }
     }
@@ -78,6 +81,17 @@ export class StdlibPackageImpl implements SqlPackage {
     return this.modules.flatMap((module) =>
       module.dataObjects.map((dataObj) => dataObj.name),
     );
+  }
+
+  getSqlTableDescription(tableName: string): SqlTableDescription | undefined {
+    for (const module of this.modules) {
+      for (const dataObj of module.dataObjects) {
+        if (dataObj.name == tableName) {
+          return module.getSqlTableDescription(tableName);
+        }
+      }
+    }
+    return undefined;
   }
 }
 
@@ -98,6 +112,26 @@ export class StdlibModuleImpl implements SqlModule {
       (json) => new StdlibTableFunctionImpl(json),
     );
     this.macros = docs.macros.map((json) => new StdlibMacroImpl(json));
+  }
+  getTable(tableName: string): SqlTable | undefined {
+    for (const obj of this.dataObjects) {
+      if (obj.name == tableName) {
+        return obj;
+      }
+    }
+    return undefined;
+  }
+
+  getSqlTableDescription(tableName: string): SqlTableDescription | undefined {
+    const sqlTable = this.getTable(tableName);
+    if (sqlTable === undefined) {
+      return undefined;
+    }
+    return {
+      imports: [this.includeKey],
+      name: sqlTable.name,
+      columns: sqlTable.getTableColumns(),
+    };
   }
 }
 
@@ -164,6 +198,10 @@ class StdlibDataObjectImpl implements SqlTable {
     this.type = docs.type;
     this.columns = docs.cols.map((json) => new StdlibColumnImpl(json));
   }
+
+  getTableColumns(): TableColumn[] {
+    return this.columns.map((col) => col.asTableColumn());
+  }
 }
 
 class StdlibColumnImpl implements SqlColumn {
@@ -175,6 +213,17 @@ class StdlibColumnImpl implements SqlColumn {
     this.type = docs.type;
     this.description = docs.desc;
     this.name = docs.name;
+  }
+
+  asTableColumn(): TableColumn {
+    // TODO(mayzner): Support JOINID and ID columns.
+    if (this.type === 'TIMESTAMP') {
+      return new TimestampColumn(this.name);
+    }
+    if (this.type === 'DURATION') {
+      return new DurationColumn(this.name);
+    }
+    return new StandardColumn(this.name);
   }
 }
 
