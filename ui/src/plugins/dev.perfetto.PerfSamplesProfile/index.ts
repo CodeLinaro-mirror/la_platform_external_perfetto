@@ -15,7 +15,7 @@
 import {TrackData} from '../../common/track_data';
 import {PERF_SAMPLES_PROFILE_TRACK_KIND} from '../../public/track_kinds';
 import {Trace} from '../../public/trace';
-import {PerfettoPlugin, PluginDescriptor} from '../../public/plugin';
+import {PerfettoPlugin} from '../../public/plugin';
 import {NUM, NUM_NULL, STR_NULL} from '../../trace_processor/query_result';
 import {assertExists} from '../../base/logging';
 import {
@@ -37,7 +37,8 @@ function makeUriForProc(upid: number) {
   return `/process_${upid}/perf_samples_profile`;
 }
 
-class PerfSamplesProfilePlugin implements PerfettoPlugin {
+export default class implements PerfettoPlugin {
+  static readonly id = 'dev.perfetto.PerfSamplesProfile';
   async onTraceLoad(ctx: Trace): Promise<void> {
     const pResult = await ctx.engine.query(`
       select distinct upid
@@ -56,13 +57,7 @@ class PerfSamplesProfilePlugin implements PerfettoPlugin {
           kind: PERF_SAMPLES_PROFILE_TRACK_KIND,
           upid,
         },
-        track: new ProcessPerfSamplesProfileTrack(
-          {
-            trace: ctx,
-            uri,
-          },
-          upid,
-        ),
+        track: new ProcessPerfSamplesProfileTrack(ctx, uri, upid),
       });
       const group = getOrCreateGroupForProcess(ctx.workspace, upid);
       const track = new TrackNode({uri, title, sortOrder: -40});
@@ -102,22 +97,16 @@ class PerfSamplesProfilePlugin implements PerfettoPlugin {
           utid,
           upid: upid ?? undefined,
         },
-        track: new ThreadPerfSamplesProfileTrack(
-          {
-            trace: ctx,
-            uri,
-          },
-          utid,
-        ),
+        track: new ThreadPerfSamplesProfileTrack(ctx, uri, utid),
       });
       const group = getOrCreateGroupForThread(ctx.workspace, utid);
       const track = new TrackNode({uri, title, sortOrder: -50});
       group.addChildInOrder(track);
     }
-  }
 
-  async onTraceReady(ctx: Trace): Promise<void> {
-    await selectPerfSample(ctx);
+    ctx.addEventListener('traceready', async () => {
+      await selectPerfSample(ctx);
+    });
   }
 }
 
@@ -141,8 +130,3 @@ async function selectPerfSample(ctx: Trace) {
     trackUris: [makeUriForProc(upid)],
   });
 }
-
-export const plugin: PluginDescriptor = {
-  pluginId: 'dev.perfetto.PerfSamplesProfile',
-  plugin: PerfSamplesProfilePlugin,
-};

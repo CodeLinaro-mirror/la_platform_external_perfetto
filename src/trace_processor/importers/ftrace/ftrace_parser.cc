@@ -71,6 +71,7 @@
 #include "protos/perfetto/trace/ftrace/bcl_exynos.pbzero.h"
 #include "protos/perfetto/trace/ftrace/binder.pbzero.h"
 #include "protos/perfetto/trace/ftrace/cma.pbzero.h"
+#include "protos/perfetto/trace/ftrace/cpm_trace.pbzero.h"
 #include "protos/perfetto/trace/ftrace/cpuhp.pbzero.h"
 #include "protos/perfetto/trace/ftrace/cros_ec.pbzero.h"
 #include "protos/perfetto/trace/ftrace/dcvsh.pbzero.h"
@@ -657,6 +658,28 @@ base::Status FtraceParser::ParseFtraceStats(ConstBytes blob,
     } else {
       storage->SetIndexedStats(stats::ftrace_cpu_oldest_event_ts_begin + phase,
                                cpu, static_cast<int64_t>(oldest_event_ts));
+    }
+  }
+
+  protos::pbzero::FtraceKprobeStats::Decoder kprobe_stats(evt.kprobe_stats());
+  storage->SetStats(stats::ftrace_kprobe_hits_begin + phase,
+                    kprobe_stats.hits());
+  storage->SetStats(stats::ftrace_kprobe_misses_begin + phase,
+                    kprobe_stats.misses());
+  if (is_end) {
+    auto kprobe_hits_begin = storage->GetStats(stats::ftrace_kprobe_hits_begin);
+    auto kprobe_hits_end = kprobe_stats.hits();
+    if (kprobe_hits_begin) {
+      int64_t delta_hits = kprobe_hits_end - kprobe_hits_begin;
+      storage->SetStats(stats::ftrace_kprobe_hits_delta, delta_hits);
+    }
+
+    auto kprobe_misses_begin =
+        storage->GetStats(stats::ftrace_kprobe_misses_begin);
+    auto kprobe_misses_end = kprobe_stats.misses();
+    if (kprobe_misses_begin) {
+      int64_t delta_misses = kprobe_misses_end - kprobe_misses_begin;
+      storage->SetStats(stats::ftrace_kprobe_misses_delta, delta_misses);
     }
   }
 
@@ -1350,6 +1373,10 @@ base::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
         ParseKprobe(ts, pid, fld_bytes);
         break;
       }
+      case FtraceEvent::kParamSetValueCpmFieldNumber: {
+        ParseParamSetValueCpm(fld_bytes);
+        break;
+      }
       default:
         break;
     }
@@ -1699,7 +1726,7 @@ void FtraceParser::ParseGpuFreq(int64_t timestamp, ConstBytes blob) {
   uint32_t gpu = freq.gpu_id();
   uint32_t new_freq = freq.state();
   TrackId track = context_->track_tracker->InternGpuCounterTrack(
-      tracks::gpu_frequency, gpu);
+      tracks::gpu_frequency, gpu, TrackTracker::LegacyCharArrayName{"gpufreq"});
   context_->event_tracker->PushCounter(timestamp, new_freq, track);
 }
 
@@ -1710,7 +1737,7 @@ void FtraceParser::ParseKgslGpuFreq(int64_t timestamp, ConstBytes blob) {
   // Source data is frequency / 1000, so we correct that here:
   double new_freq = static_cast<double>(freq.gpu_freq()) * 1000.0;
   TrackId track = context_->track_tracker->InternGpuCounterTrack(
-      tracks::gpu_frequency, gpu);
+      tracks::gpu_frequency, gpu, TrackTracker::LegacyCharArrayName{"gpufreq"});
   context_->event_tracker->PushCounter(timestamp, new_freq, track);
 }
 
@@ -2240,6 +2267,22 @@ void FtraceParser::ParseTaskNewTask(int64_t timestamp,
   // task_newtask is raised both in the case of a new process creation (fork()
   // family) and thread creation (clone(CLONE_THREAD, ...)).
   static const uint32_t kCloneThread = 0x00010000;  // From kernel's sched.h.
+
+  if (PERFETTO_UNLIKELY(new_tid == 0)) {
+    // In the case of boot-time tracing (kernel is started with tracing
+    // enabled), the ftrace buffer will see /bin/init creating swapper/0 tasks:
+    // event {
+    //  pid: 1
+    //  task_newtask {
+    //    pid: 0
+    //    comm: "swapper/0"
+    //  }
+    // }
+    // Skip these task_newtask events since they are kernel idle tasks.
+    PERFETTO_DCHECK(source_tid == 1);
+    PERFETTO_DCHECK(base::StartsWith(evt.comm().ToStdString(), "swapper"));
+    return;
+  }
 
   // If the process is a fork, start a new process.
   if ((clone_flags & kCloneThread) == 0) {
@@ -3807,15 +3850,23 @@ void FtraceParser::ParseDeviceFrequency(int64_t ts,
   StringId device_name = context_->storage->InternString(
       (dev_name.substr(position + sizeof(kDelimiter) - 1) + "freq").c_str());
 
-  TrackTracker::DimensionsBuilder dims_builder =
-      context_->track_tracker->CreateDimensionsBuilder();
-  dims_builder.AppendDimension(device_name_id_, Variadic::String(device_name));
-  TrackTracker::Dimensions dims_id = std::move(dims_builder).Build();
-
-  TrackId track_id = context_->track_tracker->InternCounterTrack(
-      tracks::linux_device_frequency, dims_id);
+  TrackId track_id = context_->track_tracker->InternSingleDimensionTrack(
+      tracks::linux_device_frequency, device_name_id_,
+      Variadic::String(device_name));
   context_->event_tracker->PushCounter(ts, static_cast<double>(event.freq()),
                                        track_id);
+}
+
+void FtraceParser::ParseParamSetValueCpm(protozero::ConstBytes blob) {
+  protos::pbzero::ParamSetValueCpmFtraceEvent::Decoder event(blob);
+  TrackTracker::DimensionsBuilder dims_builder =
+      context_->track_tracker->CreateDimensionsBuilder();
+  // Store event body which denotes the name of the track.
+  dims_builder.AppendName(context_->storage->InternString(event.body()));
+  TrackId track_id = context_->track_tracker->InternTrack(
+      tracks::pixel_cpm_trace, std::move(dims_builder).Build());
+  context_->event_tracker->PushCounter(static_cast<int64_t>(event.timestamp()),
+                                       event.value(), track_id);
 }
 
 }  // namespace perfetto::trace_processor

@@ -14,12 +14,10 @@
 
 import {Time, time} from '../../base/time';
 import {exists} from '../../base/utils';
-import {Actions} from '../../common/actions';
-import {globals} from '../../frontend/globals';
 import {openInOldUIWithSizeCheck} from '../../frontend/legacy_trace_viewer';
 import {Trace} from '../../public/trace';
 import {App} from '../../public/app';
-import {PerfettoPlugin, PluginDescriptor} from '../../public/plugin';
+import {PerfettoPlugin} from '../../public/plugin';
 import {
   isLegacyTrace,
   openFileWithLegacyTraceViewer,
@@ -93,28 +91,19 @@ group by
 order by total_self_size desc
 limit 100;`;
 
-class CoreCommandsPlugin implements PerfettoPlugin {
-  onActivate(ctx: App) {
-    ctx.commands.registerCommand({
-      id: 'perfetto.CoreCommands#ToggleLeftSidebar',
-      name: 'Toggle left sidebar',
-      callback: () => {
-        if (globals.state.sidebarVisible) {
-          globals.dispatch(
-            Actions.setSidebar({
-              visible: false,
-            }),
-          );
-        } else {
-          globals.dispatch(
-            Actions.setSidebar({
-              visible: true,
-            }),
-          );
-        }
-      },
-      defaultHotkey: '!Mod+B',
-    });
+export default class implements PerfettoPlugin {
+  static readonly id = 'perfetto.CoreCommands';
+  static onActivate(ctx: App) {
+    if (ctx.sidebar.enabled) {
+      ctx.commands.registerCommand({
+        id: 'perfetto.CoreCommands#ToggleLeftSidebar',
+        name: 'Toggle left sidebar',
+        callback: () => {
+          ctx.sidebar.toggleVisibility();
+        },
+        defaultHotkey: '!Mod+B',
+      });
+    }
 
     const input = document.createElement('input');
     input.classList.add('trace_file');
@@ -135,14 +124,13 @@ class CoreCommandsPlugin implements PerfettoPlugin {
     });
     ctx.sidebar.addMenuItem({
       commandId: OPEN_TRACE_COMMAND_ID,
-      group: 'navigation',
+      section: 'navigation',
       icon: 'folder_open',
     });
 
-    const OPEN_LEGACY_TRACE_COMMAND_ID =
-      'perfetto.CoreCommands#openTraceInLegacyUi';
+    const OPEN_LEGACY_COMMAND_ID = 'perfetto.CoreCommands#openTraceInLegacyUi';
     ctx.commands.registerCommand({
-      id: OPEN_LEGACY_TRACE_COMMAND_ID,
+      id: OPEN_LEGACY_COMMAND_ID,
       name: 'Open with legacy UI',
       callback: () => {
         input.dataset['useCatapultLegacyUi'] = '1';
@@ -150,8 +138,8 @@ class CoreCommandsPlugin implements PerfettoPlugin {
       },
     });
     ctx.sidebar.addMenuItem({
-      commandId: OPEN_LEGACY_TRACE_COMMAND_ID,
-      group: 'navigation',
+      commandId: OPEN_LEGACY_COMMAND_ID,
+      section: 'navigation',
       icon: 'filter_none',
     });
   }
@@ -351,8 +339,3 @@ async function openWithLegacyUi(file: File) {
   }
   return await openInOldUIWithSizeCheck(file);
 }
-
-export const plugin: PluginDescriptor = {
-  pluginId: 'perfetto.CoreCommands',
-  plugin: CoreCommandsPlugin,
-};

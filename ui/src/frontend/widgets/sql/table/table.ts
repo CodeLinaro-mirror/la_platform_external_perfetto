@@ -22,12 +22,7 @@ import {
   TableManager,
 } from './column';
 import {Button} from '../../../../widgets/button';
-import {
-  MenuDivider,
-  MenuItem,
-  MenuItemAttrs,
-  PopupMenu2,
-} from '../../../../widgets/menu';
+import {MenuDivider, MenuItem, PopupMenu2} from '../../../../widgets/menu';
 import {buildSqlQuery} from './query_builder';
 import {Icons} from '../../../../base/semantic_icons';
 import {sqliteString} from '../../../../base/string_utils';
@@ -45,13 +40,19 @@ import {FILTER_OPTION_TO_OP, FilterOption} from './render_cell_utils';
 import {SqlTableState} from './state';
 import {SqlTableDescription} from './table_description';
 import {Intent} from '../../../../widgets/common';
-import {addHistogramTab} from '../../../charts/histogram/tab';
 import {Form} from '../../../../widgets/form';
 import {TextInput} from '../../../../widgets/text_input';
 
 export interface SqlTableConfig {
   readonly state: SqlTableState;
+  // For additional menu items to add to the column header menus
+  readonly addColumnMenuItems?: (
+    column: TableColumn,
+    columnAlias: string,
+  ) => m.Children;
 }
+
+type AdditionalColumnMenuItems = Record<string, m.Children>;
 
 function renderCell(
   column: TableColumn,
@@ -70,7 +71,7 @@ function renderCell(
   return column.renderCell(sqlValue, getTableManager(state), additionalValues);
 }
 
-function columnTitle(column: TableColumn): string {
+export function columnTitle(column: TableColumn): string {
   if (column.getTitle !== undefined) {
     const title = column.getTitle();
     if (title !== undefined) return title;
@@ -106,6 +107,91 @@ class AddColumnMenuItem implements m.ClassComponent<AddColumnMenuItemAttrs> {
       attrs.table.renderAddColumnOptions((column) => {
         attrs.state.addColumn(column, this.index++);
       }),
+    );
+  }
+}
+
+interface ColumnFilterAttrs {
+  filterOption: FilterOption;
+  columns: SqlColumn[];
+  state: SqlTableState;
+}
+
+// Separating out an individual column filter into a class
+// so that we can store the raw input value.
+class ColumnFilter implements m.ClassComponent<ColumnFilterAttrs> {
+  // Holds the raw string value from the filter text input element
+  private inputValue: string;
+
+  constructor() {
+    this.inputValue = '';
+  }
+
+  view({attrs}: m.Vnode<ColumnFilterAttrs>) {
+    const {filterOption, columns, state} = attrs;
+
+    const {op, requiresParam} = FILTER_OPTION_TO_OP[filterOption];
+
+    return m(
+      MenuItem,
+      {
+        label: filterOption,
+        // Filter options that do not need an input value will filter the
+        // table directly when clicking on the menu item
+        // (ex: IS NULL or IS NOT NULL)
+        onclick: !requiresParam
+          ? () => {
+              state.addFilter({
+                op: (cols) => `${cols[0]} ${op}`,
+                columns,
+              });
+            }
+          : undefined,
+      },
+      // All non-null filter options will have a submenu that allows
+      // the user to enter a value into textfield and filter using
+      // the Filter button.
+      requiresParam &&
+        m(
+          Form,
+          {
+            onSubmit: () => {
+              // Convert the string extracted from
+              // the input text field into the correct data type for
+              // filtering. The order in which each data type is
+              // checked matters: string, number (floating), and bigint.
+              if (this.inputValue === '') return;
+
+              let filterValue: ColumnType;
+
+              if (Number.isNaN(Number.parseFloat(this.inputValue))) {
+                filterValue = sqliteString(this.inputValue);
+              } else if (
+                !Number.isInteger(Number.parseFloat(this.inputValue))
+              ) {
+                filterValue = Number(this.inputValue);
+              } else {
+                filterValue = BigInt(this.inputValue);
+              }
+
+              state.addFilter({
+                op: (cols) => `${cols[0]} ${op} ${filterValue}`,
+                columns,
+              });
+            },
+            submitLabel: 'Filter',
+          },
+          m(TextInput, {
+            id: 'column_filter_value',
+            ref: 'COLUMN_FILTER_VALUE',
+            autofocus: true,
+            oninput: (e: KeyboardEvent) => {
+              if (!e.target) return;
+
+              this.inputValue = (e.target as HTMLInputElement).value;
+            },
+          }),
+        ),
     );
   }
 }
@@ -184,76 +270,21 @@ export class SqlTable implements m.ClassComponent<SqlTableConfig> {
 
   renderColumnFilterOptions(
     c: TableColumn,
-    value: string,
-    state: SqlTableState,
-  ): m.Vnode<MenuItemAttrs, unknown>[] {
-    const filterOptions = Object.values(FilterOption);
-    const columns = [c.primaryColumn()];
-
-    const filterOptionMenuItems = filterOptions.map((filterOption) => {
-      const {op, requiresParam} = FILTER_OPTION_TO_OP[filterOption];
-
-      return m(
-        MenuItem,
-        {
-          label: filterOption,
-          // Filter options that do not need an input value will filter the
-          // table directly when clicking on the menu item
-          // (ex: IS NULL or IS NOT NULL)
-          onclick: !requiresParam
-            ? () => {
-                state.addFilter({
-                  op: (cols) => `${cols[0]} ${op}`,
-                  columns,
-                });
-              }
-            : undefined,
-        },
-        // All non-null filter options will have a submenu that allows
-        // the user to enter a value into textfield and filter using
-        // the Filter button.
-        requiresParam &&
-          m(
-            Form,
-            {
-              onSubmit: () => {
-                // Convert the string extracted from
-                // the input text field into the correct data type for
-                // filtering. The order in which each data type is
-                // checked matters: string, number (floating), and bigint.
-                let filterValue: ColumnType;
-                if (Number.isNaN(Number.parseFloat(value))) {
-                  filterValue = sqliteString(value);
-                } else if (!Number.isInteger(Number.parseFloat(value))) {
-                  filterValue = Number(value);
-                } else {
-                  filterValue = BigInt(value);
-                }
-
-                state.addFilter({
-                  op: (cols) => `${cols[0]} ${op} ${filterValue}`,
-                  columns,
-                });
-              },
-              submitLabel: 'Filter',
-            },
-            m(TextInput, {
-              id: 'column_filter_value',
-              ref: 'COLUMN_FILTER_VALUE',
-              autofocus: true,
-              oninput: (e: KeyboardEvent) => {
-                if (!e.target) return;
-                value = (e.target as HTMLInputElement).value;
-              },
-            }),
-          ),
-      );
-    });
-
-    return filterOptionMenuItems;
+  ): m.Vnode<ColumnFilterAttrs, unknown>[] {
+    return Object.values(FilterOption).map((filterOption) =>
+      m(ColumnFilter, {
+        filterOption,
+        columns: [c.primaryColumn()],
+        state: this.state,
+      }),
+    );
   }
 
-  renderColumnHeader(column: TableColumn, index: number) {
+  renderColumnHeader(
+    column: TableColumn,
+    index: number,
+    additionalColumnHeaderMenuItems?: m.Children,
+  ) {
     const sorted = this.state.isSortedBy(column);
     const icon =
       sorted === 'ASC'
@@ -261,8 +292,6 @@ export class SqlTable implements m.ClassComponent<SqlTableConfig> {
         : sorted === 'DESC'
           ? Icons.SortedDesc
           : Icons.ContextMenu;
-
-    const filterValue = '';
 
     return m(
       PopupMenu2,
@@ -306,31 +335,9 @@ export class SqlTable implements m.ClassComponent<SqlTableConfig> {
       m(
         MenuItem,
         {label: 'Add filter', icon: Icons.Filter},
-        this.renderColumnFilterOptions(column, filterValue, this.state),
+        this.renderColumnFilterOptions(column),
       ),
-      m(MenuItem, {
-        label: 'Create histogram',
-        icon: Icons.Chart,
-        onclick: () => {
-          const columnAlias =
-            this.state.getCurrentRequest().columns[
-              sqlColumnId(column.primaryColumn())
-            ];
-          addHistogramTab(
-            {
-              sqlColumn: columnAlias,
-              columnTitle: columnTitle(column),
-              filters: this.state.getFilters(),
-              tableDisplay: this.table.displayName ?? this.table.name,
-              query: this.state.getSqlQuery(
-                Object.fromEntries([[columnAlias, column.primaryColumn()]]),
-              ),
-              aggregationType: column.aggregation?.().dataType,
-            },
-            this.state.trace,
-          );
-        },
-      }),
+      additionalColumnHeaderMenuItems,
       // Menu items before divider apply to selected column
       m(MenuDivider),
       // Menu items after divider apply to entire table
@@ -338,13 +345,49 @@ export class SqlTable implements m.ClassComponent<SqlTableConfig> {
     );
   }
 
-  view() {
+  getAdditionalColumnMenuItems(
+    addColumnMenuItems?: (
+      column: TableColumn,
+      columnAlias: string,
+    ) => m.Children,
+  ) {
+    if (addColumnMenuItems === undefined) return;
+
+    const additionalColumnMenuItems: AdditionalColumnMenuItems = {};
+    this.state.getSelectedColumns().forEach((column) => {
+      const columnAlias =
+        this.state.getCurrentRequest().columns[
+          sqlColumnId(column.primaryColumn())
+        ];
+
+      additionalColumnMenuItems[columnAlias] = addColumnMenuItems(
+        column,
+        columnAlias,
+      );
+    });
+
+    return additionalColumnMenuItems;
+  }
+
+  view({attrs}: m.Vnode<SqlTableConfig>) {
     const rows = this.state.getDisplayedRows();
+    const additionalColumnMenuItems = this.getAdditionalColumnMenuItems(
+      attrs.addColumnMenuItems,
+    );
 
     const columns = this.state.getSelectedColumns();
     const columnDescriptors = columns.map((column, i) => {
       return {
-        title: this.renderColumnHeader(column, i),
+        title: this.renderColumnHeader(
+          column,
+          i,
+          additionalColumnMenuItems &&
+            additionalColumnMenuItems[
+              this.state.getCurrentRequest().columns[
+                sqlColumnId(column.primaryColumn())
+              ]
+            ],
+        ),
         render: (row: Row) => renderCell(column, row, this.state),
       };
     });

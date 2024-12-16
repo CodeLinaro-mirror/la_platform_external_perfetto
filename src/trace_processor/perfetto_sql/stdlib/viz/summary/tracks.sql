@@ -22,7 +22,7 @@ WITH extracted AS (
     t.parent_id,
     t.name,
     EXTRACT_ARG(t.source_arg_set_id, 'child_ordering') AS ordering,
-    EXTRACT_ARG(t.source_arg_set_id, 'sibling_order_z_index') AS z_index
+    EXTRACT_ARG(t.source_arg_set_id, 'sibling_order_rank') AS rank
   FROM track t
 )
 SELECT
@@ -31,8 +31,7 @@ SELECT
   t.name,
   t.ordering,
   p.ordering AS parent_ordering,
-  t.z_index,
-  t.z_index IS NULL AS no_z_index
+  IFNULL(t.rank, 0) AS rank
 FROM extracted t
 LEFT JOIN extracted p ON t.parent_id = p.id
 WHERE p.ordering IS NOT NULL;
@@ -43,14 +42,14 @@ WITH lexicographic_and_none AS (
     id, parent_id, name,
     ROW_NUMBER() OVER (ORDER BY parent_id, name) AS order_id
   FROM _track_event_tracks_unordered
-  WHERE parent_ordering = "lexicographic"
+  WHERE parent_ordering = 'lexicographic'
 ),
 explicit AS (
 SELECT
   id, parent_id, name,
-  ROW_NUMBER() OVER (ORDER BY parent_id, no_z_index, z_index) AS order_id
+  ROW_NUMBER() OVER (ORDER BY parent_id, rank) AS order_id
 FROM _track_event_tracks_unordered
-WHERE parent_ordering = "explicit"
+WHERE parent_ordering = 'explicit'
 ),
 slice_chronological AS (
   SELECT
@@ -58,7 +57,7 @@ slice_chronological AS (
     min(ts) AS min_ts
   FROM _track_event_tracks_unordered t
   JOIN slice s on t.id = s.track_id
-  WHERE parent_ordering = "chronological"
+  WHERE parent_ordering = 'chronological'
   GROUP BY track_id
 ),
 counter_chronological AS (
@@ -67,7 +66,7 @@ counter_chronological AS (
     min(ts) AS min_ts
   FROM _track_event_tracks_unordered t
   JOIN counter s on t.id = s.track_id
-  WHERE parent_ordering = "chronological"
+  WHERE parent_ordering = 'chronological'
   GROUP BY track_id
 ),
 slice_and_counter_chronological AS (
@@ -77,7 +76,7 @@ slice_and_counter_chronological AS (
     SELECT * FROM slice_chronological
     UNION ALL
     SELECT * FROM counter_chronological) u USING (id)
-  WHERE t.parent_ordering = "chronological"
+  WHERE t.parent_ordering = 'chronological'
 ),
 chronological AS (
   SELECT
