@@ -34,6 +34,7 @@ from diff_tests.metrics.chrome.tests_rail_modes import ChromeRailModes
 from diff_tests.metrics.chrome.tests_scroll_jank import ChromeScrollJankMetrics
 from diff_tests.metrics.chrome.tests_touch_gesture import ChromeTouchGesture
 from diff_tests.metrics.codecs.tests import Codecs
+from diff_tests.metrics.common.tests import CloneDurationMetrics
 from diff_tests.metrics.frame_timeline.tests import FrameTimeline
 from diff_tests.metrics.graphics.tests import GraphicsMetrics
 from diff_tests.metrics.irq.tests import IRQ
@@ -133,6 +134,7 @@ from diff_tests.stdlib.intervals.tests import StdlibIntervals
 from diff_tests.stdlib.linux.cpu import LinuxCpu
 from diff_tests.stdlib.linux.memory import Memory
 from diff_tests.stdlib.linux.tests import LinuxTests
+from diff_tests.stdlib.pixel.tests import PixelStdlib
 from diff_tests.stdlib.pkvm.tests import Pkvm
 from diff_tests.stdlib.prelude.math_functions_tests import PreludeMathFunctions
 from diff_tests.stdlib.prelude.pprof_functions_tests import PreludePprofFunctions
@@ -276,6 +278,8 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
       *GraphicsMetrics(index_path, 'metrics/graphics',
                        'GraphicsMetrics').fetch(),
       *IRQ(index_path, 'metrics/irq', 'IRQ').fetch(),
+      *CloneDurationMetrics(index_path, 'metrics/common',
+                            'CloneDurationMetrics').fetch(),
       *MemoryMetrics(index_path, 'metrics/memory', 'MemoryMetrics').fetch(),
       *NetworkMetrics(index_path, 'metrics/network', 'orkMetrics').fetch(),
       *Power(index_path, 'metrics/power', 'Power').fetch(),
@@ -348,6 +352,7 @@ def fetch_all_diff_tests(index_path: str) -> List['testing.TestCase']:
       *Viz(index_path, 'stdlib/viz', 'Viz').fetch(),
       *WattsonStdlib(index_path, 'stdlib/wattson', 'WattsonStdlib').fetch(),
       *HeapProfile(index_path, 'stdlib/android', 'HeapProfile').fetch(),
+      *PixelStdlib(index_path, 'stdlib/pixel', 'PixelStdlib').fetch(),
   ] + chrome_stdlib_tests
 
   syntax_tests = [
