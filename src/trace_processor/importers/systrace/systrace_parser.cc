@@ -41,7 +41,9 @@ namespace perfetto::trace_processor {
 SystraceParser::SystraceParser(TraceProcessorContext* ctx)
     : context_(ctx),
       lmk_id_(ctx->storage->InternString("mem.lmk")),
-      cookie_id_(ctx->storage->InternString("cookie")) {}
+      cookie_id_(ctx->storage->InternString("cookie")),
+      utid_id_(ctx->storage->InternString("utid")),
+      end_utid_id_(ctx->storage->InternString("end_utid")) {}
 
 SystraceParser::~SystraceParser() = default;
 
@@ -232,32 +234,51 @@ void SystraceParser::ParseSystracePoint(
     case 'H': {
       StringId name_id = context_->storage->InternString(point.name);
       StringId track_name_id = context_->storage->InternString(point.str_value);
-      UniquePid upid =
-          context_->process_tracker->GetOrCreateProcess(point.tgid);
 
       // Promote DeviceStateChanged to its own top level track.
-      AsyncTrackSetTracker::TrackSetId track_set_id;
-      if (point.str_value == "DeviceStateChanged") {
-        track_set_id = context_->async_track_set_tracker->InternGlobalTrackSet(
-            track_name_id);
-      } else {
-        track_set_id = context_->async_track_set_tracker->InternProcessTrackSet(
-            upid, track_name_id);
+      if (point.str_value == "DeviceStateChanged" && point.phase == 'N') {
+        TrackId track_id = context_->track_tracker->InternTrack(
+            tracks::kAndroidDeviceStateBlueprint);
+        context_->slice_tracker->Scoped(ts, track_id, kNullStringId, name_id,
+                                        0);
+        break;
       }
 
+      UniquePid upid =
+          context_->process_tracker->GetOrCreateProcess(point.tgid);
+      AsyncTrackSetTracker::TrackSetId track_set_id =
+          context_->async_track_set_tracker->InternProcessTrackSet(
+              upid, track_name_id);
       if (point.phase == 'N') {
         TrackId track_id =
             context_->async_track_set_tracker->Scoped(track_set_id, ts, 0);
-        context_->slice_tracker->Scoped(ts, track_id, kNullStringId, name_id,
-                                        0);
+        auto utid = context_->process_tracker->GetOrCreateThread(pid);
+        context_->slice_tracker->Scoped(
+            ts, track_id, kNullStringId, name_id, 0,
+            [this, utid](ArgsTracker::BoundInserter* inserter) {
+              inserter->AddArg(utid_id_, Variadic::UnsignedInteger(utid),
+                               ArgsTracker::UpdatePolicy::kSkipIfExists);
+            });
       } else if (point.phase == 'G') {
         TrackId track_id = context_->async_track_set_tracker->Begin(
             track_set_id, point.int_value);
-        context_->slice_tracker->Begin(ts, track_id, kNullStringId, name_id);
+        auto utid = context_->process_tracker->GetOrCreateThread(pid);
+        context_->slice_tracker->Begin(
+            ts, track_id, kNullStringId, name_id,
+            [this, utid](ArgsTracker::BoundInserter* inserter) {
+              inserter->AddArg(utid_id_, Variadic::UnsignedInteger(utid),
+                               ArgsTracker::UpdatePolicy::kSkipIfExists);
+            });
       } else if (point.phase == 'H') {
         TrackId track_id = context_->async_track_set_tracker->End(
             track_set_id, point.int_value);
-        context_->slice_tracker->End(ts, track_id);
+        auto utid = context_->process_tracker->GetOrCreateThread(pid);
+        context_->slice_tracker->End(
+            ts, track_id, {}, {},
+            [this, utid](ArgsTracker::BoundInserter* inserter) {
+              inserter->AddArg(end_utid_id_, Variadic::UnsignedInteger(utid),
+                               ArgsTracker::UpdatePolicy::kSkipIfExists);
+            });
       }
       break;
     }
@@ -305,11 +326,18 @@ void SystraceParser::ParseSystracePoint(
       // This affects both userspace and kernel counters.
       UniquePid upid =
           context_->process_tracker->GetOrCreateProcess(point.tgid);
+      auto opt_utid = context_->process_tracker->GetThreadOrNull(pid);
       TrackId track_id = context_->track_tracker->InternTrack(
           tracks::kAndroidAtraceCounterBlueprint,
           tracks::Dimensions(upid, point.name));
       context_->event_tracker->PushCounter(
-          ts, static_cast<double>(point.int_value), track_id);
+          ts, static_cast<double>(point.int_value), track_id,
+          [this, opt_utid](ArgsTracker::BoundInserter* inserter) {
+            if (opt_utid) {
+              inserter->AddArg(utid_id_, Variadic::UnsignedInteger(*opt_utid),
+                               ArgsTracker::UpdatePolicy::kSkipIfExists);
+            }
+          });
     }
   }
 }
