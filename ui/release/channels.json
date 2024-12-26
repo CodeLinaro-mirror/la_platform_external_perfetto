@@ -2,7 +2,7 @@
   "channels": [
     {
       "name": "stable",
-      "rev": "54a19ff810b506017d082f6ebfd9feac2885c558"
+      "rev": "eb5adbbd88ed09ac38f8710faab3774326aca6d9"
     },
     {
       "name": "canary",
