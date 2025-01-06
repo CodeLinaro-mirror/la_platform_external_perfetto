@@ -40,11 +40,14 @@ export const THREAD_SLICE_ROW = {
 };
 export type ThreadSliceRow = typeof THREAD_SLICE_ROW;
 
-export class AsyncSliceTrack extends NamedSliceTrack<Slice, ThreadSliceRow> {
+export class TraceProcessorSliceTrack extends NamedSliceTrack<
+  Slice,
+  ThreadSliceRow
+> {
   constructor(
     trace: Trace,
     uri: string,
-    maxDepth: number,
+    maxDepth: number | undefined,
     private readonly trackIds: number[],
   ) {
     super(trace, uri);
