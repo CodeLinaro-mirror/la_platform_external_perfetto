@@ -24,6 +24,24 @@ import {
   SqlTable,
   SqlTableFunction,
 } from './sql_modules';
+import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
+import {
+  TableColumn,
+  TableColumnSet,
+} from '../../components/widgets/sql/table/column';
+import {
+  ArgSetColumnSet,
+  DurationColumn,
+  ProcessColumn,
+  ProcessIdColumn,
+  SchedIdColumn,
+  SliceIdColumn,
+  StandardColumn,
+  ThreadColumn,
+  ThreadIdColumn,
+  ThreadStateIdColumn,
+  TimestampColumn,
+} from '../../components/widgets/sql/table/well_known_columns';
 
 export class SqlModulesImpl implements SqlModules {
   readonly packages: SqlPackage[];
@@ -33,16 +51,12 @@ export class SqlModulesImpl implements SqlModules {
   }
 
   listTables(): string[] {
-    const tables: string[] = [];
-    for (const stdlibPackage of this.packages) {
-      tables.concat(stdlibPackage.listTables());
-    }
-    return tables;
+    return this.packages.flatMap((p) => p.listTables());
   }
 
-  getTable(tableName: string): SqlTable | undefined {
+  getModuleForTable(tableName: string): SqlModule | undefined {
     for (const stdlibPackage of this.packages) {
-      const maybeTable = stdlibPackage.getTable(tableName);
+      const maybeTable = stdlibPackage.getModuleForTable(tableName);
       if (maybeTable) {
         return maybeTable;
       }
@@ -63,11 +77,11 @@ export class StdlibPackageImpl implements SqlPackage {
     }
   }
 
-  getTable(tableName: string): SqlTable | undefined {
+  getModuleForTable(tableName: string): SqlModule | undefined {
     for (const module of this.modules) {
       for (const dataObj of module.dataObjects) {
         if (dataObj.name == tableName) {
-          return dataObj;
+          return module;
         }
       }
     }
@@ -78,6 +92,17 @@ export class StdlibPackageImpl implements SqlPackage {
     return this.modules.flatMap((module) =>
       module.dataObjects.map((dataObj) => dataObj.name),
     );
+  }
+
+  getSqlTableDescription(tableName: string): SqlTableDescription | undefined {
+    for (const module of this.modules) {
+      for (const dataObj of module.dataObjects) {
+        if (dataObj.name == tableName) {
+          return module.getSqlTableDescription(tableName);
+        }
+      }
+    }
+    return undefined;
   }
 }
 
@@ -98,6 +123,26 @@ export class StdlibModuleImpl implements SqlModule {
       (json) => new StdlibTableFunctionImpl(json),
     );
     this.macros = docs.macros.map((json) => new StdlibMacroImpl(json));
+  }
+  getTable(tableName: string): SqlTable | undefined {
+    for (const obj of this.dataObjects) {
+      if (obj.name == tableName) {
+        return obj;
+      }
+    }
+    return undefined;
+  }
+
+  getSqlTableDescription(tableName: string): SqlTableDescription | undefined {
+    const sqlTable = this.getTable(tableName);
+    if (sqlTable === undefined) {
+      return undefined;
+    }
+    return {
+      imports: [this.includeKey],
+      name: sqlTable.name,
+      columns: sqlTable.getTableColumns(),
+    };
   }
 }
 
@@ -164,6 +209,10 @@ class StdlibDataObjectImpl implements SqlTable {
     this.type = docs.type;
     this.columns = docs.cols.map((json) => new StdlibColumnImpl(json));
   }
+
+  getTableColumns(): (TableColumn | TableColumnSet)[] {
+    return this.columns.map((col) => col.asTableColumn(this.name));
+  }
 }
 
 class StdlibColumnImpl implements SqlColumn {
@@ -175,6 +224,54 @@ class StdlibColumnImpl implements SqlColumn {
     this.type = docs.type;
     this.description = docs.desc;
     this.name = docs.name;
+  }
+
+  asTableColumn(tableName: string): TableColumn | TableColumnSet {
+    if (this.type === 'TIMESTAMP') {
+      return new TimestampColumn(this.name);
+    }
+    if (this.type === 'DURATION') {
+      return new DurationColumn(this.name);
+    }
+    if (this.type === 'ARGSETID') {
+      return new ArgSetColumnSet(this.name);
+    }
+
+    if (this.name === 'ID') {
+      if (tableName === 'slice') {
+        return new SliceIdColumn(this.name);
+      }
+      if (tableName === 'thread') {
+        return new ThreadIdColumn(this.name);
+      }
+      if (tableName === 'process') {
+        return new ProcessIdColumn(this.name);
+      }
+      if (tableName === 'thread_state') {
+        return new ThreadStateIdColumn(this.name);
+      }
+      if (tableName === 'sched') {
+        return new SchedIdColumn(this.name);
+      }
+      return new StandardColumn(this.name);
+    }
+
+    if (this.type === 'JOINID(slice.id)') {
+      return new SliceIdColumn(this.name);
+    }
+    if (this.type === 'JOINID(thread.id)') {
+      return new ThreadColumn(this.name);
+    }
+    if (this.type === 'JOINID(process.id)') {
+      return new ProcessColumn(this.name);
+    }
+    if (this.type === 'JOINID(thread_state.id)') {
+      return new ThreadStateIdColumn(this.name);
+    }
+    if (this.type === 'JOINID(sched.id)') {
+      return new SchedIdColumn(this.name);
+    }
+    return new StandardColumn(this.name);
   }
 }
 

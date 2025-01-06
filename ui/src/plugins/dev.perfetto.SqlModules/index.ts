@@ -15,18 +15,51 @@
 import {assetSrc} from '../../base/assets';
 import {assertExists} from '../../base/logging';
 import {PerfettoPlugin} from '../../public/plugin';
+import {Trace} from '../../public/trace';
 import {SqlModules} from './sql_modules';
 import {SQL_MODULES_DOCS_SCHEMA, SqlModulesImpl} from './sql_modules_impl';
+import {PromptOption} from '../../public/omnibox';
+import {extensions} from '../../components/extensions';
 
 export default class implements PerfettoPlugin {
   static readonly id = 'dev.perfetto.SqlModules';
   private sqlModules?: SqlModules;
 
-  async onTraceLoad() {
+  async onTraceLoad(ctx: Trace) {
     const resp = await fetch(assetSrc('stdlib_docs.json'));
     const json = await resp.json();
     const docs = SQL_MODULES_DOCS_SCHEMA.parse(json);
-    this.sqlModules = new SqlModulesImpl(docs);
+    const sqlModules = new SqlModulesImpl(docs);
+    this.sqlModules = sqlModules;
+
+    ctx.commands.registerCommand({
+      id: 'perfetto.OpenSqlModulesTable',
+      name: 'Open table...',
+      callback: async () => {
+        const tables = sqlModules.listTables();
+        const promptOptions: PromptOption[] = tables.map((s) => ({
+          key: s,
+          displayName: s,
+        }));
+        const tableName = await ctx.omnibox.prompt(
+          'Choose a table...',
+          promptOptions,
+        );
+
+        if (tableName === undefined) {
+          return;
+        }
+        const module = sqlModules.getModuleForTable(tableName);
+        if (module === undefined) {
+          return;
+        }
+        const sqlTable = module.getSqlTableDescription(tableName);
+        sqlTable &&
+          extensions.addSqlTableTab(ctx, {
+            table: sqlTable,
+          });
+      },
+    });
   }
 
   getSqlModules() {
