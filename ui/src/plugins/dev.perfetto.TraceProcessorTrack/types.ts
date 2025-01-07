@@ -1,4 +1,4 @@
-// Copyright (C) 2018 The Android Open Source Project
+// Copyright (C) 2025 The Android Open Source Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import protos from '../protos';
+import {StandardGroup} from '../dev.perfetto.StandardGroups';
 
-test('round trip config proto', () => {
-  const input = protos.TraceConfig.create({
-    durationMs: 42,
-  });
-  const output = protos.TraceConfig.decode(
-    protos.TraceConfig.encode(input).finish(),
-  );
-  expect(output.durationMs).toBe(42);
-});
+export type TopLevelTrackGroup =
+  | 'PROCESS'
+  | 'THREAD'
+  | StandardGroup
+  | undefined;
+
+export interface TrackGroupSchema {
+  name: string;
+  expanded?: true;
+}
