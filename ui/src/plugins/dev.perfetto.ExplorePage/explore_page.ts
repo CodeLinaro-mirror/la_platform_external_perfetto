@@ -14,8 +14,8 @@
 
 import m from 'mithril';
 import {PageWithTraceAttrs} from '../../public/page';
-import {SqlTableState as SqlTableViewState} from '../../components/widgets/sql/table/state';
-import {SqlTable as SqlTableView} from '../../components/widgets/sql/table/table';
+import {SqlTableState as SqlTableViewState} from '../../components/widgets/sql/legacy_table/state';
+import {SqlTable as SqlTableView} from '../../components/widgets/sql/legacy_table/table';
 import {exists} from '../../base/utils';
 import {Menu, MenuItem, MenuItemAttrs} from '../../widgets/menu';
 import {Button} from '../../widgets/button';
@@ -29,11 +29,12 @@ import {
 } from '../../components/widgets/charts/chart';
 import {AddChartMenuItem} from '../../components/widgets/charts/add_chart_menu';
 import {
-  CollapsiblePanel,
-  CollapsiblePanelVisibility,
-} from '../../components/widgets/collapsible_panel';
+  SplitPanel,
+  SplitPanelDrawerVisibility,
+} from '../../widgets/split_panel';
 import {Trace} from '../../public/trace';
 import SqlModulesPlugin from '../dev.perfetto.SqlModules';
+import {scheduleFullRedraw} from '../../widgets/raf';
 
 export interface ExploreTableState {
   sqlTableViewState?: SqlTableViewState;
@@ -42,11 +43,11 @@ export interface ExploreTableState {
 
 interface ExplorePageAttrs extends PageWithTraceAttrs {
   readonly state: ExploreTableState;
-  readonly charts: Chart[];
+  readonly charts: Set<Chart>;
 }
 
 export class ExplorePage implements m.ClassComponent<ExplorePageAttrs> {
-  private visibility = CollapsiblePanelVisibility.VISIBLE;
+  private visibility = SplitPanelDrawerVisibility.VISIBLE;
 
   // Show menu with standard library tables
   private renderSelectableTablesMenuItems(
@@ -90,7 +91,7 @@ export class ExplorePage implements m.ClassComponent<ExplorePageAttrs> {
     });
   }
 
-  private renderSqlTable(state: ExploreTableState, charts: Chart[]) {
+  private renderSqlTable(state: ExploreTableState, charts: Set<Chart>) {
     const sqlTableViewState = state.sqlTableViewState;
 
     if (sqlTableViewState === undefined) return;
@@ -131,9 +132,26 @@ export class ExplorePage implements m.ClassComponent<ExplorePageAttrs> {
               sqlTableViewState,
             ),
             chartOptions: [ChartOption.HISTOGRAM],
-            addChart: (chart) => charts.push(chart),
+            addChart: (chart) => charts.add(chart),
           }),
       }),
+    );
+  }
+
+  private renderRemovableChart(chart: Chart, charts: Set<Chart>) {
+    return m(
+      '.chart-card',
+      {
+        key: `${chart.option}-${chart.config.columnTitle}`,
+      },
+      m(Button, {
+        icon: Icons.Close,
+        onclick: () => {
+          charts.delete(chart);
+          scheduleFullRedraw();
+        },
+      }),
+      renderChartComponent(chart),
     );
   }
 
@@ -143,21 +161,25 @@ export class ExplorePage implements m.ClassComponent<ExplorePageAttrs> {
     return m(
       '.page.explore-page',
       m(
-        '.chart-container',
-        m(Menu, this.renderSelectableTablesMenuItems(trace, state)),
-      ),
-      m(
-        '.chart-container',
-        charts.map((chart) => renderChartComponent(chart)),
-      ),
-      state.selectedTableName &&
-        m(CollapsiblePanel, {
+        SplitPanel,
+        {
           visibility: this.visibility,
-          setVisibility: (visibility) => {
+          onVisibilityChange: (visibility) => {
             this.visibility = visibility;
           },
-          tabs: [this.renderSqlTable(state, charts)],
-        }),
+          drawerContent: this.renderSqlTable(state, charts),
+        },
+        m(
+          '.chart-container',
+          m(Menu, this.renderSelectableTablesMenuItems(trace, state)),
+        ),
+        m(
+          '.chart-container',
+          Array.from(charts.values()).map((chart) =>
+            this.renderRemovableChart(chart, charts),
+          ),
+        ),
+      ),
     );
   }
 }

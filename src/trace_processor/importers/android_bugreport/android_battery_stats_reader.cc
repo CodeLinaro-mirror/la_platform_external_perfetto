@@ -28,8 +28,8 @@
 #include "perfetto/base/status.h"
 #include "perfetto/base/time.h"
 #include "perfetto/ext/base/no_destructor.h"
-#include "perfetto/ext/base/string_splitter.h"
 #include "perfetto/ext/base/string_utils.h"
+#include "perfetto/ext/base/string_view_splitter.h"
 #include "src/trace_processor/importers/android_bugreport/android_battery_stats_history_string_tracker.h"
 #include "src/trace_processor/importers/android_bugreport/android_dumpstate_event.h"
 #include "src/trace_processor/importers/common/clock_converter.h"
@@ -43,11 +43,10 @@ namespace perfetto::trace_processor {
 
 namespace {
 
-base::StatusOr<uint64_t> StringToStatusOrUInt64(base::StringView str) {
-  std::optional<uint64_t> possible_result =
-      base::StringToUInt64(str.ToStdString());
+base::StatusOr<int64_t> StringToStatusOrInt64(base::StringView str) {
+  std::optional<int64_t> possible_result = base::StringViewToInt64(str);
   if (!possible_result.has_value()) {
-    return base::ErrStatus("Failed to convert string to uint64_t");
+    return base::ErrStatus("Failed to convert string to int64_t");
   }
   return possible_result.value();
 }
@@ -60,37 +59,42 @@ AndroidBatteryStatsReader::AndroidBatteryStatsReader(
 AndroidBatteryStatsReader::~AndroidBatteryStatsReader() = default;
 
 util::Status AndroidBatteryStatsReader::ParseLine(base::StringView line) {
-  // TODO: migrate to future StringViewSplitter when availabile.
-  base::StringSplitter splitter(line.ToStdString(), ',');
+  base::StringViewSplitter splitter(line, ',');
 
   // consume the legacy version number which we expect to be at the start of
   // every line.
-  if ((splitter.Next() ? std::string(splitter.cur_token()) : "") != "9") {
+  if (splitter.NextToken() != "9") {
     return base::ErrStatus("Unexpected start of battery stats checkin line");
   }
 
-  const base::StringView possible_event_type =
-      splitter.Next() ? splitter.cur_token() : "";
+  const base::StringView possible_event_type = splitter.NextToken();
+
   if (possible_event_type == "hsp") {
-    ASSIGN_OR_RETURN(
-        uint64_t index,
-        StringToStatusOrUInt64(splitter.Next() ? splitter.cur_token() : ""));
+    ASSIGN_OR_RETURN(int64_t index,
+                     StringToStatusOrInt64(splitter.NextToken()));
     const std::optional<int32_t> possible_uid =
-        base::StringToInt32(splitter.Next() ? splitter.cur_token() : "");
-    const base::StringView hsp_string =
-        splitter.Next() ? splitter.cur_token() : "";
+        base::StringViewToInt32(splitter.NextToken());
+    // the next element is quoted and can contain commas. Instead of
+    // implementing general logic to parse quoted CSV elements just grab the
+    // rest of the line, which is possible since this element should be the
+    // last one on the line.
+    base::StringView remainder = splitter.remainder();
+    // remove the leading and trailing quotes from the hsp string
+    size_t substr_start = remainder.find('"') + 1;
+    size_t substr_end = remainder.rfind('"');
+    base::StringView hsp_string =
+        remainder.substr(substr_start, substr_end - substr_start);
     AndroidBatteryStatsHistoryStringTracker::GetOrCreate(context_)
         ->SetStringPoolItem(index, possible_uid.value(),
                             hsp_string.ToStdString());
   } else if (possible_event_type == "h") {
     const base::StringView time_adjustment_marker = ":TIME:";
-    const base::StringView possible_timestamp =
-        splitter.Next() ? splitter.cur_token() : "";
+    const base::StringView possible_timestamp = splitter.NextToken();
     size_t time_marker_index = possible_timestamp.find(time_adjustment_marker);
     if (time_marker_index != base::StringView::npos) {
       // Special case timestamp adjustment event.
       ASSIGN_OR_RETURN(current_timestamp_ms_,
-                       StringToStatusOrUInt64(possible_timestamp.substr(
+                       StringToStatusOrInt64(possible_timestamp.substr(
                            time_marker_index + time_adjustment_marker.size())));
       return base::OkStatus();
     } else if (possible_timestamp.find(":START") != base::StringView::npos) {
@@ -100,12 +104,24 @@ util::Status AndroidBatteryStatsReader::ParseLine(base::StringView line) {
       // Ignore line
       return base::OkStatus();
     } else {
-      ASSIGN_OR_RETURN(uint64_t parsed_timestamp_delta,
-                       StringToStatusOrUInt64(possible_timestamp));
+      ASSIGN_OR_RETURN(int64_t parsed_timestamp_delta,
+                       StringToStatusOrInt64(possible_timestamp));
       current_timestamp_ms_ += parsed_timestamp_delta;
-      for (base::StringView item = splitter.Next() ? splitter.cur_token() : "";
-           !item.empty(); item = splitter.Next() ? splitter.cur_token() : "") {
+      for (base::StringView item = splitter.NextToken(); !item.empty();
+           item = splitter.NextToken()) {
         RETURN_IF_ERROR(ProcessBatteryStatsHistoryEvent(item));
+      }
+    }
+  } else if (possible_event_type == "0") {
+    const base::StringView metadata_type = splitter.NextToken();
+    if (metadata_type == "i") {
+      const base::StringView info_type = splitter.NextToken();
+      if (info_type == "vers") {
+        ASSIGN_OR_RETURN(int64_t battery_stats_version,
+                         StringToStatusOrInt64(splitter.NextToken()));
+        AndroidBatteryStatsHistoryStringTracker::GetOrCreate(context_)
+            ->battery_stats_version(
+                static_cast<uint32_t>(battery_stats_version));
       }
     }
   } else {
