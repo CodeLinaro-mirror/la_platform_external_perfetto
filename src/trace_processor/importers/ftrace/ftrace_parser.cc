@@ -65,6 +65,7 @@
 #include "src/trace_processor/storage/metadata.h"
 #include "src/trace_processor/storage/stats.h"
 #include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/tables/metadata_tables_py.h"
 #include "src/trace_processor/types/softirq_action.h"
 #include "src/trace_processor/types/tcp_state.h"
 #include "src/trace_processor/types/variadic.h"
@@ -1485,9 +1486,10 @@ void FtraceParser::ParseGenericFtrace(int64_t ts,
   StringId event_id = context_->storage->InternString(evt.event_name());
   UniqueTid utid = context_->process_tracker->GetOrCreateThread(tid);
   auto ucpu = context_->cpu_tracker->GetOrCreateCpu(cpu);
-  RawId id = context_->storage->mutable_ftrace_event_table()
-                 ->Insert({ts, event_id, utid, {}, {}, ucpu})
-                 .id;
+  tables::FtraceEventTable::Id id =
+      context_->storage->mutable_ftrace_event_table()
+          ->Insert({ts, event_id, utid, {}, {}, ucpu})
+          .id;
   auto inserter = context_->args_tracker->AddArgsTo(id);
 
   for (auto it = evt.field(); it; ++it) {
@@ -1527,7 +1529,7 @@ void FtraceParser::ParseTypedFtraceToRaw(
   const auto& message_strings = ftrace_message_strings_[ftrace_id];
   UniqueTid utid = context_->process_tracker->GetOrCreateThread(tid);
   auto ucpu = context_->cpu_tracker->GetOrCreateCpu(cpu);
-  RawId id =
+  tables::FtraceEventTable::Id id =
       context_->storage->mutable_ftrace_event_table()
           ->Insert(
               {timestamp, message_strings.message_name_id, utid, {}, {}, ucpu})
@@ -1811,7 +1813,12 @@ void FtraceParser::ParseDpuTracingMarkWrite(int64_t timestamp,
     return;
   }
 
-  uint32_t tgid = static_cast<uint32_t>(evt.pid());
+  // dpu_tracing_mark_write can be buggy and can indicate that the swapper
+  // thread is parented to some random process (probably because of IRQs). We
+  // should ignore this as it causes bad cascading effects down the line.
+  //
+  // See b/388130600 for context.
+  uint32_t tgid = pid == 0 ? 0 : static_cast<uint32_t>(evt.pid());
   SystraceParser::GetOrCreate(context_)->ParseKernelTracingMarkWrite(
       timestamp, pid, static_cast<char>(evt.type()), false /*trace_begin*/,
       evt.name(), tgid, evt.value());
@@ -3969,7 +3976,7 @@ constexpr auto kCpuHpBlueprint = tracks::SliceBlueprint(
     tracks::FnNameBlueprint([](uint32_t cpu) {
       return base::StackString<255>("CPU Hotplug %u", cpu);
     }));
-}
+}  // namespace
 
 void FtraceParser::ParseCpuhpEnter(uint32_t fld_id,
                                    int64_t ts,
