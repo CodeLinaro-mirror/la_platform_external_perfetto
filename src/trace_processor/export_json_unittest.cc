@@ -155,8 +155,8 @@ TEST_F(ExportJsonTest, StorageWithOneSlice) {
   StringId name_id = context_.storage->InternString(base::StringView(kName));
   // The thread_slice table is a sub table of slice.
   context_.storage->mutable_slice_table()->Insert(
-      {kTimestamp, kDuration, track, cat_id, name_id, 0, 0, 0, SliceId(0u), 0,
-       kThreadTimestamp, kThreadDuration, kThreadInstructionCount,
+      {kTimestamp, kDuration, track, cat_id, name_id, 0, 0, 0, SliceId(0u),
+       std::nullopt, kThreadTimestamp, kThreadDuration, kThreadInstructionCount,
        kThreadInstructionDelta});
 
   base::TempFile temp_file = base::TempFile::Create();
@@ -180,7 +180,7 @@ TEST_F(ExportJsonTest, StorageWithOneSlice) {
   EXPECT_EQ(event["cat"].asString(), kCategory);
   EXPECT_EQ(event["name"].asString(), kName);
   EXPECT_TRUE(event["args"].isObject());
-  EXPECT_EQ(event["args"].size(), 0u);
+  EXPECT_EQ(event["args"].size(), 0u) << event["args"].toStyledString();
 }
 
 TEST_F(ExportJsonTest, StorageWithOneUnfinishedSlice) {
@@ -200,8 +200,8 @@ TEST_F(ExportJsonTest, StorageWithOneUnfinishedSlice) {
   StringId cat_id = context_.storage->InternString(base::StringView(kCategory));
   StringId name_id = context_.storage->InternString(base::StringView(kName));
   context_.storage->mutable_slice_table()->Insert(
-      {kTimestamp, kDuration, track, cat_id, name_id, 0, 0, 0, SliceId(0u), 0,
-       kThreadTimestamp, kThreadDuration, kThreadInstructionCount,
+      {kTimestamp, kDuration, track, cat_id, name_id, 0, 0, 0, SliceId(0u),
+       std::nullopt, kThreadTimestamp, kThreadDuration, kThreadInstructionCount,
        kThreadInstructionDelta});
 
   base::TempFile temp_file = base::TempFile::Create();
@@ -780,7 +780,6 @@ TEST_F(ExportJsonTest, InstantEvent) {
             context_.storage->InternString("source"),
             Variadic::String(context_.storage->InternString("chrome")));
       });
-  context_.args_tracker->Flush();  // Flush track args.
   StringId cat_id = context_.storage->InternString(base::StringView(kCategory));
   StringId name_id = context_.storage->InternString(base::StringView(kName));
   context_.storage->mutable_slice_table()->Insert(
@@ -788,8 +787,8 @@ TEST_F(ExportJsonTest, InstantEvent) {
 
   // Global track.
   TrackEventTracker track_event_tracker(&context_);
-  TrackId track2 = track_event_tracker.GetOrCreateDefaultDescriptorTrack();
-  context_.args_tracker->Flush();  // Flush track args.
+  TrackId track2 = *track_event_tracker.GetDescriptorTrack(
+      TrackEventTracker::kDefaultDescriptorTrackUuid);
   context_.storage->mutable_slice_table()->Insert(
       {kTimestamp2, 0, track2, cat_id, name_id, 0, 0, 0});
 
@@ -798,7 +797,6 @@ TEST_F(ExportJsonTest, InstantEvent) {
   reservation.parent_uuid = 0;
   track_event_tracker.ReserveDescriptorTrack(1234, reservation);
   TrackId track3 = *track_event_tracker.GetDescriptorTrack(1234);
-  context_.args_tracker->Flush();  // Flush track args.
   context_.storage->mutable_slice_table()->Insert(
       {kTimestamp3, 0, track3, cat_id, name_id, 0, 0, 0});
 
