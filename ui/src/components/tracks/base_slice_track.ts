@@ -37,7 +37,7 @@ import {AsyncDisposableStack} from '../../base/disposable_stack';
 import {TrackMouseEvent, TrackRenderContext} from '../../public/track';
 import {Point2D, VerticalBounds} from '../../base/geom';
 import {Trace} from '../../public/trace';
-import {SourceDataset, Dataset} from '../../trace_processor/dataset';
+import {SourceDataset} from '../../trace_processor/dataset';
 
 // The common class that underpins all tracks drawing slices.
 
@@ -811,6 +811,13 @@ export abstract class BaseSliceTrack<
     const {x, y} = event;
     this.hoverPos = {x, y};
     this.updateHoveredSlice(this.findSlice(event));
+
+    // We need to do a full redraw in order to update the hovered slice properly
+    // due to the way this system is plumbed together right now, despite the
+    // fact that changing the hovered slice SHOULD only require a canvas redraw.
+    //
+    // TODO(stevegolton): Fix this.
+    this.trace.raf.scheduleFullRedraw();
   }
 
   onMouseOut(): void {
@@ -987,7 +994,7 @@ export abstract class BaseSliceTrack<
     return {ts: Time.fromRaw(row.ts), dur: Duration.fromRaw(row.dur)};
   }
 
-  getDataset(): Dataset | undefined {
+  getDataset(): SourceDataset {
     return new SourceDataset({
       src: this.getSqlSource(),
       schema: {
