@@ -73,7 +73,6 @@
 #include "src/trace_processor/importers/perf_text/perf_text_trace_parser_impl.h"
 #include "src/trace_processor/importers/perf_text/perf_text_trace_tokenizer.h"
 #include "src/trace_processor/importers/proto/additional_modules.h"
-#include "src/trace_processor/importers/proto/content_analyzer.h"
 #include "src/trace_processor/importers/systrace/systrace_trace_parser.h"
 #include "src/trace_processor/iterator_impl.h"
 #include "src/trace_processor/metrics/all_chrome_metrics.descriptor.h"
@@ -83,6 +82,7 @@
 #include "src/trace_processor/metrics/sql/amalgamated_sql_metrics.h"
 #include "src/trace_processor/perfetto_sql/engine/perfetto_sql_engine.h"
 #include "src/trace_processor/perfetto_sql/engine/table_pointer_module.h"
+#include "src/trace_processor/perfetto_sql/generator/structured_query_generator.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/functions/base64.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/functions/clock_functions.h"
 #include "src/trace_processor/perfetto_sql/intrinsics/functions/counter_intervals.h"
@@ -124,6 +124,7 @@
 #include "src/trace_processor/sqlite/sql_stats_table.h"
 #include "src/trace_processor/sqlite/stats_table.h"
 #include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/summary/summary.h"
 #include "src/trace_processor/tp_metatrace.h"
 #include "src/trace_processor/trace_processor_storage_impl.h"
 #include "src/trace_processor/trace_reader_registry.h"
@@ -630,11 +631,40 @@ base::Status TraceProcessorImpl::RegisterSqlModule(SqlModule module) {
 }
 
 // =================================================================
+// |  Trace-based metrics (v2) related functionality starts here   |
+// =================================================================
+
+base::Status TraceProcessorImpl::ComputeV2Metrics(
+    const std::vector<TraceSummarySpecBytes>& specs,
+    std::vector<uint8_t>* output,
+    TraceSummaryOutputFormat format,
+    const std::vector<std::string>& metric_ids) {
+  return summary::ComputeV2Metrics(this, specs, output, format, metric_ids);
+}
+
+// =================================================================
 // |        Metatracing related functionality starts here          |
 // =================================================================
 
 void TraceProcessorImpl::EnableMetatrace(MetatraceConfig config) {
   metatrace::Enable(config);
+}
+
+// =================================================================
+// |                      Experimental                             |
+// =================================================================
+
+base::Status TraceProcessorImpl::AnalyzeStructuredQueries(
+    const std::vector<StructuredQueryBytes>& sqs,
+    std::vector<AnalyzedStructuredQuery>* output) {
+  perfetto_sql::generator::StructuredQueryGenerator sqg;
+  for (const auto& sq : sqs) {
+    AnalyzedStructuredQuery newAnalyzedSq;
+    ASSIGN_OR_RETURN(newAnalyzedSq.sql, sqg.Generate(sq.ptr, sq.size));
+    sqg.AddSharedQuery(sq.ptr, sq.size);
+    output->push_back(newAnalyzedSq);
+  }
+  return base::OkStatus();
 }
 
 namespace {
@@ -1135,6 +1165,7 @@ void TraceProcessorImpl::InitPerfettoSqlEngine() {
   RegisterStaticTable(storage->mutable_surfaceflinger_transactions_table());
 
   RegisterStaticTable(storage->mutable_viewcapture_table());
+  RegisterStaticTable(storage->mutable_viewcapture_view_table());
 
   RegisterStaticTable(storage->mutable_windowmanager_table());
 

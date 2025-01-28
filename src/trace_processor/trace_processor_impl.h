@@ -25,7 +25,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include "perfetto/base/status.h"
@@ -76,6 +75,16 @@ class TraceProcessorImpl : public TraceProcessor,
   base::Status RegisterSqlModule(SqlModule module) override;
 
   // =================================================================
+  // |  Trace-based metrics (v2) related functionality starts here   |
+  // =================================================================
+
+  base::Status ComputeV2Metrics(
+      const std::vector<TraceSummarySpecBytes>& specs,
+      std::vector<uint8_t>* output,
+      TraceSummaryOutputFormat output_format,
+      const std::vector<std::string>& metric_ids) override;
+
+  // =================================================================
   // |        Metatracing related functionality starts here          |
   // =================================================================
 
@@ -118,6 +127,14 @@ class TraceProcessorImpl : public TraceProcessor,
                                  std::string* metrics_string) override;
 
   std::vector<uint8_t> GetMetricDescriptors() override;
+
+  // ===================
+  // |  Experimental   |
+  // ===================
+
+  base::Status AnalyzeStructuredQueries(
+      const std::vector<StructuredQueryBytes>&,
+      std::vector<AnalyzedStructuredQuery>*) override;
 
  private:
   // Needed for iterators to be able to access the context.
