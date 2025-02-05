@@ -152,7 +152,7 @@ TEST(StructuredQueryGeneratorTest, Smoke) {
                 WITH sq_0 AS (
                   SELECT
                     process_name AS process_name,
-                    SUM(rss_and_swap * dur) / SUM(dur) AS avg_rss_and_swap
+                    SUM(cast_double!(rss_and_swap * dur)) / cast_double!(SUM(dur)) AS avg_rss_and_swap
                   FROM memory_rss_and_swap_per_process
                   GROUP BY process_name
                 )
@@ -197,9 +197,16 @@ TEST(StructuredQueryGeneratorTest, Smoke2) {
   ASSERT_THAT(res.c_str(), EqualsIgnoringWhitespace(R"(
                 WITH sq_2 AS (
                   SELECT * FROM (
-                    SELECT *
+                    SELECT
+                      id,
+                      ts,
+                      dur,
+                      name AS slice_name,
+                      thread_name,
+                      process_name,
+                      track_name
                     FROM _slice_with_thread_and_process_info
-                    WHERE name GLOB 'baz'
+                    WHERE slice_name GLOB 'baz'
                       AND process_name GLOB 'system_server'
                   )
                 ),
