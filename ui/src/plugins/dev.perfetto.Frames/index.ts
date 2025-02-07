@@ -12,18 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {
-  ACTUAL_FRAMES_SLICE_TRACK_KIND,
-  EXPECTED_FRAMES_SLICE_TRACK_KIND,
-} from '../../public/track_kinds';
 import {Trace} from '../../public/trace';
 import {PerfettoPlugin} from '../../public/plugin';
 import {TrackNode} from '../../public/workspace';
 import {NUM, STR} from '../../trace_processor/query_result';
-import {ActualFramesTrack} from './actual_frames_track';
-import {ExpectedFramesTrack} from './expected_frames_track';
-import {FrameSelectionAggregator} from './frame_selection_aggregator';
+import {createActualFramesTrack} from './actual_frames_track';
+import {createExpectedFramesTrack} from './expected_frames_track';
+import {
+  ACTUAL_FRAMES_SLICE_TRACK_KIND,
+  FrameSelectionAggregator,
+} from './frame_selection_aggregator';
 import ProcessThreadGroupsPlugin from '../dev.perfetto.ProcessThreadGroups';
+
+// Build a standardized URI for a frames track
+function makeUri(upid: number, kind: 'expected_frames' | 'actual_frames') {
+  return `/process_${upid}/${kind}`;
+}
 
 export default class implements PerfettoPlugin {
   static readonly id = 'dev.perfetto.Frames';
@@ -70,15 +74,14 @@ export default class implements PerfettoPlugin {
       const maxDepth = it.maxDepth;
 
       const title = 'Expected Timeline';
-      const uri = `/process_${upid}/expected_frames`;
+      const uri = makeUri(upid, 'expected_frames');
       ctx.tracks.registerTrack({
         uri,
         title,
-        track: new ExpectedFramesTrack(ctx, maxDepth, uri, trackIds),
+        track: createExpectedFramesTrack(ctx, uri, maxDepth, trackIds),
         tags: {
           trackIds,
           upid,
-          kind: EXPECTED_FRAMES_SLICE_TRACK_KIND,
         },
       });
       const group = ctx.plugins
@@ -121,11 +124,11 @@ export default class implements PerfettoPlugin {
       const maxDepth = it.maxDepth;
 
       const title = 'Actual Timeline';
-      const uri = `/process_${upid}/actual_frames`;
+      const uri = makeUri(upid, 'actual_frames');
       ctx.tracks.registerTrack({
         uri,
         title,
-        track: new ActualFramesTrack(ctx, maxDepth, uri, trackIds),
+        track: createActualFramesTrack(ctx, uri, maxDepth, trackIds),
         tags: {
           upid,
           trackIds,

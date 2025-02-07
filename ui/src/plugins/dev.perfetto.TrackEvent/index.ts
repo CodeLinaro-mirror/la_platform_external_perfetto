@@ -20,7 +20,7 @@ import {NUM, NUM_NULL, STR, STR_NULL} from '../../trace_processor/query_result';
 import {TrackNode} from '../../public/workspace';
 import {assertExists, assertTrue} from '../../base/logging';
 import {COUNTER_TRACK_KIND, SLICE_TRACK_KIND} from '../../public/track_kinds';
-import {TraceProcessorSliceTrack} from '../dev.perfetto.TraceProcessorTrack/trace_processor_slice_track';
+import {createTraceProcessorSliceTrack} from '../dev.perfetto.TraceProcessorTrack/trace_processor_slice_track';
 import {TraceProcessorCounterTrack} from '../dev.perfetto.TraceProcessorTrack/trace_processor_counter_track';
 import {getTrackName} from '../../public/utils';
 
@@ -35,18 +35,25 @@ export default class implements PerfettoPlugin {
     const res = await ctx.engine.query(`
       include perfetto module viz.summary.track_event;
       select
-        upid,
-        utid,
-        parent_id as parentId,
-        is_counter AS isCounter,
-        name,
-        unit,
-        builtin_counter_type as builtinCounterType,
-        has_data AS hasData,
-        has_children AS hasChildren,
-        track_ids as trackIds,
-        order_id as orderId
-      from _track_event_tracks_ordered_groups
+        ifnull(g.upid, t.upid) as upid,
+        g.utid,
+        g.parent_id as parentId,
+        g.is_counter AS isCounter,
+        g.name,
+        g.unit,
+        g.builtin_counter_type as builtinCounterType,
+        g.has_data AS hasData,
+        g.has_children AS hasChildren,
+        g.track_ids as trackIds,
+        g.order_id as orderId,
+        t.name as threadName,
+        t.tid as tid,
+        ifnull(p.pid, tp.pid) as pid,
+        ifnull(p.name, tp.name) as processName
+      from _track_event_tracks_ordered_groups g
+      left join process p using (upid)
+      left join thread t using (utid)
+      left join process tp on tp.upid = t.upid
     `);
     const it = res.iter({
       upid: NUM_NULL,
@@ -60,6 +67,10 @@ export default class implements PerfettoPlugin {
       hasChildren: NUM,
       trackIds: STR,
       orderId: NUM,
+      threadName: STR_NULL,
+      tid: NUM_NULL,
+      pid: NUM_NULL,
+      processName: STR_NULL,
     });
     const processGroupsPlugin = ctx.plugins.getPlugin(
       ProcessThreadGroupsPlugin,
@@ -78,6 +89,10 @@ export default class implements PerfettoPlugin {
         hasChildren,
         trackIds: rawTrackIds,
         orderId,
+        threadName,
+        tid,
+        pid,
+        processName,
       } = it;
 
       // Don't add track_event tracks which don't have any data and don't have
@@ -94,6 +109,10 @@ export default class implements PerfettoPlugin {
         upid,
         kind,
         threadTrack: utid !== null,
+        threadName,
+        processName,
+        tid,
+        pid,
       });
       const uri = `/track_event_${trackIds[0]}`;
       if (hasData && isCounter) {
@@ -132,7 +151,7 @@ export default class implements PerfettoPlugin {
             upid: upid ?? undefined,
             utid: utid ?? undefined,
           },
-          track: new TraceProcessorSliceTrack(ctx, uri, undefined, trackIds),
+          track: createTraceProcessorSliceTrack(ctx, uri, undefined, trackIds),
         });
       }
       const parent = findParentTrackNode(
@@ -168,11 +187,11 @@ function findParentTrackNode(
   if (parentId !== undefined) {
     return assertExists(trackIdToTrackNode.get(parentId));
   }
-  if (upid !== undefined) {
-    return assertExists(processGroupsPlugin.getGroupForProcess(upid));
-  }
   if (utid !== undefined) {
     return assertExists(processGroupsPlugin.getGroupForThread(utid));
+  }
+  if (upid !== undefined) {
+    return assertExists(processGroupsPlugin.getGroupForProcess(upid));
   }
   if (hasChildren) {
     return ctx.workspace.tracks;

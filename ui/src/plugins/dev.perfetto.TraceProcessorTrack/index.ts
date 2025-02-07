@@ -21,12 +21,10 @@ import {TrackNode} from '../../public/workspace';
 import {NUM, NUM_NULL, STR, STR_NULL} from '../../trace_processor/query_result';
 import ProcessThreadGroupsPlugin from '../dev.perfetto.ProcessThreadGroups';
 import StandardGroupsPlugin from '../dev.perfetto.StandardGroups';
-import {CounterSelectionAggregator} from './counter_selection_aggregator';
 import {SLICE_TRACK_SCHEMAS} from './slice_tracks';
 import {TraceProcessorCounterTrack} from './trace_processor_counter_track';
 import {COUNTER_TRACK_SCHEMAS} from './counter_tracks';
-import {SliceSelectionAggregator} from './slice_selection_aggregator';
-import {TraceProcessorSliceTrack} from './trace_processor_slice_track';
+import {createTraceProcessorSliceTrack} from './trace_processor_slice_track';
 import {TopLevelTrackGroup, TrackGroupSchema} from './types';
 import {removeFalsyValues} from '../../base/array_utils';
 
@@ -40,38 +38,6 @@ export default class implements PerfettoPlugin {
   async onTraceLoad(ctx: Trace): Promise<void> {
     await this.addCounters(ctx);
     await this.addSlices(ctx);
-
-    ctx.selection.registerAreaSelectionAggregator(
-      new CounterSelectionAggregator(),
-    );
-
-    ctx.selection.registerSqlSelectionResolver({
-      sqlTableName: 'slice',
-      callback: async (id: number) => {
-        // Locate the track for a given id in the slice table
-        const result = await ctx.engine.query(`
-          select
-            track_id as trackId
-          from
-            slice
-          where slice.id = ${id}
-        `);
-        if (result.numRows() === 0) {
-          return undefined;
-        }
-        const {trackId} = result.firstRow({
-          trackId: NUM,
-        });
-        return {
-          trackUri: `/slice_${trackId}`,
-          eventId: id,
-        };
-      },
-    });
-
-    ctx.selection.registerAreaSelectionAggregator(
-      new SliceSelectionAggregator(),
-    );
   }
 
   private async addCounters(ctx: Trace) {
@@ -213,7 +179,7 @@ export default class implements PerfettoPlugin {
         s.type,
         s.name,
         s.utid,
-        s.upid,
+        ifnull(s.upid, tp.upid) as upid,
         s.trackIds as trackIds,
         __max_layout_depth(s.trackCount, s.trackIds) as maxDepth,
         thread.tid,
@@ -291,7 +257,7 @@ export default class implements PerfettoPlugin {
         chips: removeFalsyValues([
           isKernelThread === 0 && isMainThread === 1 && 'main thread',
         ]),
-        track: new TraceProcessorSliceTrack(ctx, uri, maxDepth, trackIds),
+        track: createTraceProcessorSliceTrack(ctx, uri, maxDepth, trackIds),
       });
       addTrack(
         ctx,
@@ -344,7 +310,7 @@ function addTrack(
       const standardGroup = ctx.plugins
         .getPlugin(StandardGroupsPlugin)
         .getOrCreateStandardGroup(ctx.workspace, topLevelGroup);
-      getGroupByName(standardGroup, group, upid).addChildInOrder(track);
+      getGroupByName(standardGroup, group, null).addChildInOrder(track);
       break;
     }
   }

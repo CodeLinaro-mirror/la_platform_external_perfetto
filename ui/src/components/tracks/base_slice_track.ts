@@ -37,7 +37,7 @@ import {AsyncDisposableStack} from '../../base/disposable_stack';
 import {TrackMouseEvent, TrackRenderContext} from '../../public/track';
 import {Point2D, VerticalBounds} from '../../base/geom';
 import {Trace} from '../../public/trace';
-import {SourceDataset, Dataset} from '../../trace_processor/dataset';
+import {SourceDataset} from '../../trace_processor/dataset';
 
 // The common class that underpins all tracks drawing slices.
 
@@ -218,7 +218,6 @@ export abstract class BaseSliceTrack<
   // `select id, ts, dur, 0 as depth from foo where bar = 'baz'`
   abstract getSqlSource(): string;
 
-  protected abstract getRowSpec(): RowT;
   onSliceOver(_args: OnSliceOverArgs<SliceT>): void {}
   onSliceOut(_args: OnSliceOutArgs<SliceT>): void {}
 
@@ -247,11 +246,12 @@ export abstract class BaseSliceTrack<
   constructor(
     protected readonly trace: Trace,
     protected readonly uri: string,
+    protected readonly rowSpec: RowT,
   ) {
     // Work out the extra columns.
     // This is the union of the embedder-defined columns and the base columns
     // we know about (ts, dur, ...).
-    const allCols = Object.keys(this.getRowSpec());
+    const allCols = Object.keys(rowSpec);
     const baseCols = Object.keys(BASE_ROW);
     this.extraSqlColumns = allCols.filter((key) => !baseCols.includes(key));
 
@@ -342,7 +342,7 @@ export abstract class BaseSliceTrack<
       `);
     }
     const incomplete = new Array<CastInternal<SliceT>>(queryRes.numRows());
-    const it = queryRes.iter(this.getRowSpec());
+    const it = queryRes.iter(this.rowSpec);
     for (let i = 0; it.valid(); it.next(), ++i) {
       incomplete[i] = this.rowToSliceInternal(it);
     }
@@ -658,48 +658,53 @@ export abstract class BaseSliceTrack<
       );
     }
 
-    const resolution = slicesKey.bucketSize;
-    const extraCols = this.extraSqlColumns.join(',');
-    const queryRes = await this.engine.query(`
-      SELECT
-        (z.ts / ${resolution}) * ${resolution} as tsQ,
-        ((z.dur + ${resolution - 1n}) / ${resolution}) * ${resolution} as durQ,
-        s.ts as ts,
-        s.dur as dur,
-        s.id,
-        z.depth
-        ${extraCols ? ',' + extraCols : ''}
-      FROM ${this.getTableName()}(
-        ${slicesKey.start},
-        ${slicesKey.end},
-        ${resolution}
-      ) z
-      CROSS JOIN (${this.getSqlSource()}) s using (id)
-    `);
-
     // Here convert each row to a Slice. We do what we can do
     // generically in the base class, and delegate the rest to the impl
     // via that rowToSlice() abstract call.
     const slices = new Array<CastInternal<SliceT>>();
-    const it = queryRes.iter(this.getRowSpec());
 
-    let maxDataDepth = this.maxDataDepth;
-    this.slicesKey = slicesKey;
-    for (let i = 0; it.valid(); it.next(), ++i) {
-      if (it.dur === -1n) {
-        continue;
+    // The mipmap virtual table will error out when passed a 0 length time span.
+    if (rawSlicesKey.start !== rawSlicesKey.end) {
+      const resolution = slicesKey.bucketSize;
+      const extraCols = this.extraSqlColumns.join(',');
+      const queryRes = await this.engine.query(`
+        SELECT
+          (z.ts / ${resolution}) * ${resolution} as tsQ,
+          ((z.dur + ${resolution - 1n}) / ${resolution}) * ${resolution} as durQ,
+          s.ts as ts,
+          s.dur as dur,
+          s.id,
+          z.depth
+          ${extraCols ? ',' + extraCols : ''}
+        FROM ${this.getTableName()}(
+          ${slicesKey.start},
+          ${slicesKey.end},
+          ${resolution}
+        ) z
+        CROSS JOIN (${this.getSqlSource()}) s using (id)
+      `);
+
+      const it = queryRes.iter(this.rowSpec);
+
+      let maxDataDepth = this.maxDataDepth;
+      for (let i = 0; it.valid(); it.next(), ++i) {
+        if (it.dur === -1n) {
+          continue;
+        }
+
+        maxDataDepth = Math.max(maxDataDepth, it.depth);
+        // Construct the base slice. The Impl will construct and return
+        // the full derived T["slice"] (e.g. CpuSlice) in the
+        // rowToSlice() method.
+        slices.push(this.rowToSliceInternal(it));
       }
+      for (const incomplete of this.incomplete) {
+        maxDataDepth = Math.max(maxDataDepth, incomplete.depth);
+      }
+      this.maxDataDepth = maxDataDepth;
+    }
 
-      maxDataDepth = Math.max(maxDataDepth, it.depth);
-      // Construct the base slice. The Impl will construct and return
-      // the full derived T["slice"] (e.g. CpuSlice) in the
-      // rowToSlice() method.
-      slices.push(this.rowToSliceInternal(it));
-    }
-    for (const incomplete of this.incomplete) {
-      maxDataDepth = Math.max(maxDataDepth, incomplete.depth);
-    }
-    this.maxDataDepth = maxDataDepth;
+    this.slicesKey = slicesKey;
     this.onUpdatedSlices(slices);
     this.slices = slices;
 
@@ -806,6 +811,13 @@ export abstract class BaseSliceTrack<
     const {x, y} = event;
     this.hoverPos = {x, y};
     this.updateHoveredSlice(this.findSlice(event));
+
+    // We need to do a full redraw in order to update the hovered slice properly
+    // due to the way this system is plumbed together right now, despite the
+    // fact that changing the hovered slice SHOULD only require a canvas redraw.
+    //
+    // TODO(stevegolton): Fix this.
+    this.trace.raf.scheduleFullRedraw();
   }
 
   onMouseOut(): void {
@@ -982,7 +994,7 @@ export abstract class BaseSliceTrack<
     return {ts: Time.fromRaw(row.ts), dur: Duration.fromRaw(row.dur)};
   }
 
-  getDataset(): Dataset | undefined {
+  getDataset(): SourceDataset {
     return new SourceDataset({
       src: this.getSqlSource(),
       schema: {
