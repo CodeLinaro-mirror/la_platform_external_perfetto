@@ -29,6 +29,7 @@
 #include "perfetto/base/status.h"
 #include "perfetto/ext/base/flat_hash_map.h"
 #include "perfetto/ext/base/status_or.h"
+#include "perfetto/ext/base/string_utils.h"
 #include "perfetto/protozero/field.h"
 #include "perfetto/protozero/proto_decoder.h"
 #include "protos/perfetto/perfetto_sql/structured_query.pbzero.h"
@@ -74,10 +75,12 @@ class GeneratorImpl {
  public:
   GeneratorImpl(base::FlatHashMap<std::string, SharedQueryProto>& shared_protos,
                 std::vector<SharedQuery>& shared,
-                base::FlatHashMap<std::string, std::nullptr_t>& modules)
+                base::FlatHashMap<std::string, std::nullptr_t>& modules,
+                std::vector<std::string>& preambles)
       : shared_queries_protos_(shared_protos),
         shared_queries_(shared),
-        referenced_modules_(modules) {}
+        referenced_modules_(modules),
+        preambles_(preambles) {}
 
   base::StatusOr<std::string> Generate(protozero::ConstBytes);
 
@@ -92,6 +95,7 @@ class GeneratorImpl {
   base::StatusOr<std::string> Table(const StructuredQuery::Table::Decoder&);
   base::StatusOr<std::string> SimpleSlices(
       const StructuredQuery::SimpleSlices::Decoder&);
+  base::StatusOr<std::string> SqlSource(const StructuredQuery::Sql::Decoder&);
 
   // Nested sources
   std::string NestedSource(protozero::ConstBytes);
@@ -126,6 +130,7 @@ class GeneratorImpl {
   base::FlatHashMap<std::string, SharedQueryProto>& shared_queries_protos_;
   std::vector<SharedQuery>& shared_queries_;
   base::FlatHashMap<std::string, std::nullptr_t>& referenced_modules_;
+  std::vector<std::string>& preambles_;
 };
 
 base::StatusOr<std::string> GeneratorImpl::Generate(
@@ -174,6 +179,9 @@ base::StatusOr<std::string> GeneratorImpl::GenerateImpl() {
     } else if (q.has_interval_intersect()) {
       StructuredQuery::IntervalIntersect::Decoder ii(q.interval_intersect());
       ASSIGN_OR_RETURN(source, IntervalIntersect(ii));
+    } else if (q.has_sql()) {
+      StructuredQuery::Sql::Decoder sql_source(q.sql());
+      ASSIGN_OR_RETURN(source, SqlSource(sql_source));
     } else if (q.has_inner_query()) {
       source = NestedSource(q.inner_query());
     } else if (q.has_inner_query_id()) {
@@ -216,6 +224,28 @@ base::StatusOr<std::string> GeneratorImpl::Table(
     referenced_modules_.Insert(table.module_name().ToStdString(), nullptr);
   }
   return table.table_name().ToStdString();
+}
+
+base::StatusOr<std::string> GeneratorImpl::SqlSource(
+    const StructuredQuery::Sql::Decoder& sql) {
+  if (sql.sql().size == 0) {
+    return base::ErrStatus("Sql field must be specified");
+  }
+  if (sql.column_names()->size() == 0) {
+    return base::ErrStatus("Sql must specify columns");
+  }
+
+  if (sql.has_preamble()) {
+    preambles_.push_back(sql.preamble().ToStdString());
+  }
+
+  std::vector<std::string> cols;
+  for (auto it = sql.column_names(); it; ++it) {
+    cols.push_back(it->as_std_string());
+  }
+  std::string join_str = base::Join(cols, ", ");
+
+  return "(SELECT " + join_str + " FROM (" + sql.sql().ToStdString() + "))";
 }
 
 base::StatusOr<std::string> GeneratorImpl::SimpleSlices(
@@ -509,7 +539,7 @@ base::StatusOr<std::string> StructuredQueryGenerator::Generate(
     const uint8_t* data,
     size_t size) {
   GeneratorImpl impl(shared_queries_protos_, referenced_shared_queries_,
-                     referenced_modules_);
+                     referenced_modules_, preambles_);
   ASSIGN_OR_RETURN(std::string sql,
                    impl.Generate(protozero::ConstBytes{data, size}));
   return sql;
