@@ -24,7 +24,7 @@ import {
   SplitPanel,
   SplitPanelDrawerVisibility,
 } from '../../../widgets/split_panel';
-import {QueryNode} from '../query_state';
+import {QueryNode} from '../query_node';
 import {VisViewSource} from './view_source';
 import {AddChartMenuItem} from '../../../components/widgets/charts/add_chart_menu';
 import {exists} from '../../../base/utils';
@@ -32,6 +32,7 @@ import {DetailsShell} from '../../../widgets/details_shell';
 import {SqlTable} from '../../../components/widgets/sql/legacy_table/table';
 import {SqlTableState} from '../../../components/widgets/sql/legacy_table/state';
 import {sqlValueToSqliteString} from '../../../trace_processor/sql_utils';
+import {renderFilters} from '../../../components/widgets/sql/legacy_table/filters';
 
 export interface DataVisualiserState {
   queryNode?: QueryNode;
@@ -84,6 +85,7 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
         buttons: navigation,
         fillParent: false,
       },
+      m('div', renderFilters(sqlTableViewState.filters)),
       m(SqlTable, {
         state: sqlTableViewState,
         addColumnMenuItems: (_, columnAlias) => {
