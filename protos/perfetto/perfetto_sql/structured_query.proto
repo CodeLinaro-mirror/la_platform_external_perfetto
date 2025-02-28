@@ -71,7 +71,7 @@ message PerfettoSqlStructuredQuery {
   // to be very commonly used by users.
   //
   // Produces a source with the schema
-  // (slice_name, thread_name, process_name, track_name).
+  // (id, ts, dur, slice_name, thread_name, process_name, track_name).
   message SimpleSlices {
     // Glob for the name of the slices. Optional.
     optional string slice_name_glob = 1;
@@ -98,6 +98,10 @@ message PerfettoSqlStructuredQuery {
 
     // The name of columns which will be returned by the SQL. Required.
     repeated string column_names = 2;
+
+    // SQL string that has to be run before running the SQL. Supports multi
+    // statement queries. Optional.
+    optional string preamble = 3;
   }
 
   // Performs a "time-based" intersection of data from `base` with multiple

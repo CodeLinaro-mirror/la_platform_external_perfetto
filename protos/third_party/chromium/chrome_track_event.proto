@@ -857,6 +857,14 @@ message EventLatency {
   // The interval that this frame was produced for according to the
   // BeginFrameArgs.
   optional double vsync_interval_ms = 6;
+  // viz::BeginFrameArgs.trace_id of the frame (before surface aggregation) in
+  // which the input was first presented. See also
+  // ChromeGraphicsPipeline.surface_frame_trace_id.
+  optional int64 surface_frame_trace_id = 7;
+  // gfx::PresentationFeedback.display_trace_id of the frame (after surface
+  // aggregation) in which the input was first presented. See also
+  // ChromeGraphicsPipeline.display_trace_id.
+  optional int64 display_trace_id = 8;
 }
 
 message ProcessSingleton {
@@ -996,8 +1004,8 @@ message SequenceManagerTask {
     WORKER_UNPAUSABLE_TQ = 50;
     WORKER_WEB_SCHEDULING_TQ = 51;
 
-    UI_USER_BLOCKING_DEFERRABLE_TQ = 52;
-    IO_USER_BLOCKING_DEFERRABLE_TQ = 53;
+    UI_USER_BLOCKING_DEFERRABLE_TQ = 52 [deprecated = true];
+    IO_USER_BLOCKING_DEFERRABLE_TQ = 53 [deprecated = true];
 
     UI_BEFORE_UNLOAD_BROWSER_RESPONSE_TQ = 54;
     IO_BEFORE_UNLOAD_BROWSER_RESPONSE_TQ = 55;

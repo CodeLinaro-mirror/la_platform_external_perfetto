@@ -2654,7 +2654,6 @@ perfetto_filegroup(
         "src/trace_processor/metrics/sql/chrome/chrome_performance_mark_hashes.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_processes.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_reliable_range.sql",
-        "src/trace_processor/metrics/sql/chrome/chrome_scroll_inputs_per_frame.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_scroll_jank_caused_by_scheduling.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_scroll_jank_v3.sql",
         "src/trace_processor/metrics/sql/chrome/chrome_slice_names.sql",
@@ -7602,11 +7601,12 @@ perfetto_cc_library(
     srcs = [
         "src/java_sdk/main/cpp/example.cc",
         "src/java_sdk/main/cpp/example.h",
+        "src/java_sdk/main/cpp/utils.cc",
+        "src/java_sdk/main/cpp/utils.h",
     ],
     hdrs = ["src/java_sdk/main/cpp/example.h"],
     deps = [
-        ":libperfetto_client_experimental",
-        ":protos_perfetto_trace_track_event_cpp",
+        ":libperfetto_c",
     ],
 )
 
