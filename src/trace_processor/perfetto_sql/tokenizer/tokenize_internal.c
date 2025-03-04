@@ -242,7 +242,7 @@ static int getToken(const unsigned char **pz){
 **   * the previous token was TK_RP, and
 **   * the next token is TK_LP.
 */
-int sqliteTokenizeInternalAnalyzeWindowKeyword(const unsigned char *z){
+static int analyzeWindowKeyword(const unsigned char *z){
   int t;
   t = getToken(&z);
   if( t!=TK_ID ) return TK_ID;
@@ -250,14 +250,14 @@ int sqliteTokenizeInternalAnalyzeWindowKeyword(const unsigned char *z){
   if( t!=TK_AS ) return TK_ID;
   return TK_WINDOW;
 }
-int sqliteTokenizeInternalAnalyzeOverKeyword(const unsigned char *z, int lastToken){
+static int analyzeOverKeyword(const unsigned char *z, int lastToken){
   if( lastToken==TK_RP ){
     int t = getToken(&z);
     if( t==TK_LP || t==TK_ID ) return TK_OVER;
   }
   return TK_ID;
 }
-int sqliteTokenizeInternalAnalyzeFilterKeyword(const unsigned char *z, int lastToken){
+static int analyzeFilterKeyword(const unsigned char *z, int lastToken){
   if( lastToken==TK_RP && getToken(&z)==TK_LP ){
     return TK_FILTER;
   }

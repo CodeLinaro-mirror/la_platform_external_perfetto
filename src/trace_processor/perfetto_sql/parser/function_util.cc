@@ -21,7 +21,8 @@
 #include "src/trace_processor/sqlite/sqlite_utils.h"
 #include "src/trace_processor/util/status_macros.h"
 
-namespace perfetto::trace_processor {
+namespace perfetto {
+namespace trace_processor {
 
 std::string FunctionPrototype::ToString() const {
   return function_name + "(" + SerializeArguments(arguments) + ")";
@@ -116,4 +117,5 @@ base::Status MaybeBindIntArgument(sqlite3_stmt* stmt,
   return base::OkStatus();
 }
 
-}  // namespace perfetto::trace_processor
+}  // namespace trace_processor
+}  // namespace perfetto

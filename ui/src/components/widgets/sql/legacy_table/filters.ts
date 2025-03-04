@@ -16,10 +16,6 @@ import m from 'mithril';
 import {Button, ButtonBar} from '../../../../widgets/button';
 import {Intent} from '../../../../widgets/common';
 import {isSqlColumnEqual, SqlColumn, sqlColumnId} from './sql_column';
-import {
-  SqlValue,
-  sqlValueToSqliteString,
-} from '../../../../trace_processor/sql_utils';
 
 // A filter which can be applied to the table.
 export interface Filter {
@@ -49,11 +45,6 @@ export class Filters {
     this.notify();
   }
 
-  addFilters(filter: ReadonlyArray<Filter>) {
-    this.filters.push(...filter);
-    this.notify();
-  }
-
   removeFilter(filter: Filter) {
     const idx = this.filters.findIndex((f) => isFilterEqual(f, filter));
     if (idx === -1) throw new Error('Filter not found');
@@ -61,17 +52,13 @@ export class Filters {
     this.notify();
   }
 
-  setFilters(filters: ReadonlyArray<Filter>) {
-    this.filters = [...filters];
-    this.notify();
+  get(): Filter[] {
+    return this.filters;
   }
 
   clear() {
-    this.setFilters([]);
-  }
-
-  get(): Filter[] {
-    return this.filters;
+    this.filters = [];
+    this.notify();
   }
 
   addObserver(observer: () => void) {
@@ -124,19 +111,4 @@ export function renderFilters(filters: Filters): m.Children {
       }),
     ),
   );
-}
-
-export class StandardFilters {
-  static valueEquals(col: SqlColumn, value: SqlValue): Filter {
-    if (value === null) {
-      return {
-        columns: [col],
-        op: (cols) => `${cols[0]} IS NULL`,
-      };
-    }
-    return {
-      columns: [col],
-      op: (cols) => `${cols[0]} = ${sqlValueToSqliteString(value)}`,
-    };
-  }
 }

@@ -14,15 +14,13 @@
 
 import {indentWithTab} from '@codemirror/commands';
 import {Transaction} from '@codemirror/state';
-import {oneDark} from '@codemirror/theme-one-dark';
+import {oneDarkTheme} from '@codemirror/theme-one-dark';
 import {keymap} from '@codemirror/view';
 import {basicSetup, EditorView} from 'codemirror';
 import m from 'mithril';
-import {assertExists, assertUnreachable} from '../base/logging';
+import {assertExists} from '../base/logging';
 import {DragGestureHandler} from '../base/drag_gesture_handler';
 import {DisposableStack} from '../base/disposable_stack';
-import {perfettoSql} from '../base/perfetto_sql_lang/language';
-import {removeFalsyValues} from '../base/array_utils';
 
 export interface EditorAttrs {
   // Initial state for the editor.
@@ -31,9 +29,6 @@ export interface EditorAttrs {
   // Changing generation is used to force resetting of the editor state
   // to the current value of initialText.
   generation?: number;
-
-  // Which language use for syntax highlighting et al. Defaults to none.
-  readonly language?: 'perfetto-sql';
 
   // Callback for the Ctrl/Cmd + Enter key binding.
   onExecute?: (text: string) => void;
@@ -87,25 +82,9 @@ export class Editor implements m.ClassComponent<EditorAttrs> {
 
     this.generation = attrs.generation;
 
-    const lang = (() => {
-      switch (attrs.language) {
-        case undefined:
-          return undefined;
-        case 'perfetto-sql':
-          return perfettoSql();
-        default:
-          assertUnreachable(attrs.language);
-      }
-    })();
-
     this.editorView = new EditorView({
       doc: attrs.initialText ?? '',
-      extensions: removeFalsyValues([
-        keymap.of(keymaps),
-        oneDark,
-        basicSetup,
-        lang,
-      ]),
+      extensions: [keymap.of(keymaps), oneDarkTheme, basicSetup],
       parent: dom,
       dispatch,
     });

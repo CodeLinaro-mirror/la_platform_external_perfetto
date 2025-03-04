@@ -28,15 +28,15 @@ export interface TrackManager {
    * shown by default and callers need to either manually add it to a
    * Workspace or use registerTrackAndShowOnTraceLoad() below.
    */
-  registerTrack(track: Track): void;
+  registerTrack(trackDesc: TrackDescriptor): void;
 
   findTrack(
-    predicate: (track: Track) => boolean | undefined,
-  ): Track | undefined;
+    predicate: (desc: TrackDescriptor) => boolean | undefined,
+  ): TrackDescriptor | undefined;
 
-  getAllTracks(): Track[];
+  getAllTracks(): TrackDescriptor[];
 
-  getTrack(uri: string): Track | undefined;
+  getTrack(uri: string): TrackDescriptor | undefined;
 }
 
 export interface TrackContext {
@@ -82,12 +82,12 @@ export interface TrackRenderContext extends TrackContext {
 }
 
 // A definition of a track, including a renderer implementation and metadata.
-export interface Track {
+export interface TrackDescriptor {
   // A unique identifier for this track.
   readonly uri: string;
 
   // A factory function returning a new track instance.
-  readonly track: TrackRenderer;
+  readonly track: Track;
 
   // Human readable title. Always displayed.
   readonly title: string;
@@ -123,7 +123,7 @@ export interface TrackMouseEvent {
   readonly timescale: TimeScale;
 }
 
-export interface TrackRenderer {
+export interface Track {
   /**
    * Describes which root table the events on this track come from. This is
    * mainly for use by flows (before they get refactored to be more generic) and

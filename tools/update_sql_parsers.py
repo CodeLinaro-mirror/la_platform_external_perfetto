@@ -55,18 +55,6 @@ def copy_tokenizer(args: argparse.Namespace):
         '#include "sqliteInt.h"',
         '#include "src/trace_processor/perfetto_sql/tokenizer/tokenize_internal_helper.h"',
     )
-    res = res.replace(
-        "static int analyzeWindowKeyword",
-        "int sqliteTokenizeInternalAnalyzeWindowKeyword",
-    )
-    res = res.replace(
-        "static int analyzeOverKeyword",
-        "int sqliteTokenizeInternalAnalyzeOverKeyword",
-    )
-    res = res.replace(
-        "static int analyzeFilterKeyword",
-        "int sqliteTokenizeInternalAnalyzeFilterKeyword",
-    )
     res = res.replace('#include "keywordhash.h"\n', '')
     fp.seek(0)
     fp.write(res)

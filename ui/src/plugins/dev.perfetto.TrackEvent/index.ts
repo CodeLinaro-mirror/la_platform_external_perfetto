@@ -31,8 +31,6 @@ export default class implements PerfettoPlugin {
     TraceProcessorTrackPlugin,
   ];
 
-  private parentTrackNodes = new Map<string, TrackNode>();
-
   async onTraceLoad(ctx: Trace): Promise<void> {
     const res = await ctx.engine.query(`
       include perfetto module viz.summary.track_event;
@@ -156,7 +154,7 @@ export default class implements PerfettoPlugin {
           track: createTraceProcessorSliceTrack(ctx, uri, undefined, trackIds),
         });
       }
-      const parent = this.findParentTrackNode(
+      const parent = findParentTrackNode(
         ctx,
         processGroupsPlugin,
         trackIdToTrackNode,
@@ -175,38 +173,38 @@ export default class implements PerfettoPlugin {
       trackIdToTrackNode.set(trackIds[0], node);
     }
   }
+}
 
-  private findParentTrackNode(
-    ctx: Trace,
-    processGroupsPlugin: ProcessThreadGroupsPlugin,
-    trackIdToTrackNode: Map<number, TrackNode>,
-    parentId: number | undefined,
-    upid: number | undefined,
-    utid: number | undefined,
-    hasChildren: number,
-  ): TrackNode {
-    if (parentId !== undefined) {
-      return assertExists(trackIdToTrackNode.get(parentId));
-    }
-    if (utid !== undefined) {
-      return assertExists(processGroupsPlugin.getGroupForThread(utid));
-    }
-    if (upid !== undefined) {
-      return assertExists(processGroupsPlugin.getGroupForProcess(upid));
-    }
-    if (hasChildren) {
-      return ctx.workspace.tracks;
-    }
-    const id = `/track_event_root`;
-    let node = this.parentTrackNodes.get(id);
-    if (node === undefined) {
-      node = new TrackNode({
-        title: 'Global Track Events',
-        isSummary: true,
-      });
-      ctx.workspace.addChildInOrder(node);
-      this.parentTrackNodes.set(id, node);
-    }
-    return node;
+function findParentTrackNode(
+  ctx: Trace,
+  processGroupsPlugin: ProcessThreadGroupsPlugin,
+  trackIdToTrackNode: Map<number, TrackNode>,
+  parentId: number | undefined,
+  upid: number | undefined,
+  utid: number | undefined,
+  hasChildren: number,
+): TrackNode {
+  if (parentId !== undefined) {
+    return assertExists(trackIdToTrackNode.get(parentId));
   }
+  if (utid !== undefined) {
+    return assertExists(processGroupsPlugin.getGroupForThread(utid));
+  }
+  if (upid !== undefined) {
+    return assertExists(processGroupsPlugin.getGroupForProcess(upid));
+  }
+  if (hasChildren) {
+    return ctx.workspace.tracks;
+  }
+  const id = `/track_event_root`;
+  let node = ctx.workspace.getTrackById(id);
+  if (node === undefined) {
+    node = new TrackNode({
+      id,
+      title: 'Global Track Events',
+      isSummary: true,
+    });
+    ctx.workspace.addChildInOrder(node);
+  }
+  return node;
 }

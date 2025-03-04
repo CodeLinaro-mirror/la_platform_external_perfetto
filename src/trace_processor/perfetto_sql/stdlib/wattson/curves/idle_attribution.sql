@@ -102,13 +102,7 @@ WITH
       min(ts) + dur AS next_ts
     FROM _ii_idle_threads
     WHERE
-      NOT utid IN (
-        SELECT
-          utid
-        FROM thread
-        WHERE
-          is_idle
-      )
+      utid != 0
     GROUP BY
       idle_group
   ),

@@ -20,7 +20,6 @@ source_set("grammar") {
   sources = [
     "perfettosql_grammar.c",
     "perfettosql_grammar.h",
-    "perfettosql_grammar_interface.h",
     "perfettosql_keywordhash.h",
     "perfettosql_keywordhash_helper.h",
   ]

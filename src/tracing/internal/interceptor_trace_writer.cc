@@ -16,18 +16,7 @@
 
 #include "perfetto/tracing/internal/interceptor_trace_writer.h"
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <utility>
-
 #include "perfetto/ext/tracing/core/trace_writer.h"
-#include "perfetto/protozero/field.h"
-#include "perfetto/protozero/message_handle.h"
-#include "perfetto/tracing/interceptor.h"
-#include "perfetto/tracing/internal/data_source_internal.h"
 
 namespace perfetto {
 namespace internal {
@@ -90,10 +79,6 @@ void InterceptorTraceWriter::FinishTracePacket() {}
 
 uint64_t InterceptorTraceWriter::written() const {
   return bytes_written_;
-}
-
-uint64_t InterceptorTraceWriter::drop_count() const {
-  return 0;
 }
 
 }  // namespace internal

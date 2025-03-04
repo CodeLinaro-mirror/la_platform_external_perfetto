@@ -372,7 +372,7 @@ class OverviewDataLoader {
             where
               ts >= ${start} and
               ts < ${end} and
-              not utid in (select utid from thread where is_idle)
+              utid != 0
             group by cpu
             order by cpu
           `);

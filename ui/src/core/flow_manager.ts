@@ -17,7 +17,7 @@ import {featureFlags} from './feature_flags';
 import {FlowDirection, Flow} from './flow_types';
 import {asSliceSqlId} from '../components/sql_utils/core_types';
 import {LONG, NUM, STR_NULL} from '../trace_processor/query_result';
-import {Track, TrackManager} from '../public/track';
+import {TrackDescriptor, TrackManager} from '../public/track';
 import {AreaSelection, Selection, SelectionManager} from '../public/selection';
 import {Engine} from '../trace_processor/engine';
 
@@ -206,12 +206,12 @@ export class FlowManager {
     const trackUriToInfo = new Map<string, null | Info>();
     const trackIdToInfo = new Map<number, null | Info>();
 
-    const trackIdToTrack = new Map<number, Track>();
+    const trackIdToTrack = new Map<number, TrackDescriptor>();
     this.trackMgr
       .getAllTracks()
-      .forEach((track) =>
-        track.tags?.trackIds?.forEach((trackId) =>
-          trackIdToTrack.set(trackId, track),
+      .forEach((trackDescriptor) =>
+        trackDescriptor.tags?.trackIds?.forEach((trackId) =>
+          trackIdToTrack.set(trackId, trackDescriptor),
         ),
       );
 
@@ -221,13 +221,13 @@ export class FlowManager {
         return info;
       }
 
-      const track = trackIdToTrack.get(trackId);
-      if (track === undefined) {
+      const trackDescriptor = trackIdToTrack.get(trackId);
+      if (trackDescriptor === undefined) {
         trackIdToInfo.set(trackId, null);
         return null;
       }
 
-      info = trackUriToInfo.get(track.uri);
+      info = trackUriToInfo.get(trackDescriptor.uri);
       if (info !== undefined) {
         return info;
       }
@@ -237,9 +237,9 @@ export class FlowManager {
       // anything if there is only one TP track in this async track. In
       // that case experimental_slice_layout is just an expensive way
       // to find out depth === layout_depth.
-      const trackIds = track?.tags?.trackIds;
+      const trackIds = trackDescriptor?.tags?.trackIds;
       if (trackIds === undefined || trackIds.length <= 1) {
-        trackUriToInfo.set(track.uri, null);
+        trackUriToInfo.set(trackDescriptor.uri, null);
         trackIdToInfo.set(trackId, null);
         return null;
       }
@@ -250,7 +250,7 @@ export class FlowManager {
         nodes: [],
       };
 
-      trackUriToInfo.set(track.uri, newInfo);
+      trackUriToInfo.set(trackDescriptor.uri, newInfo);
       trackIdToInfo.set(trackId, newInfo);
 
       return newInfo;

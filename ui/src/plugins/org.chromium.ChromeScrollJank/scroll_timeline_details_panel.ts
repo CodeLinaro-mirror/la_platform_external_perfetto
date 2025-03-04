@@ -32,24 +32,26 @@ import {DurationWidget} from '../../components/widgets/duration';
 import {fromSqlBool, renderSliceRef, renderSqlRef} from './utils';
 import SqlModulesPlugin from '../dev.perfetto.SqlModules';
 import {
-  TableColumn,
-  TableManager,
-} from '../../components/widgets/sql/table/table_column';
-import {renderStandardCell} from '../../components/widgets/sql/table/render_cell_utils';
-import {ScrollTimelineModel} from './scroll_timeline_model';
+  FromSimpleColumn,
+  LegacyTableColumn,
+  LegacyTableManager,
+} from '../../components/widgets/sql/legacy_table/table_column';
 import {
-  DurationColumn,
-  StandardColumn,
-  TimestampColumn,
-} from '../../components/widgets/sql/table/columns';
+  createDurationColumn,
+  createStandardColumn,
+  createTimestampColumn,
+  SimpleColumn,
+} from '../../components/widgets/sql/table/table';
+import {renderStandardCell} from '../../components/widgets/sql/legacy_table/render_cell_utils';
+import {ScrollTimelineModel} from './scroll_timeline_model';
 
 function createPluginSliceIdColumn(
   trace: Trace,
   trackUri: string,
   name: string,
-): TableColumn {
-  const col = new StandardColumn(name);
-  col.renderCell = (value: SqlValue, tableManager: TableManager) => {
+): SimpleColumn {
+  const col = createStandardColumn(name);
+  col.renderCell = (value: SqlValue, tableManager: LegacyTableManager) => {
     if (value === null || typeof value !== 'bigint') {
       return renderStandardCell(value, name, tableManager);
     }
@@ -66,14 +68,14 @@ function createPluginSliceIdColumn(
 function createScrollTimelineTableColumns(
   trace: Trace,
   trackUri: string,
-): TableColumn[] {
+): LegacyTableColumn[] {
   return [
-    createPluginSliceIdColumn(trace, trackUri, 'id'),
-    new StandardColumn('scroll_update_id'),
-    new TimestampColumn('ts'),
-    new DurationColumn('dur'),
-    new StandardColumn('name'),
-    new StandardColumn('classification'),
+    new FromSimpleColumn(createPluginSliceIdColumn(trace, trackUri, 'id')),
+    new FromSimpleColumn(createStandardColumn('scroll_update_id')),
+    new FromSimpleColumn(createTimestampColumn('ts')),
+    new FromSimpleColumn(createDurationColumn('dur')),
+    new FromSimpleColumn(createStandardColumn('name')),
+    new FromSimpleColumn(createStandardColumn('classification')),
   ];
 }
 

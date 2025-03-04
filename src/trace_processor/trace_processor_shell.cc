@@ -708,9 +708,7 @@ struct CommandLineOptions {
   std::string sql_module_path;
   std::vector<std::string> override_sql_module_paths;
 
-  bool summary = false;
-  std::string summary_metrics_v2;
-  std::string summary_metadata_query;
+  std::string compute_metrics_v2;
   std::vector<std::string> summary_specs;
   std::string summary_output;
 
@@ -753,7 +751,7 @@ Behavioural:
  --stdiod                             Enables the stdio RPC server.
  -i, --interactive                    Starts interactive mode even after
                                       executing some other commands (-q, -Q,
-                                      --run-metrics, --summary).
+                                      --run-metrics, --compute-metrics-v2).
 
 Parsing:
  --full-sort                          Forces the trace processor into performing
@@ -783,25 +781,15 @@ PerfettoSQL:
                                       specify the package name.
 
 Trace summarization:
-  --summary                           Enables the trace summarization features of
-                                      trace processor. Required for any flags
-                                      starting with --summary-* to be meaningful.
-                                      --summary-format can be used to control the
-                                      output format.
-  --summary-metrics-v2 ID1,ID2,ID3    Specifies that the given v2 metrics (as
-                                      defined by a comma separated set of ids)
-                                      should be computed and returned as part of
-                                      the trace summary. The spec for every metric
-                                      must exist in one of the files passed to
-                                      --summary-spec.
-  --summary-metadata-query ID         Specifies that the given query id should be
-                                      used to populate the `metadata` field of the
-                                      trace summary. The spec for the query must
+  --compute-metrics-v2 ID1,ID2,ID3    Computes all v2 trace-based metrics
+                                      with the given, comma separated list of
+                                      metric ids. The spec for every metric must
                                       exist in one of the files passed to
-                                      --summary-spec.
+                                      --summary-spec. --summary-format can be
+                                      used to control the output format.
   --summary-spec SUMMARY_PATH         Parses the spec at the specified path and
-                                      makes it available to all summarization
-                                      operators (--summary-metrics-v2). Spec
+                                      makes it available to other summarization
+                                      operators (--compute-metrics-v2). Spec
                                       files must be instances of the
                                       perfetto.protos.TraceSummarySpec proto.
                                       If the file extension is `.textproto` then
@@ -902,9 +890,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
     OPT_ADD_SQL_MODULE,
     OPT_OVERRIDE_SQL_MODULE,
 
-    OPT_SUMMARY,
-    OPT_SUMMARY_METRICS_V2,
-    OPT_SUMMARY_METADATA_QUERY,
+    OPT_COMPUTE_METRICS_V2,
     OPT_SUMMARY_SPEC,
     OPT_SUMMARY_FORMAT,
 
@@ -943,11 +929,8 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       {"override-sql-module", required_argument, nullptr,
        OPT_OVERRIDE_SQL_MODULE},
 
-      {"summary", no_argument, nullptr, OPT_SUMMARY},
-      {"summary-metrics-v2", required_argument, nullptr,
-       OPT_SUMMARY_METRICS_V2},
-      {"summary-metadata-query", required_argument, nullptr,
-       OPT_SUMMARY_METADATA_QUERY},
+      {"compute-metrics-v2", required_argument, nullptr,
+       OPT_COMPUTE_METRICS_V2},
       {"summary-spec", required_argument, nullptr, OPT_SUMMARY_SPEC},
       {"summary-format", required_argument, nullptr, OPT_SUMMARY_FORMAT},
 
@@ -1133,18 +1116,8 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
       continue;
     }
 
-    if (option == OPT_SUMMARY) {
-      command_line_options.summary = true;
-      continue;
-    }
-
-    if (option == OPT_SUMMARY_METRICS_V2) {
-      command_line_options.summary_metrics_v2 = optarg;
-      continue;
-    }
-
-    if (option == OPT_SUMMARY_METADATA_QUERY) {
-      command_line_options.summary_metadata_query = optarg;
+    if (option == OPT_COMPUTE_METRICS_V2) {
+      command_line_options.compute_metrics_v2 = optarg;
       continue;
     }
 
@@ -1167,7 +1140,7 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
                                command_line_options.query_file_path.empty() &&
                                command_line_options.query_string.empty() &&
                                command_line_options.export_file_path.empty() &&
-                               !command_line_options.summary);
+                               command_line_options.compute_metrics_v2.empty());
 
   // Only allow non-interactive queries to emit perf data.
   if (!command_line_options.perf_file_path.empty() &&
@@ -1176,9 +1149,9 @@ CommandLineOptions ParseCommandLineOptions(int argc, char** argv) {
     exit(1);
   }
 
-  if (command_line_options.summary &&
+  if (!command_line_options.compute_metrics_v2.empty() &&
       !command_line_options.metric_v1_names.empty()) {
-    PERFETTO_ELOG("Cannot specify both metrics v1 and trace summarization");
+    PERFETTO_ELOG("Cannot specify both metrics v1 and v2 computation");
     exit(1);
   }
 
@@ -1760,13 +1733,13 @@ TraceSummarySpecBytes::Format GuessSummarySpecFormat(
   return TraceSummarySpecBytes::Format::kBinaryProto;
 }
 
-TraceSummaryOutputSpec::Format GetSummaryOutputFormat(
+TraceSummaryOutputFormat GetSummaryOutputFormat(
     const CommandLineOptions& options) {
   if (options.summary_output == "text" || options.summary_output == "") {
-    return TraceSummaryOutputSpec::Format::kTextProto;
+    return TraceSummaryOutputFormat::kTextProto;
   }
   if (options.summary_output == "binary") {
-    return TraceSummaryOutputSpec::Format::kBinaryProto;
+    return TraceSummaryOutputFormat::kBinaryProto;
   }
   PERFETTO_ELOG("Unknown summary output format %s",
                 options.summary_output.c_str());
@@ -1869,8 +1842,8 @@ base::Status TraceProcessorMain(int argc, char** argv) {
     RETURN_IF_ERROR(RunQueriesFromFile(options.pre_metrics_v1_path, false));
   }
 
-  // Trace summarization
-  if (options.summary) {
+  // v2 metrics.
+  if (!options.compute_metrics_v2.empty()) {
     PERFETTO_CHECK(options.metric_v1_names.empty());
 
     std::vector<std::string> spec_content;
@@ -1893,20 +1866,10 @@ base::Status TraceProcessorMain(int argc, char** argv) {
       });
     }
 
-    TraceSummaryComputationSpec computation_config;
-    computation_config.v2_metric_ids =
-        base::SplitString(options.summary_metrics_v2, ",");
-    computation_config.metadata_query_id =
-        options.summary_metadata_query.empty()
-            ? std::nullopt
-            : std::make_optional(options.summary_metadata_query);
-
-    TraceSummaryOutputSpec output_spec;
-    output_spec.format = GetSummaryOutputFormat(options);
-
     std::vector<uint8_t> output;
-    RETURN_IF_ERROR(
-        g_tp->Summarize(computation_config, specs, &output, output_spec));
+    RETURN_IF_ERROR(g_tp->ComputeV2Metrics(
+        specs, &output, GetSummaryOutputFormat(options),
+        base::SplitString(options.compute_metrics_v2, ",")));
     if (options.query_file_path.empty()) {
       fwrite(output.data(), sizeof(char), output.size(), stdout);
     }
@@ -1915,7 +1878,7 @@ base::Status TraceProcessorMain(int argc, char** argv) {
   // v1 metrics.
   std::vector<MetricNameAndPath> metrics;
   if (!options.metric_v1_names.empty()) {
-    PERFETTO_CHECK(!options.summary);
+    PERFETTO_CHECK(options.compute_metrics_v2.empty());
     RETURN_IF_ERROR(LoadMetrics(options.metric_v1_names, pool, metrics));
   }
 

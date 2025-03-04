@@ -16,97 +16,84 @@ import m from 'mithril';
 import SqlModulesPlugin from '../dev.perfetto.SqlModules';
 
 import {PageWithTraceAttrs} from '../../public/page';
+import {SegmentedButtons} from '../../widgets/segmented_buttons';
 import {DataVisualiser} from './data_visualiser/data_visualiser';
 import {QueryBuilder} from './query_builder/builder';
 import {Button} from '../../widgets/button';
 import {Intent} from '../../widgets/common';
 import {QueryNode} from './query_node';
-import {MenuItem} from '../../widgets/menu';
-import {Icons} from '../../base/semantic_icons';
-import {VisViewSource} from './data_visualiser/view_source';
 
-export interface ExplorePageState {
-  rootNode?: QueryNode; // Root Query Node
-  selectedNode?: QueryNode; // Selected Query Node on which to perform actions
-  activeViewSource?: VisViewSource; // View Source of activeQueryNode
-  mode: ExplorePageModes;
+export interface ExploreTableState {
+  rootNode?: QueryNode;
+  selectedNode?: QueryNode;
 }
 
-export enum ExplorePageModes {
+interface ExplorePageAttrs extends PageWithTraceAttrs {
+  readonly sqlModulesPlugin: SqlModulesPlugin;
+  readonly state: ExploreTableState;
+}
+
+enum ExplorePageModes {
   QUERY_BUILDER,
   DATA_VISUALISER,
 }
 
-export const ExplorePageModeToLabel: Record<ExplorePageModes, string> = {
+const ExplorePageModeToLabel: Record<ExplorePageModes, string> = {
   [ExplorePageModes.QUERY_BUILDER]: 'Query Builder',
-  [ExplorePageModes.DATA_VISUALISER]: 'Visualise Data',
+  [ExplorePageModes.DATA_VISUALISER]: 'Data Visualiser',
 };
 
-interface ExplorePageAttrs extends PageWithTraceAttrs {
-  readonly sqlModulesPlugin: SqlModulesPlugin;
-  readonly state: ExplorePageState;
-}
-
 export class ExplorePage implements m.ClassComponent<ExplorePageAttrs> {
-  renderVisualiseDataMenuItems(node: QueryNode, state: ExplorePageState) {
-    return m(MenuItem, {
-      label: 'Visualise Data',
-      icon: Icons.Chart,
-      onclick: () => {
-        state.selectedNode = node;
-        state.mode = ExplorePageModes.DATA_VISUALISER;
-      },
-    });
-  }
+  private selectedMode = ExplorePageModes.QUERY_BUILDER;
 
   view({attrs}: m.CVnode<ExplorePageAttrs>) {
-    const {trace, state} = attrs;
+    const {trace} = attrs;
 
     return m(
       '.page.explore-page',
       m(
         '.explore-page__header',
-        m('h1', `Explore Page: ${ExplorePageModeToLabel[state.mode]}`),
+        'Exploration Mode: ',
+        m(SegmentedButtons, {
+          options: [
+            {label: ExplorePageModeToLabel[ExplorePageModes.QUERY_BUILDER]},
+            {label: ExplorePageModeToLabel[ExplorePageModes.DATA_VISUALISER]},
+          ],
+          selectedOption: this.selectedMode,
+          onOptionSelected: (i) => (this.selectedMode = i),
+        }),
         m('span', {style: {flexGrow: 1}}),
-        state.mode === ExplorePageModes.QUERY_BUILDER
-          ? m(Button, {
-              label: 'Clear All Query Nodes',
-              intent: Intent.Primary,
-              onclick: () => {
-                state.rootNode = undefined;
-                state.selectedNode = undefined;
-              },
-            })
-          : m(Button, {
-              label: 'Back to Query Builder',
-              intent: Intent.Primary,
-              onclick: () => {
-                state.mode = ExplorePageModes.QUERY_BUILDER;
-              },
-            }),
+        m(Button, {
+          label: 'Reset',
+          intent: Intent.Primary,
+          onclick: () => {
+            attrs.state.rootNode = undefined;
+            attrs.state.selectedNode = undefined;
+          },
+        }),
       ),
 
-      state.mode === ExplorePageModes.QUERY_BUILDER &&
+      this.selectedMode === ExplorePageModes.QUERY_BUILDER &&
         m(QueryBuilder, {
-          trace,
+          trace: attrs.trace,
           sqlModules: attrs.sqlModulesPlugin.getSqlModules(),
           onRootNodeCreated(arg) {
-            state.rootNode = arg;
-            state.selectedNode = arg;
+            attrs.state.rootNode = arg;
+            attrs.state.selectedNode = arg;
           },
           onNodeSelected(arg) {
-            state.selectedNode = arg;
+            attrs.state.selectedNode = arg;
           },
-          visualiseDataMenuItems: (node: QueryNode) =>
-            this.renderVisualiseDataMenuItems(node, state),
-          rootNode: state.rootNode,
-          selectedNode: state.selectedNode,
+          rootNode: attrs.state.rootNode,
+          selectedNode: attrs.state.selectedNode,
         }),
-      state.mode === ExplorePageModes.DATA_VISUALISER &&
-        state.rootNode &&
+      this.selectedMode === ExplorePageModes.DATA_VISUALISER &&
+        attrs.state.rootNode &&
         m(DataVisualiser, {
           trace,
-          state,
+          state: {
+            queryNode: attrs.state.selectedNode ?? attrs.state.rootNode,
+          },
         }),
     );
   }

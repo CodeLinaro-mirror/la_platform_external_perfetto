@@ -87,7 +87,7 @@ WITH
       cluster_type = $cluster_type
   ),
   -- Filter sched events corresponding to running tasks.
-  -- thread(s) with is_idle = 1 are the swapper threads / idle tasks.
+  -- utid=0 is the swapper thread / idle task.
   tasks AS (
     SELECT
       ts,
@@ -98,14 +98,7 @@ WITH
         SELECT
           ucpu
         FROM cluster
-      )
-      AND NOT utid IN (
-        SELECT
-          utid
-        FROM thread
-        WHERE
-          is_idle
-      )
+      ) AND utid != 0
   )
 SELECT
   ts,

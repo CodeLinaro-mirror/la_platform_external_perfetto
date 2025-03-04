@@ -44,13 +44,14 @@ export class DurationWidget implements m.ClassComponent<DurationWidgetAttrs> {
   view({attrs}: m.Vnode<DurationWidgetAttrs>) {
     const {dur} = attrs;
 
-    const value: m.Children =
-      dur === -1n ? m('i', '(Did not end)') : formatDuration(this.trace, dur);
+    if (dur === -1n) {
+      return '(Did not end)';
+    }
 
     return m(
       PopupMenu,
       {
-        trigger: m(Anchor, value),
+        trigger: m(Anchor, formatDuration(this.trace, dur)),
       },
       m(MenuItem, {
         icon: Icons.Copy,

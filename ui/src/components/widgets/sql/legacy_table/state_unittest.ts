@@ -13,14 +13,14 @@
 // limitations under the License.
 
 import {createFakeTraceImpl} from '../../../../core/fake_trace_impl';
-import {tableColumnId} from './table_column';
+import {FromSimpleColumn, tableColumnId} from './table_column';
 import {SqlTableState} from './state';
 import {SqlTableDescription} from './table_description';
-import {StandardColumn, TimestampColumn} from './columns';
+import {createStandardColumn, createTimestampColumn} from '../table/table';
 
-const idColumn = new StandardColumn('id');
-const nameColumn = new StandardColumn('name');
-const tsColumn = new TimestampColumn('ts');
+const idColumn = new FromSimpleColumn(createStandardColumn('id'));
+const nameColumn = new FromSimpleColumn(createStandardColumn('name'));
+const tsColumn = new FromSimpleColumn(createTimestampColumn('ts'));
 
 const table: SqlTableDescription = {
   name: 'table',

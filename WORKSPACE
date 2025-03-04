@@ -30,8 +30,6 @@ new_local_repository(
 android_sdk_repository(
     name = "androidsdk",
     path = "buildtools/android_sdk",
-    api_level = 35,
-    build_tools_version = "35.0.1",
 )
 
 # We can't setup 'rules_jvm_external' in 'MODULE.bazel' because of bug:

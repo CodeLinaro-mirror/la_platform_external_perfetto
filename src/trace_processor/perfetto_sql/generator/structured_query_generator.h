@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "perfetto/base/status.h"
@@ -37,12 +36,12 @@ using StructuredQuery = protos::pbzero::PerfettoSqlStructuredQuery;
 // query with support for shared queries.
 class StructuredQueryGenerator {
  public:
-  struct Query {
+  struct SharedQuery {
     std::string id;
     std::string table_name;
     std::string sql;
   };
-  struct QueryProto {
+  struct SharedQueryProto {
     std::unique_ptr<uint8_t[]> data;
     size_t size;
   };
@@ -55,15 +54,9 @@ class StructuredQueryGenerator {
   // as a common table expression (CTE).
   base::StatusOr<std::string> Generate(const uint8_t* data, size_t size);
 
-  // Generates an SQL query for a query with the given id. The query should have
-  // been added with `AddQuery`
-  //
-  // See `Generate` above for expectations of this function
-  base::StatusOr<std::string> GenerateById(const std::string& id);
-
-  // Adds a query to the internal state to reference in all future calls to
-  // `Generate*`.
-  base::Status AddQuery(const uint8_t* data, size_t size);
+  // Adds a shared query to the internal state to reference in all future
+  // calls to `Generate`.
+  base::Status AddSharedQuery(const uint8_t* data, size_t size);
 
   // Computes all the PerfettoSQL modules referenced by any past calls to
   // `Generate` and `AddSharedQuery`.
@@ -79,11 +72,13 @@ class StructuredQueryGenerator {
 
   // Returns a summary of all the shared queries which have been referenced
   // by any past calls to `Generate`.
-  std::vector<Query> referenced_queries() const { return referenced_queries_; }
+  std::vector<SharedQuery> referenced_shared_queries() const {
+    return referenced_shared_queries_;
+  }
 
  private:
-  base::FlatHashMap<std::string, QueryProto> query_protos_;
-  std::vector<Query> referenced_queries_;
+  base::FlatHashMap<std::string, SharedQueryProto> shared_queries_protos_;
+  std::vector<SharedQuery> referenced_shared_queries_;
 
   // We don't have FlatHashSet so just (ab)use FlatHashMap by storing a noop
   // value.

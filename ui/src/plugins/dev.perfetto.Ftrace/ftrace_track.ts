@@ -19,7 +19,7 @@ import {Store, TimelineFetcher} from '../../components/tracks/track_helper';
 import {checkerboardExcept} from '../../components/checkerboard';
 import {TrackData} from '../../components/tracks/track_data';
 import {Engine} from '../../trace_processor/engine';
-import {TrackRenderer} from '../../public/track';
+import {Track} from '../../public/track';
 import {LONG, NUM, STR} from '../../trace_processor/query_result';
 import {FtraceFilter} from './common';
 import {Monitor} from '../../base/monitor';
@@ -42,7 +42,7 @@ export interface Config {
   cpu?: number;
 }
 
-export class FtraceRawTrack implements TrackRenderer {
+export class FtraceRawTrack implements Track {
   private fetcher = new TimelineFetcher(this.onBoundsChange.bind(this));
   private engine: Engine;
   private ucpu: number;

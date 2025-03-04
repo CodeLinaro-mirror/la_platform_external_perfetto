@@ -46,11 +46,7 @@ SELECT
   *
 FROM _cpu_avg_utilization_per_period!(
   $interval,
-  (SELECT * FROM sched WHERE NOT utid IN
-    (
-      SELECT utid FROM thread WHERE is_idle
-    )
-  )
+  (SELECT * FROM sched WHERE utid != 0)
 );
 
 -- Table with system utilization per second.

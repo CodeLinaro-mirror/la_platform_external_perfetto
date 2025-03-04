@@ -83,7 +83,6 @@ class QueryInput implements m.ClassComponent<QueryInputAttrs> {
 
   view({attrs}: m.CVnode<QueryInputAttrs>) {
     return m(Editor, {
-      language: 'perfetto-sql',
       generation: state.generation,
       initialText: state.enteredText,
 

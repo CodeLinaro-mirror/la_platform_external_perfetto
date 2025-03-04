@@ -77,20 +77,14 @@ CREATE PERFETTO TABLE sched_active_cpu_count (
 ) AS
 WITH
   -- Filter sched events corresponding to running tasks.
-  -- thread(s) with is_idle = 1 are the swapper threads / idle tasks.
+  -- utid=0 is the swapper thread / idle task.
   tasks AS (
     SELECT
       ts,
       dur
     FROM sched
     WHERE
-      NOT utid IN (
-        SELECT
-          utid
-        FROM thread
-        WHERE
-          is_idle
-      )
+      utid != 0
   )
 SELECT
   ts,

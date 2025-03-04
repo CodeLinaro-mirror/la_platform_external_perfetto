@@ -15,16 +15,18 @@
 import {SqlValue} from '../../../../trace_processor/query_result';
 import {renderStandardCell} from './render_cell_utils';
 import {SqlColumn} from './sql_column';
-import {TableColumn, TableManager} from './table_column';
+import {LegacyTableColumn, LegacyTableManager} from './table_column';
 
-export class SimpleColumn implements TableColumn {
-  constructor(public readonly column: SqlColumn) {}
+export class SimpleColumn extends LegacyTableColumn {
+  constructor(private column: SqlColumn) {
+    super();
+  }
 
-  primaryColumn(): SqlColumn {
+  override primaryColumn(): SqlColumn {
     return this.column;
   }
 
-  renderCell(value: SqlValue, tableManager: TableManager | undefined) {
+  override renderCell(value: SqlValue, tableManager: LegacyTableManager) {
     return renderStandardCell(value, this.column, tableManager);
   }
 }

@@ -70,15 +70,13 @@ JOIN power_profile ON (
   AND power_profile.freq = cpu_freq_view.freq_khz
   );
 
--- threads with is_idle = 1 are used to mark sched slices where CPU was idle. It
--- doesn't correspond to any real thread.
+-- utid = 0 is a reserved value used to mark sched slices where CPU was idle.
+-- It doesn't correspond to any real thread.
 DROP VIEW IF EXISTS sched_real_threads;
 CREATE PERFETTO VIEW sched_real_threads AS
 SELECT *
 FROM sched
-WHERE NOT utid IN (
-  SELECT utid FROM thread WHERE is_idle
-);
+WHERE utid != 0;
 
 DROP TABLE IF EXISTS power_per_thread;
 CREATE VIRTUAL TABLE power_per_thread

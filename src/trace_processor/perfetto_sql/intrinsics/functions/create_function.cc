@@ -23,12 +23,15 @@
 #include "perfetto/trace_processor/basic_types.h"
 #include "src/trace_processor/perfetto_sql/engine/perfetto_sql_engine.h"
 #include "src/trace_processor/perfetto_sql/parser/function_util.h"
+#include "src/trace_processor/sqlite/scoped_db.h"
 #include "src/trace_processor/sqlite/sql_source.h"
+#include "src/trace_processor/sqlite/sqlite_engine.h"
 #include "src/trace_processor/sqlite/sqlite_utils.h"
-#include "src/trace_processor/util/sql_argument.h"
+#include "src/trace_processor/tp_metatrace.h"
 #include "src/trace_processor/util/status_macros.h"
 
-namespace perfetto::trace_processor {
+namespace perfetto {
+namespace trace_processor {
 
 base::Status CreateFunction::Run(PerfettoSqlEngine* engine,
                                  size_t argc,
@@ -72,13 +75,8 @@ base::Status CreateFunction::Run(PerfettoSqlEngine* engine,
 
   FunctionPrototype prototype;
   RETURN_IF_ERROR(ParsePrototype(base::StringView(prototype_str), prototype));
-  auto type = sql_argument::ParseType(base::StringView(return_type_str));
-  if (!type) {
-    return base::ErrStatus("CREATE_FUNCTION: unknown return type %s",
-                           return_type_str.c_str());
-  }
   return engine->RegisterRuntimeFunction(
-      true /* replace */, prototype, *type,
+      true /* replace */, prototype, return_type_str,
       SqlSource::FromTraceProcessorImplementation(std::move(sql_defn_str)));
 }
 
@@ -95,4 +93,5 @@ base::Status ExperimentalMemoize::Run(PerfettoSqlEngine* engine,
   return engine->EnableSqlFunctionMemoization(*function_name);
 }
 
-}  // namespace perfetto::trace_processor
+}  // namespace trace_processor
+}  // namespace perfetto

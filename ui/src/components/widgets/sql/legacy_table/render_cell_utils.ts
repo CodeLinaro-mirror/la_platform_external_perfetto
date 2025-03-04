@@ -22,7 +22,7 @@ import {Icons} from '../../../../base/semantic_icons';
 import {copyToClipboard} from '../../../../base/clipboard';
 import {sqlValueToReadableString} from '../../../../trace_processor/sql_utils';
 import {Anchor} from '../../../../widgets/anchor';
-import {TableManager} from './table_column';
+import {LegacyTableManager} from './table_column';
 
 export interface LegacySqlTableFilterOp {
   op: string; // string representation of the operation (to be injected to SQL)
@@ -91,7 +91,7 @@ function filterOptionMenuItem(
   label: string,
   column: SqlColumn,
   filterOp: (cols: string[]) => string,
-  tableManager: TableManager,
+  tableManager: LegacyTableManager,
 ): m.Child {
   return m(MenuItem, {
     label,
@@ -105,7 +105,7 @@ function filterOptionMenuItem(
 export function getStandardFilters(
   value: SqlValue,
   c: SqlColumn,
-  tableManager: TableManager,
+  tableManager: LegacyTableManager,
 ): m.Child[] {
   if (value === null) {
     return NULL_FILTER_OPTIONS.map((label) =>
@@ -156,7 +156,7 @@ function copyMenuItem(label: string, value: string): m.Child {
 export function getStandardContextMenuItems(
   value: SqlValue,
   column: SqlColumn,
-  tableManager: TableManager,
+  tableManager: LegacyTableManager,
 ): m.Child[] {
   const result: m.Child[] = [];
 
@@ -184,11 +184,8 @@ export function displayValue(value: SqlValue): m.Child {
 export function renderStandardCell(
   value: SqlValue,
   column: SqlColumn,
-  tableManager: TableManager | undefined,
+  tableManager: LegacyTableManager,
 ): m.Children {
-  if (tableManager === undefined) {
-    return displayValue(value);
-  }
   const contextMenuItems: m.Child[] = getStandardContextMenuItems(
     value,
     column,

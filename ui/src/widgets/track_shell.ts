@@ -106,7 +106,7 @@ export interface TrackShellAttrs extends HTMLAttrs {
   readonly lite?: boolean;
 
   // Called when the track is expanded or collapsed (when the node is clicked).
-  onCollapsedChanged?(collapsed: boolean): void;
+  onToggleCollapsed?(): void;
 
   // Mouse events within the track content element.
   onTrackContentMouseMove?(pos: Point2D, contentSize: Bounds2D): void;
@@ -123,7 +123,6 @@ export interface TrackShellAttrs extends HTMLAttrs {
 export class TrackShell implements m.ClassComponent<TrackShellAttrs> {
   private mouseDownPos?: Vector2D;
   private selectionOccurred = false;
-  private scrollIntoView = false;
 
   view(vnode: m.CVnode<TrackShellAttrs>) {
     const {attrs} = vnode;
@@ -176,13 +175,6 @@ export class TrackShell implements m.ClassComponent<TrackShellAttrs> {
     }
   }
 
-  onupdate({dom}: m.VnodeDOM<TrackShellAttrs, this>) {
-    if (this.scrollIntoView) {
-      dom.scrollIntoView({behavior: 'instant', block: 'nearest'});
-      this.scrollIntoView = false;
-    }
-  }
-
   private renderShell(attrs: TrackShellAttrs): m.Children {
     const {
       id,
@@ -222,10 +214,7 @@ export class TrackShell implements m.ClassComponent<TrackShellAttrs> {
           highlight && 'pf-track__shell--highlight',
         ),
         onclick: () => {
-          collapsible && attrs.onCollapsedChanged?.(!collapsed);
-          if (!collapsed) {
-            this.scrollIntoView = true;
-          }
+          collapsible && attrs.onToggleCollapsed?.();
         },
         draggable: reorderable,
         ondragstart: (e: DragEvent) => {

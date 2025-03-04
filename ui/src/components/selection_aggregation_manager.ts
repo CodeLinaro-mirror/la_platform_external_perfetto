@@ -16,7 +16,7 @@ import {AsyncLimiter} from '../base/async_limiter';
 import {isString} from '../base/object_utils';
 import {AggregateData, Column, ColumnDef, Sorting} from '../public/aggregation';
 import {AreaSelection, AreaSelectionAggregator} from '../public/selection';
-import {Track} from '../public/track';
+import {TrackDescriptor} from '../public/track';
 import {Dataset, UnionDataset} from '../trace_processor/dataset';
 import {Engine} from '../trace_processor/engine';
 import {NUM} from '../trace_processor/query_result';
@@ -167,7 +167,7 @@ export class SelectionAggregationManager {
 
   private createDatasetForAggregator(
     aggr: AreaSelectionAggregator,
-    tracks: ReadonlyArray<Track>,
+    tracks: ReadonlyArray<TrackDescriptor>,
   ): Dataset | undefined {
     const filteredDatasets = tracks
       .filter(

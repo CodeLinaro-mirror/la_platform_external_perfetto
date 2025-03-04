@@ -231,9 +231,4 @@ export const SLICE_TRACK_SCHEMAS: ReadonlyArray<SliceTrackTypeSchema> = [
     topLevelGroup: 'THREAD',
     group: undefined,
   },
-  {
-    type: 'thread_funcgraph',
-    topLevelGroup: 'THREAD',
-    group: undefined,
-  },
 ];

@@ -25,7 +25,8 @@
 #include "perfetto/ext/base/string_view.h"
 #include "src/trace_processor/util/sql_argument.h"
 
-namespace perfetto::trace_processor {
+namespace perfetto {
+namespace trace_processor {
 
 struct FunctionPrototype {
   std::string function_name;
@@ -60,6 +61,7 @@ base::Status MaybeBindIntArgument(sqlite3_stmt*,
                                   const sql_argument::ArgumentDefinition&,
                                   int64_t);
 
-}  // namespace perfetto::trace_processor
+}  // namespace trace_processor
+}  // namespace perfetto
 
 #endif  // SRC_TRACE_PROCESSOR_PERFETTO_SQL_PARSER_FUNCTION_UTIL_H_

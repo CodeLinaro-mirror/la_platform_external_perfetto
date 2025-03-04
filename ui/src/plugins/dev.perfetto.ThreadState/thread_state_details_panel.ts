@@ -36,6 +36,7 @@ import {
 } from '../../components/sql_utils/thread';
 import {ThreadStateRef} from '../../components/widgets/thread_state';
 import {
+  CRITICAL_PATH_CMD,
   CRITICAL_PATH_LITE_CMD,
 } from '../../public/exposed_commands';
 import {goToSchedSlice} from '../../components/widgets/sched';
@@ -315,6 +316,17 @@ export class ThreadStateDetailsPanel implements TrackEventDetailsPanel {
           onclick: () => {
             this.trace.commands.runCommand(
               CRITICAL_PATH_LITE_CMD,
+              this.threadState?.thread?.utid,
+            );
+          },
+        }),
+      this.trace.commands.hasCommand(CRITICAL_PATH_CMD) &&
+        m(Button, {
+          label: 'Critical path',
+          intent: Intent.Primary,
+          onclick: () => {
+            this.trace.commands.runCommand(
+              CRITICAL_PATH_CMD,
               this.threadState?.thread?.utid,
             );
           },

@@ -8,5 +8,4 @@ out
 config
 build.js
 eslint.config.js
-**/*.grammar.js
-**/*.grammar.terms.js
+

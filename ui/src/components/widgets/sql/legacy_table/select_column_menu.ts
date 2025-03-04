@@ -13,7 +13,11 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {TableColumn, TableManager, tableColumnId} from './table_column';
+import {
+  LegacyTableColumn,
+  LegacyTableManager,
+  tableColumnId,
+} from './table_column';
 import {MenuDivider, MenuItem} from '../../../../widgets/menu';
 import {raf} from '../../../../core/raf_scheduler';
 import {uuidv4} from '../../../../base/uuid';
@@ -23,37 +27,37 @@ import {Spinner} from '../../../../widgets/spinner';
 
 export type SelectColumnMenuAttrs = {
   columns:
-    | {key: string; column: TableColumn}[]
-    | (() => Promise<{key: string; column: TableColumn}[]>);
-  primaryColumn?: {key: string; column: TableColumn};
+    | {key: string; column: LegacyTableColumn}[]
+    | (() => Promise<{key: string; column: LegacyTableColumn}[]>);
+  primaryColumn?: {key: string; column: LegacyTableColumn};
   filterable?: 'on' | 'off';
-  manager: TableManager;
+  manager: LegacyTableManager;
   existingColumnIds?: Set<string>;
   // Possible actions when a column is selected.
   // - Run a callback.
-  onColumnSelected?: (column: TableColumn) => void;
+  onColumnSelected?: (column: LegacyTableColumn) => void;
   // - Show a nested menu.
-  columnMenu?: (column: TableColumn) => {
+  columnMenu?: (column: LegacyTableColumn) => {
     rightIcon?: string;
     children: m.Children;
   };
 };
 
 type SelectColumnMenuImplAttrs = {
-  columns: {key: string; column: TableColumn}[];
-  manager: TableManager;
+  columns: {key: string; column: LegacyTableColumn}[];
+  manager: LegacyTableManager;
   existingColumnIds?: Set<string>;
   firstButtonUuid: string;
-  onColumnSelected?: (column: TableColumn) => void;
-  columnMenu?: (column: TableColumn) => {
+  onColumnSelected?: (column: LegacyTableColumn) => void;
+  columnMenu?: (column: LegacyTableColumn) => {
     rightIcon?: string;
     children: m.Children;
   };
 };
 
 function onColumnSelectedClickHandler(
-  column: TableColumn,
-  onColumnSelected?: (column: TableColumn) => void,
+  column: LegacyTableColumn,
+  onColumnSelected?: (column: LegacyTableColumn) => void,
 ): undefined | ((event: PointerEvent) => void) {
   if (onColumnSelected === undefined) return undefined;
   return (event: PointerEvent) => {
@@ -133,7 +137,7 @@ export class SelectColumnMenu
   implements m.ClassComponent<SelectColumnMenuAttrs>
 {
   private searchText = '';
-  columns?: {key: string; column: TableColumn}[];
+  columns?: {key: string; column: LegacyTableColumn}[];
 
   constructor(vnode: m.CVnode<SelectColumnMenuAttrs>) {
     if (Array.isArray(vnode.attrs.columns)) {

@@ -87,5 +87,5 @@ SELECT
   name,
   type,
   cast_int!(held_dur) AS held_dur,
-  max(min(held_dur / awake_dur, 1.0), 0.0) AS held_ratio
+  min(held_dur / awake_dur, 1.0) AS held_ratio
 FROM base;

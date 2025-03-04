@@ -24,38 +24,40 @@ import {
   SplitPanel,
   SplitPanelDrawerVisibility,
 } from '../../../widgets/split_panel';
+import {QueryNode} from '../query_node';
 import {VisViewSource} from './view_source';
 import {AddChartMenuItem} from '../../../components/widgets/charts/add_chart_menu';
 import {exists} from '../../../base/utils';
 import {DetailsShell} from '../../../widgets/details_shell';
-import {SqlTable} from '../../../components/widgets/sql/table/table';
+import {SqlTable} from '../../../components/widgets/sql/legacy_table/table';
+import {SqlTableState} from '../../../components/widgets/sql/legacy_table/state';
 import {sqlValueToSqliteString} from '../../../trace_processor/sql_utils';
-import {MAX_DISPLAY_ROWS} from '../../../components/query_table/queries';
-import {Icon} from '../../../widgets/icon';
-import {renderFilters} from '../../../components/widgets/sql/table/filters';
-import {ExplorePageState} from '../explore_page';
+import {renderFilters} from '../../../components/widgets/sql/legacy_table/filters';
+
+export interface DataVisualiserState {
+  queryNode?: QueryNode;
+}
 
 export interface DataVisualiserAttrs {
   trace: Trace;
-  readonly state: ExplorePageState;
+  readonly state: DataVisualiserState;
 }
 
 export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
   private visibility = SplitPanelDrawerVisibility.VISIBLE;
+  private viewSource?: VisViewSource;
 
   constructor({attrs}: m.Vnode<DataVisualiserAttrs>) {
-    if (attrs.state.selectedNode === undefined) return;
+    const queryNode = attrs.state.queryNode;
+    if (queryNode === undefined) return;
 
-    attrs.state.activeViewSource = new VisViewSource(
-      attrs.trace,
-      attrs.state.selectedNode,
-    );
+    this.viewSource = new VisViewSource(attrs.trace, queryNode);
   }
 
-  private renderSqlTable(state: ExplorePageState) {
-    const sqlTableViewState = state.activeViewSource?.visViews?.sqlTableState;
+  private renderSqlTable(sqlTableViewState?: SqlTableState) {
+    const viewSource = this.viewSource;
 
-    if (sqlTableViewState === undefined) return;
+    if (viewSource === undefined || sqlTableViewState === undefined) return;
 
     const range = sqlTableViewState.getDisplayedRange();
     const rowCount = sqlTableViewState.getTotalRowCount();
@@ -88,7 +90,7 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
         state: sqlTableViewState,
         addColumnMenuItems: (_, columnAlias) => {
           const chartAttrs = {
-            data: state.activeViewSource?.data,
+            data: this.viewSource?.data,
             columns: [columnAlias],
           };
 
@@ -99,14 +101,14 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
                 ...chartAttrs,
                 onIntervalSelection: (value) => {
                   const range = `(${value[columnAlias].map(sqlValueToSqliteString).join(', ')})`;
-                  state.activeViewSource?.filters.addFilter({
+                  this.viewSource?.filters.addFilter({
                     op: (cols) => `${cols[0]} IN ${range}`,
                     columns: [columnAlias],
                   });
                 },
                 onPointSelection: (item) => {
                   const value = sqlValueToSqliteString(item.datum[columnAlias]);
-                  state.activeViewSource?.filters.addFilter({
+                  this.viewSource?.filters.addFilter({
                     op: (cols) => `${cols[0]} = ${value}`,
                     columns: [columnAlias],
                   });
@@ -117,7 +119,7 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
                 ...chartAttrs,
                 onIntervalSelection: (value) => {
                   const range = `${value[columnAlias][0]} AND ${value[columnAlias][1]}`;
-                  state.activeViewSource?.filters.addFilter({
+                  this.viewSource?.filters.addFilter({
                     op: (cols) => `${cols[0]} BETWEEN ${range}`,
                     columns: [columnAlias],
                   });
@@ -126,7 +128,7 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
                   const minValue = item.datum[`bin_maxbins_10_${columnAlias}`];
                   const maxValue =
                     item.datum[`bin_maxbins_10_${columnAlias}_end`];
-                  state.activeViewSource?.filters.addFilter({
+                  this.viewSource?.filters.addFilter({
                     op: (cols) =>
                       `${cols[0]} BETWEEN ${minValue} AND ${maxValue}`,
                     columns: [columnAlias],
@@ -134,14 +136,14 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
                 },
               },
             ],
-            addChart: (chart) => state.activeViewSource?.addChart(chart),
+            addChart: (chart) => this.viewSource?.addChart(chart),
           });
         },
       }),
     );
   }
 
-  private renderRemovableChart(chart: ChartAttrs, state: ExplorePageState) {
+  private renderRemovableChart(chart: ChartAttrs) {
     return m(
       '.pf-chart-card',
       {
@@ -151,27 +153,14 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
         className: 'pf-chart-card__button',
         icon: Icons.Close,
         onclick: () => {
-          state.activeViewSource?.removeChart(chart);
+          this.viewSource?.removeChart(chart);
         },
       }),
       m('.pf-chart-card__chart', renderChart(chart)),
     );
   }
 
-  private renderDataWarning() {
-    return m(
-      'span',
-      {style: {display: 'flex', alignItems: 'center'}},
-      m(Icon, {
-        icon: Icons.Warning,
-      }),
-      m('em', `Warning: Chart data is truncated to ${MAX_DISPLAY_ROWS} rows`),
-    );
-  }
-
-  view({attrs}: m.Vnode<DataVisualiserAttrs>) {
-    const {state} = attrs;
-
+  view() {
     return m(
       SplitPanel,
       {
@@ -179,18 +168,16 @@ export class DataVisualiser implements m.ClassComponent<DataVisualiserAttrs> {
         onVisibilityChange: (visibility) => {
           this.visibility = visibility;
         },
-        drawerContent: m(
-          '.pf-chart-container',
-          state.activeViewSource?.data &&
-            state.activeViewSource?.data.length >= MAX_DISPLAY_ROWS &&
-            this.renderDataWarning(),
-          state.activeViewSource?.visViews !== undefined &&
-            Array.from(state.activeViewSource?.visViews.charts.values()).map(
-              (chart) => this.renderRemovableChart(chart, state),
-            ),
-        ),
+        drawerContent:
+          this.viewSource?.visViews &&
+          Array.from(this.viewSource?.visViews.charts.values()).map((chart) => {
+            return this.renderRemovableChart(chart);
+          }),
       },
-      m('.pf-chart-card', this.renderSqlTable(state)),
+      m(
+        '.pf-chart-card',
+        this.renderSqlTable(this.viewSource?.visViews?.sqlTableState),
+      ),
     );
   }
 }

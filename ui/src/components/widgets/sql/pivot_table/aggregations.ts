@@ -14,13 +14,13 @@
 
 import {Row} from '../../../../trace_processor/query_result';
 import {SqlValue} from '../../../../trace_processor/sql_utils';
-import {TableColumn} from '../table/table_column';
+import {LegacyTableColumn} from '../legacy_table/table_column';
 import {aggregationId} from './ids';
 
 // Basic associative aggregation operations which can be pushed down to SQL.
 export type BasicAggregation = {
   op: 'sum' | 'count' | 'min' | 'max';
-  column: TableColumn;
+  column: LegacyTableColumn;
 };
 
 // Higher-level aggregation operations, which are not associative and need
@@ -29,7 +29,7 @@ export type BasicAggregation = {
 export type Aggregation =
   | {
       op: 'average';
-      column: TableColumn;
+      column: LegacyTableColumn;
     }
   | BasicAggregation;
 

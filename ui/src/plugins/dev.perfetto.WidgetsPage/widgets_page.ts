@@ -60,7 +60,6 @@ import {CopyableLink} from '../../widgets/copyable_link';
 import {VirtualOverlayCanvas} from '../../widgets/virtual_overlay_canvas';
 import {SplitPanel} from '../../widgets/split_panel';
 import {TabbedSplitPanel} from '../../widgets/tabbed_split_panel';
-import {parseAndPrintTree} from '../../base/perfetto_sql_lang/language';
 
 const DATA_ENGLISH_LETTER_FREQUENCY = {
   table: [
@@ -1119,13 +1118,7 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
       }),
       m(WidgetShowcase, {
         label: 'Editor',
-        renderWidget: () =>
-          m(Editor, {
-            language: 'perfetto-sql',
-            onUpdate: (text) => {
-              parseAndPrintTree(text);
-            },
-          }),
+        renderWidget: () => m(Editor),
       }),
       m(WidgetShowcase, {
         label: 'VegaView',

@@ -18,7 +18,9 @@
 
 #include "perfetto/ext/base/string_utils.h"
 
-namespace perfetto::trace_processor::sql_argument {
+namespace perfetto {
+namespace trace_processor {
+namespace sql_argument {
 
 bool IsValidName(base::StringView str) {
   if (str.empty()) {
@@ -151,4 +153,6 @@ std::string SerializeArguments(const std::vector<ArgumentDefinition>& args) {
   return serialized;
 }
 
-}  // namespace perfetto::trace_processor::sql_argument
+}  // namespace sql_argument
+}  // namespace trace_processor
+}  // namespace perfetto

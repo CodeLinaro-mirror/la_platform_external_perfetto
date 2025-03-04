@@ -15,12 +15,16 @@
 import {AsyncLimiter} from '../../../../base/async_limiter';
 import {Trace} from '../../../../public/trace';
 import {Row} from '../../../../trace_processor/query_result';
-import {areFiltersEqual, Filter, Filters} from '../table/filters';
-import {buildSqlQuery} from '../table/query_builder';
-import {SimpleColumn} from '../table/simple_column';
-import {SqlColumn, sqlColumnId, SqlExpression} from '../table/sql_column';
-import {TableColumn} from '../table/table_column';
-import {SqlTableDescription} from '../table/table_description';
+import {areFiltersEqual, Filter, Filters} from '../legacy_table/filters';
+import {buildSqlQuery} from '../legacy_table/query_builder';
+import {SimpleColumn} from '../legacy_table/simple_column';
+import {
+  SqlColumn,
+  sqlColumnId,
+  SqlExpression,
+} from '../legacy_table/sql_column';
+import {LegacyTableColumn} from '../legacy_table/table_column';
+import {SqlTableDescription} from '../legacy_table/table_description';
 import {moveArrayItem} from '../../../../base/array_utils';
 import {assertExists} from '../../../../base/logging';
 import {SortDirection} from '../../../../base/comparison_utils';
@@ -31,12 +35,12 @@ import {aggregationId, pivotId} from './ids';
 // Pivot and aggregation ids are human-readable, but are not valid SQLite identifiers,
 // so we need to generate valid aliases for them. We map the values back to be keyed
 // by the ids as soon as we get the data back from the trace processor.
-function pivotSqliteAlias(p: TableColumn): string {
+function pivotSqliteAlias(p: LegacyTableColumn): string {
   return pivotId(p).replace(/[^a-zA-Z0-9_]/g, '__');
 }
 
 function aggregationSqliteAlias(a: Aggregation): string {
-  return `__${sqlColumnId(a.column.column).replace(/[^a-zA-Z0-9_]/g, '__')}__${a.op}`;
+  return `__${sqlColumnId(a.column.primaryColumn()).replace(/[^a-zA-Z0-9_]/g, '__')}__${a.op}`;
 }
 
 interface RequestedData {
@@ -53,7 +57,7 @@ interface RequestedData {
 export interface PivotTableStateArgs {
   trace: Trace;
   table: SqlTableDescription;
-  pivots: TableColumn[];
+  pivots: LegacyTableColumn[];
   aggregations?: Aggregation[];
   filters?: Filters;
 }
@@ -73,7 +77,7 @@ export class PivotTableState {
   public readonly trace: Trace;
   public readonly filters: Filters;
 
-  private readonly pivots: TableColumn[] = [];
+  private readonly pivots: LegacyTableColumn[] = [];
   private readonly aggregations: Aggregation[] = [];
   private orderBy: SortOrder;
 
@@ -115,7 +119,7 @@ export class PivotTableState {
     return this.data.result?.tree;
   }
 
-  public getPivots(): ReadonlyArray<TableColumn> {
+  public getPivots(): ReadonlyArray<LegacyTableColumn> {
     return this.pivots;
   }
 
@@ -123,7 +127,7 @@ export class PivotTableState {
     return this.aggregations;
   }
 
-  public addPivot(pivot: TableColumn, index: number) {
+  public addPivot(pivot: LegacyTableColumn, index: number) {
     this.pivots.splice(index + 1, 0, pivot);
     this.reload();
   }
@@ -160,7 +164,10 @@ export class PivotTableState {
     this.reload();
   }
 
-  public sortByPivot(pivot: TableColumn, direction: SortDirection | undefined) {
+  public sortByPivot(
+    pivot: LegacyTableColumn,
+    direction: SortDirection | undefined,
+  ) {
     const id = pivotId(pivot);
     // Remove any existing sort by this pivot.
     this.orderBy = this.orderBy.filter(
@@ -193,7 +200,7 @@ export class PivotTableState {
     this.data.result?.tree.sort(this.orderBy);
   }
 
-  public isSortedByPivot(pivot: TableColumn): SortDirection | undefined {
+  public isSortedByPivot(pivot: LegacyTableColumn): SortDirection | undefined {
     if (this.orderBy.length === 0) return undefined;
     const id = pivotId(pivot);
     const head = this.orderBy[0];
@@ -271,10 +278,10 @@ export class PivotTableState {
     const groupBy: SqlColumn[] = [];
     for (const pivot of this.pivots) {
       const alias = pivotSqliteAlias(pivot);
-      columns[alias] = pivot.column;
+      columns[alias] = pivot.primaryColumn();
       columnIds.add(pivotId(pivot));
       aliasToIds.set(alias, pivotId(pivot));
-      groupBy.push(pivot.column);
+      groupBy.push(pivot.primaryColumn());
     }
 
     // Expand non-assocative aggregations (average) into basic associative aggregations which
@@ -283,7 +290,7 @@ export class PivotTableState {
       const alias = aggregationSqliteAlias(agg);
       columns[alias] = new SqlExpression(
         (cols) => `${agg.op}(${cols[0]})`,
-        [agg.column.column],
+        [agg.column.primaryColumn()],
       );
       columnIds.add(aggregationId(agg));
       aliasToIds.set(alias, aggregationId(agg));
@@ -294,11 +301,8 @@ export class PivotTableState {
       groupBy,
       filters: this.filters.get(),
     });
-    const importStatement = (this.table.imports ?? [])
-      .map((i) => `INCLUDE PERFETTO MODULE ${i};\n`)
-      .join('');
     return {
-      query: `${importStatement}${query}`,
+      query,
       columnIds,
       aliasToIds,
     };

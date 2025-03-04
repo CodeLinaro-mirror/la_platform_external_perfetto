@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
+import {SqlTableDescription} from '../../components/widgets/sql/legacy_table/table_description';
 import {
   ArgSetIdColumn,
   DurationColumn,
@@ -23,7 +23,7 @@ import {
   ThreadIdColumn,
   ThreadStateIdColumn,
   TimestampColumn,
-} from '../../components/widgets/sql/table/columns';
+} from './well_known_columns';
 
 export function getThreadTable(): SqlTableDescription {
   return {
@@ -72,10 +72,10 @@ export function getSliceTable(): SqlTableDescription {
       new StandardColumn('category'),
       new StandardColumn('name'),
       new StandardColumn('track_id', {startsHidden: true}),
-      new ThreadIdColumn('utid'),
-      new ProcessIdColumn('upid'),
+      new ThreadIdColumn('utid', {title: 'utid'}),
+      new ProcessIdColumn('upid', {title: 'upid'}),
       new StandardColumn('depth', {startsHidden: true}),
-      new SliceIdColumn('parent_id'),
+      new SliceIdColumn('parent_id', {startsHidden: true}),
       new ArgSetIdColumn('arg_set_id'),
     ],
   };
@@ -106,7 +106,7 @@ export function getSchedTable(): SqlTableDescription {
   return {
     name: 'sched',
     columns: [
-      new SchedIdColumn('id'),
+      new SchedIdColumn('id', {type: 'id'}),
       new TimestampColumn('ts'),
       new DurationColumn('dur'),
       new StandardColumn('cpu'),
@@ -129,7 +129,7 @@ export function getThreadStateTable(): SqlTableDescription {
   return {
     name: 'thread_state',
     columns: [
-      new ThreadStateIdColumn('id'),
+      new ThreadStateIdColumn('id', {notNull: true, type: 'id'}),
       new TimestampColumn('ts'),
       new DurationColumn('dur'),
       new StandardColumn('state'),

@@ -150,10 +150,6 @@ proto_groups = {
         'sources': ['//protos/perfetto/trace_processor:source_set',],
         'visibility': [],
     },
-    'trace_summary': {
-        'sources': ['//protos/perfetto/trace_summary:source_set',],
-        'visibility': ['//visibility:public'],
-    },
 }
 
 # Path for the protobuf sources in the standalone build.

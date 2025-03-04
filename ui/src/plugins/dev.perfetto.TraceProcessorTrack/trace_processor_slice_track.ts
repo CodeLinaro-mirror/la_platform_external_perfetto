@@ -14,7 +14,6 @@
 
 import {BigintMath as BIMath} from '../../base/bigint_math';
 import {clamp} from '../../base/math_utils';
-import {ThreadSliceDetailsPanel} from '../../components/details/thread_slice_details_tab';
 import {DatasetSliceTrack} from '../../components/tracks/dataset_slice_track';
 import {TrackEventDetailsPanel} from '../../public/details_panel';
 import {Trace} from '../../public/trace';
@@ -61,9 +60,7 @@ export function createTraceProcessorSliceTrack(
         return 1;
       }
     },
-    detailsPanel: detailsPanel
-      ? (row) => detailsPanel(row)
-      : () => new ThreadSliceDetailsPanel(trace),
+    detailsPanel: detailsPanel ? (row) => detailsPanel(row) : undefined,
   });
 }
 

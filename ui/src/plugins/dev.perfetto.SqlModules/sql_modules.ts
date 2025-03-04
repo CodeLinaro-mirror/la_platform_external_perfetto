@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {LegacyTableColumn} from '../../components/widgets/sql/legacy_table/table_column';
+import {SqlTableDescription} from '../../components/widgets/sql/legacy_table/table_description';
 import {
-  DurationColumn,
-  ProcessIdColumn,
-  SchedIdColumn,
-  SliceIdColumn,
-  StandardColumn,
-  ThreadIdColumn,
-  ThreadStateIdColumn,
-  TimestampColumn,
-} from '../../components/widgets/sql/table/columns';
-import {TableColumn} from '../../components/widgets/sql/table/table_column';
-import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
+  createDurationColumn,
+  createProcessIdColumn,
+  createSchedIdColumn,
+  createSliceIdColumn,
+  createStandardColumn,
+  createThreadIdColumn,
+  createThreadStateIdColumn,
+  createTimestampColumn,
+} from '../../components/widgets/sql/table/table';
 
 // Handles the access to all of the Perfetto SQL modules accessible to Trace
 //  Processor.
@@ -94,7 +94,7 @@ export interface SqlTable {
   readonly joinIdColumns: SqlColumn[];
 
   // Returns all columns as TableColumns.
-  getTableColumns(): TableColumn[];
+  getTableColumns(): LegacyTableColumn[];
 
   getIdColumns(): SqlColumn[];
   getJoinIdColumns(): SqlColumn[];
@@ -156,50 +156,47 @@ export interface SqlType {
   readonly tableAndColumn?: TableAndColumn;
 }
 
-export function createTableColumnFromPerfettoSql(
-  col: SqlColumn,
-  tableName: string,
-): TableColumn {
+export function SqlColumnAsSimpleColumn(col: SqlColumn, tableName: string) {
   if (col.type.shortName === 'timestamp') {
-    return new TimestampColumn(col.name);
+    return createTimestampColumn(col.name);
   }
   if (col.type.shortName === 'duration') {
-    return new DurationColumn(col.name);
+    return createDurationColumn(col.name);
   }
 
   if (col.type.shortName === 'id') {
     switch (tableName.toLowerCase()) {
       case 'slice':
-        return new SliceIdColumn(col.name, {type: 'id'});
+        return createSliceIdColumn(col.name);
       case 'thread':
-        return new ThreadIdColumn(col.name, {type: 'id'});
+        return createThreadIdColumn(col.name);
       case 'process':
-        return new ProcessIdColumn(col.name, {type: 'id'});
+        return createProcessIdColumn(col.name);
       case 'thread_state':
-        return new ThreadStateIdColumn(col.name);
+        return createThreadStateIdColumn(col.name);
       case 'sched':
-        return new SchedIdColumn(col.name);
+        return createSchedIdColumn(col.name);
     }
-    return new StandardColumn(col.name);
+    return createStandardColumn(col.name);
   }
 
   if (col.type.shortName === 'joinid') {
     if (col.type.tableAndColumn === undefined) {
-      return new StandardColumn(col.name);
+      return createStandardColumn(col.name);
     }
     switch (col.type.tableAndColumn.table.toLowerCase()) {
       case 'slice':
-        return new SliceIdColumn(col.name);
+        return createSliceIdColumn(col.name);
       case 'thread':
-        return new ThreadIdColumn(col.name);
+        return createThreadIdColumn(col.name);
       case 'process':
-        return new ProcessIdColumn(col.name);
+        return createProcessIdColumn(col.name);
       case 'thread_state':
-        return new ThreadStateIdColumn(col.name);
+        return createThreadStateIdColumn(col.name);
       case 'sched':
-        return new SchedIdColumn(col.name);
+        return createSchedIdColumn(col.name);
     }
   }
 
-  return new StandardColumn(col.name);
+  return createStandardColumn(col.name);
 }
