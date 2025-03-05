@@ -38,6 +38,7 @@ import {
   SlicesSourceNode,
   SlicesSource,
 } from './sources/slices';
+import {Icons} from '../../../base/semantic_icons';
 
 export interface QueryBuilderTable {
   name: string;
@@ -53,12 +54,45 @@ export interface QueryBuilderAttrs extends PageWithTraceAttrs {
 
   readonly onRootNodeCreated: (node: QueryNode) => void;
   readonly onNodeSelected: (node: QueryNode) => void;
+  readonly visualiseDataMenuItems: (node: QueryNode) => m.Children;
+}
+
+interface NodeAttrs {
+  node: QueryNode;
+  isSelected: boolean;
+  onNodeSelected: (node: QueryNode) => void;
+}
+
+class NodeBox implements m.ClassComponent<NodeAttrs> {
+  view({attrs}: m.CVnode<NodeAttrs>) {
+    const {node, isSelected, onNodeSelected} = attrs;
+    return m(
+      '.node-box',
+      {
+        style: {
+          border: isSelected ? '2px solid yellow' : '2px solid blue',
+          borderRadius: '5px',
+          padding: '10px',
+          cursor: 'pointer',
+          backgroundColor: 'lightblue',
+        },
+        onclick: () => onNodeSelected(node),
+      },
+      node.getTitle(),
+    );
+  }
 }
 
 export class QueryBuilder implements m.ClassComponent<QueryBuilderAttrs> {
   view({attrs}: m.CVnode<QueryBuilderAttrs>) {
-    const {trace, sqlModules, rootNode, onRootNodeCreated, onNodeSelected} =
-      attrs;
+    const {
+      trace,
+      sqlModules,
+      rootNode,
+      onRootNodeCreated,
+      onNodeSelected,
+      selectedNode,
+    } = attrs;
 
     const createModal = (
       title: string,
@@ -197,6 +231,19 @@ export class QueryBuilder implements m.ClassComponent<QueryBuilderAttrs> {
       );
     };
 
+    const renderNodeActions = (curNode: QueryNode) => {
+      return m(
+        PopupMenu,
+        {
+          trigger: m(Button, {
+            iconFilled: true,
+            icon: Icons.MoreVert,
+          }),
+        },
+        attrs.visualiseDataMenuItems(curNode),
+      );
+    };
+
     const renderNodesPanel = (): m.Children => {
       const nodes: m.Child[] = [];
       let row = 1;
@@ -212,18 +259,13 @@ export class QueryBuilder implements m.ClassComponent<QueryBuilderAttrs> {
           nodes.push(
             m(
               '',
-              {style: {gridColumn: 3, gridRow: row}},
-              m(Button, {
-                label: localCurNode.getTitle(),
-                intent: Intent.Primary,
-                style: {
-                  border:
-                    attrs.selectedNode === localCurNode
-                      ? '2px solid yellow'
-                      : '',
-                },
-                onclick: () => onNodeSelected(localCurNode),
+              {style: {display: 'flex', gridColumn: 3, gridRow: row}},
+              m(NodeBox, {
+                node: localCurNode,
+                isSelected: selectedNode === localCurNode,
+                onNodeSelected,
               }),
+              renderNodeActions(curNode),
             ),
           );
           row++;
