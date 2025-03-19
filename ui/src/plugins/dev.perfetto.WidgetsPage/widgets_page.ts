@@ -57,7 +57,7 @@ import {MiddleEllipsis} from '../../widgets/middle_ellipsis';
 import {Chip, ChipBar} from '../../widgets/chip';
 import {TrackShell} from '../../widgets/track_shell';
 import {CopyableLink} from '../../widgets/copyable_link';
-import {VirtualOverlayCanvas} from '../../components/widgets/virtual_overlay_canvas';
+import {VirtualOverlayCanvas} from '../../widgets/virtual_overlay_canvas';
 import {SplitPanel} from '../../widgets/split_panel';
 import {TabbedSplitPanel} from '../../widgets/tabbed_split_panel';
 
@@ -1384,7 +1384,7 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
             VirtualOverlayCanvas,
             {
               className: 'virtual-canvas',
-              scrollAxes: 'y',
+              overflowY: 'auto',
               onCanvasRedraw({ctx, canvasRect}) {
                 ctx.strokeStyle = 'red';
                 ctx.lineWidth = 1;

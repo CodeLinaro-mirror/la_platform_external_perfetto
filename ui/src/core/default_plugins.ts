@@ -50,8 +50,8 @@ export const defaultPlugins = [
   'dev.perfetto.HeapProfile',
   'dev.perfetto.InstrumentsSamplesProfile',
   'dev.perfetto.LargeScreensPerf',
+  'dev.perfetto.LinuxPerf',
   'dev.perfetto.MetricsPage',
-  'dev.perfetto.PerfSamplesProfile',
   'dev.perfetto.PinAndroidPerfMetrics',
   'dev.perfetto.PinSysUITracks',
   'dev.perfetto.Process',
@@ -80,6 +80,7 @@ export const defaultPlugins = [
   'org.kernel.Wattson',
   'perfetto.CoreCommands',
   'perfetto.ExampleTraces',
+  'perfetto.FlowEvents',
   'perfetto.GlobalGroups',
   'perfetto.TrackUtils',
 ];

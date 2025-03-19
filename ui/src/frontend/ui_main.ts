@@ -33,18 +33,25 @@ import {addQueryResultsTab} from '../components/query_table/query_result_tab';
 import {Sidebar} from './sidebar';
 import {Topbar} from './topbar';
 import {shareTrace} from './trace_share_utils';
-import {AggregationsTabs} from './aggregation_tab';
 import {OmniboxMode} from '../core/omnibox_manager';
 import {DisposableStack} from '../base/disposable_stack';
 import {Spinner} from '../widgets/spinner';
 import {TraceImpl} from '../core/trace_impl';
 import {AppImpl} from '../core/app_impl';
-import {NotesEditorTab} from './notes_editor_tab';
 import {NotesListEditor} from './notes_list_editor';
 import {getTimeSpanOfSelectionOrVisibleWindow} from '../public/utils';
 import {DurationPrecision, TimestampFormat} from '../public/timeline';
 import {Workspace} from '../public/workspace';
+import {
+  deserializeAppStatePhase1,
+  deserializeAppStatePhase2,
+  JsonSerialize,
+  parseAppState,
+  serializeAppState,
+} from '../core/state_serialization';
+import {featureFlags} from '../core/feature_flags';
 
+const QUICKSAVE_LOCALSTORAGE_KEY = 'quicksave';
 const OMNIBOX_INPUT_REF = 'omnibox';
 
 // This wrapper creates a new instance of UiMainPerTrace for each new trace
@@ -99,12 +106,6 @@ export class UiMainPerTrace implements m.ClassComponent {
     if (trace === undefined) return;
     document.title = `${trace.traceInfo.traceTitle || 'Trace'} - Perfetto UI`;
     this.maybeShowJsonWarning();
-
-    // Register the aggregation tabs.
-    this.trash.use(new AggregationsTabs(trace));
-
-    // Register the notes manager+editor.
-    this.trash.use(trace.tabs.registerDetailsPanel(new NotesEditorTab(trace)));
 
     this.trash.use(
       trace.tabs.registerTab({
@@ -451,6 +452,43 @@ export class UiMainPerTrace implements m.ClassComponent {
             workspace.addChildLast(newNode);
           }
           trace.workspaces.switchWorkspace(workspace);
+        },
+      },
+      {
+        id: 'perfetto.Quicksave',
+        name: 'Quicksave UI state to localStorage',
+        callback: () => {
+          const state = serializeAppState(trace);
+          const json = JsonSerialize(state);
+          localStorage.setItem(QUICKSAVE_LOCALSTORAGE_KEY, json);
+        },
+      },
+      {
+        id: 'perfetto.Quickload',
+        name: 'Quickload UI state from the localStorage',
+        callback: () => {
+          const json = localStorage.getItem(QUICKSAVE_LOCALSTORAGE_KEY);
+          if (json === null) {
+            showModal({
+              title: 'Nothing saved in the quicksave slot',
+              buttons: [{text: 'Dismiss'}],
+            });
+            return;
+          }
+          const parsed = JSON.parse(json);
+          const state = parseAppState(parsed);
+          if (state.success) {
+            deserializeAppStatePhase1(state.data, trace);
+            deserializeAppStatePhase2(state.data, trace);
+          }
+        },
+      },
+      {
+        id: `${app.pluginId}#RestoreDefaults`,
+        name: 'Reset all flags back to default values',
+        callback: () => {
+          featureFlags.resetAll();
+          window.location.reload();
         },
       },
     ];
