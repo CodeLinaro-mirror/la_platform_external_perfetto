@@ -2826,6 +2826,8 @@ perfetto_filegroup(
         "src/trace_processor/perfetto_sql/intrinsics/functions/math.h",
         "src/trace_processor/perfetto_sql/intrinsics/functions/pprof_functions.cc",
         "src/trace_processor/perfetto_sql/intrinsics/functions/pprof_functions.h",
+        "src/trace_processor/perfetto_sql/intrinsics/functions/replace_numbers_function.cc",
+        "src/trace_processor/perfetto_sql/intrinsics/functions/replace_numbers_function.h",
         "src/trace_processor/perfetto_sql/intrinsics/functions/sqlite3_str_split.cc",
         "src/trace_processor/perfetto_sql/intrinsics/functions/sqlite3_str_split.h",
         "src/trace_processor/perfetto_sql/intrinsics/functions/stack_functions.cc",
@@ -4816,6 +4818,62 @@ perfetto_py_proto_library(
     name = "trace_processor_py_pb2",
     deps = [
         ":trace_processor_proto",
+    ],
+)
+
+# GN target: [//protos/perfetto/trace_summary:source_set]
+perfetto_proto_library(
+    name = "trace_summary_proto",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":protos_perfetto_perfetto_sql_protos",
+        ":protos_perfetto_trace_summary_protos",
+    ],
+)
+
+# GN target: [//protos/perfetto/trace_summary:source_set]
+perfetto_cc_proto_library(
+    name = "trace_summary_cc_proto",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":trace_summary_proto",
+    ],
+)
+
+# GN target: [//protos/perfetto/trace_summary:source_set]
+perfetto_java_proto_library(
+    name = "trace_summary_java_proto",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":trace_summary_proto",
+    ],
+)
+
+# GN target: [//protos/perfetto/trace_summary:source_set]
+perfetto_java_lite_proto_library(
+    name = "trace_summary_java_proto_lite",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":trace_summary_proto",
+    ],
+)
+
+# GN target: [//protos/perfetto/trace_summary:source_set]
+perfetto_py_proto_library(
+    name = "trace_summary_py_pb2",
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":trace_summary_proto",
     ],
 )
 
