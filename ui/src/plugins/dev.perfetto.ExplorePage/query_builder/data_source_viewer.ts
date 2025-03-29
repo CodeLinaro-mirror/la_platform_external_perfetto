@@ -17,11 +17,11 @@ import m from 'mithril';
 import {PageWithTraceAttrs} from '../../../public/page';
 import {TextParagraph} from '../../../widgets/text_paragraph';
 import {QueryTable} from '../../../components/query_table/query_table';
-import {runQuery} from '../../../components/query_table/queries';
+import {runQueryForQueryTable} from '../../../components/query_table/queries';
 import {AsyncLimiter} from '../../../base/async_limiter';
 import {QueryResponse} from '../../../components/query_table/queries';
 import {SegmentedButtons} from '../../../widgets/segmented_buttons';
-import {QueryNode} from '../query_node';
+import {NodeType, QueryNode} from '../query_node';
 import {ColumnController, ColumnControllerDiff} from './column_controller';
 import {Section} from '../../../widgets/section';
 import {Engine} from '../../../trace_processor/engine';
@@ -53,25 +53,22 @@ export class DataSourceViewer implements m.ClassComponent<DataSourceAttrs> {
 
   view({attrs}: m.CVnode<DataSourceAttrs>) {
     function renderPickColumns(node: QueryNode): m.Child {
-      return (
-        node.columns &&
-        m(ColumnController, {
-          options: node.columns,
-          onChange: (diffs: ColumnControllerDiff[]) => {
-            diffs.forEach(({id, checked, alias}) => {
-              if (node.columns === undefined) {
-                return;
+      return m(ColumnController, {
+        options: node.finalCols,
+        onChange: (diffs: ColumnControllerDiff[]) => {
+          diffs.forEach(({id, checked, alias}) => {
+            if (node.finalCols === undefined) {
+              return;
+            }
+            for (const option of node.finalCols) {
+              if (option.id === id) {
+                option.checked = checked;
+                option.alias = alias;
               }
-              for (const option of node.columns) {
-                if (option.id === id) {
-                  option.checked = checked;
-                  option.alias = alias;
-                }
-              }
-            });
-          },
-        })
-      );
+            }
+          });
+        },
+      });
     }
 
     const renderTable = () => {
@@ -121,8 +118,10 @@ export class DataSourceViewer implements m.ClassComponent<DataSourceAttrs> {
         if (this.currentSql === undefined) {
           return;
         }
-        this.queryResult = await runQuery(
-          queryToRun(this.currentSql),
+        this.queryResult = await runQueryForQueryTable(
+          attrs.queryNode.type === NodeType.kSqlSource
+            ? queryToRun(this.currentSql)
+            : `${queryToRun(this.currentSql)} LIMIT 50`,
           attrs.trace.engine,
         );
         this.prevSqString = this.curSqString;
@@ -130,7 +129,7 @@ export class DataSourceViewer implements m.ClassComponent<DataSourceAttrs> {
     }
 
     if (this.currentSql === undefined) return;
-
+    const sql = queryToRun(this.currentSql);
     return [
       m(
         Section,
@@ -138,10 +137,15 @@ export class DataSourceViewer implements m.ClassComponent<DataSourceAttrs> {
         attrs.queryNode.getDetails(),
         renderButtons(),
         this.showDataSourceInfoPanel === SelectedView.SQL &&
-          m(TextParagraph, {
-            text: queryToRun(this.currentSql),
-            compressSpace: false,
-          }),
+          m(
+            '.code-snippet',
+            m(Button, {
+              title: 'Copy to clipboard',
+              onclick: () => copyToClipboard(sql ?? ''),
+              icon: Icons.Copy,
+            }),
+            m('code', sql),
+          ),
         this.showDataSourceInfoPanel === SelectedView.COLUMNS &&
           renderPickColumns(attrs.queryNode),
         this.showDataSourceInfoPanel === SelectedView.PROTO &&
@@ -155,7 +159,7 @@ export class DataSourceViewer implements m.ClassComponent<DataSourceAttrs> {
             m('code', this.currentSql.textproto),
           ),
       ),
-      renderTable(),
+      m(Section, {title: 'Sample data'}, renderTable()),
     ];
   }
 }
@@ -163,7 +167,7 @@ export class DataSourceViewer implements m.ClassComponent<DataSourceAttrs> {
 function getStructuredQueries(
   finalNode: QueryNode,
 ): protos.PerfettoSqlStructuredQuery[] | undefined {
-  if (finalNode.columns === undefined) {
+  if (finalNode.finalCols === undefined) {
     return;
   }
   const revStructuredQueries: protos.PerfettoSqlStructuredQuery[] = [];
