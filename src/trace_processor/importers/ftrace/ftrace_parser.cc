@@ -455,7 +455,11 @@ FtraceParser::FtraceParser(TraceProcessorContext* context)
       block_io_id_(context->storage->InternString("block_io")),
       block_io_arg_sector_id_(context->storage->InternString("sector")),
       cpuhp_action_cpu_id_(context->storage->InternString("action_cpu")),
-      cpuhp_idx_id_(context->storage->InternString("cpuhp_idx")) {
+      cpuhp_idx_id_(context->storage->InternString("cpuhp_idx")),
+      disp_vblank_irq_enable_id_(
+          context_->storage->InternString("disp_vblank_irq_enable")),
+      disp_vblank_irq_enable_output_id_arg_name_(
+          context_->storage->InternString("output_id")) {
   // Build the lookup table for the strings inside ftrace events (e.g. the
   // name of ftrace event fields and the names of their args).
   for (size_t i = 0; i < GetDescriptorsSize(); i++) {
@@ -1029,6 +1033,10 @@ base::Status FtraceParser::ParseFtraceEvent(uint32_t cpu,
       }
       case FtraceEvent::kDpuDispDpuUnderrunFieldNumber: {
         ParseDpuDispDpuUnderrun(ts, fld_bytes);
+        break;
+      }
+      case FtraceEvent::kDpuDispVblankIrqEnableFieldNumber: {
+        ParseDpuDispVblankIrqEnable(ts, fld_bytes);
         break;
       }
       case FtraceEvent::kMaliTracingMarkWriteFieldNumber: {
@@ -1817,10 +1825,20 @@ void FtraceParser::ParseDpuTracingMarkWrite(int64_t timestamp,
     return;
   }
 
+  // b/395779936: there are drivers emitting events that pretend that the
+  // emitting thread is part of a different process, while using B/E/I/C events.
+  // We cannot trust those tid<->tgid associations, so override the tgid to 0 to
+  // rely on the existing swapper workarounds. Counter event parsing has
+  // existing workarounds for this scenario, so keep their tgid for backwards
+  // compatibility with existing queries.
+  char evt_type = static_cast<char>(evt.type());
   uint32_t tgid = static_cast<uint32_t>(evt.pid());
+  if (evt_type != 'C')
+    tgid = 0;
+
   SystraceParser::GetOrCreate(context_)->ParseKernelTracingMarkWrite(
-      timestamp, pid, static_cast<char>(evt.type()), false /*trace_begin*/,
-      evt.name(), tgid, evt.value());
+      timestamp, pid, evt_type, false /*trace_begin*/, evt.name(), tgid,
+      evt.value());
 }
 
 void FtraceParser::ParseDpuDispDpuUnderrun(int64_t timestamp,
@@ -1850,6 +1868,31 @@ void FtraceParser::ParseDpuDispDpuUnderrun(int64_t timestamp,
             context_->storage->InternString(base::StringView("pending_frame")),
             Variadic::Integer(ex.frames_pending()));
         });
+}
+
+void FtraceParser::ParseDpuDispVblankIrqEnable(int64_t timestamp,
+                                               ConstBytes blob) {
+  protos::pbzero::DpuDispVblankIrqEnableFtraceEvent::Decoder ex(blob);
+
+  static constexpr auto kBlueprint = tracks::SliceBlueprint(
+      "disp_vblank_irq_enable",
+      tracks::DimensionBlueprints(tracks::UintDimensionBlueprint("display_id")),
+      tracks::FnNameBlueprint([](uint32_t display_id) {
+        return base::StackString<256>("vblank_irq_en[%u]", display_id);
+      }));
+
+  TrackId track_id = context_->track_tracker->InternTrack(
+      kBlueprint, tracks::Dimensions(ex.id()));
+  if (ex.enable()) {
+    context_->slice_tracker->Begin(
+        timestamp, track_id, kNullStringId, disp_vblank_irq_enable_id_,
+        [&](ArgsTracker::BoundInserter* inserter) {
+          inserter->AddArg(disp_vblank_irq_enable_output_id_arg_name_,
+                           Variadic::Integer(ex.output_id()));
+        });
+  } else {
+    context_->slice_tracker->End(timestamp, track_id);
+  }
 }
 
 void FtraceParser::ParseG2dTracingMarkWrite(int64_t timestamp,
