@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -47,12 +48,14 @@ struct DataframeModule : sqlite::Module<DataframeModule> {
 
   struct State {
     explicit State(DataframeSharedStorage::DataframeHandle _handle)
-        : handle(std::move(_handle)) {}
+        : handle(std::move(_handle)), dataframe(&**handle) {}
+    explicit State(dataframe::Dataframe* _dataframe) : dataframe(_dataframe) {}
     struct NamedIndex {
       std::string name;
       DataframeSharedStorage::IndexHandle index;
     };
-    DataframeSharedStorage::DataframeHandle handle;
+    std::optional<DataframeSharedStorage::DataframeHandle> handle;
+    dataframe::Dataframe* dataframe;
     std::vector<NamedIndex> named_indexes;
   };
   struct Context : sqlite::ModuleStateManager<DataframeModule> {
@@ -93,6 +96,8 @@ struct DataframeModule : sqlite::Module<DataframeModule> {
   struct Vtab : sqlite::Module<DataframeModule>::Vtab {
     const dataframe::Dataframe* dataframe;
     sqlite::ModuleStateManager<DataframeModule>::PerVtabState* state;
+    std::string name;
+    int best_idx_num = 0;
   };
   using DfCursor = dataframe::Cursor<SqliteValueFetcher>;
   struct Cursor : sqlite::Module<DataframeModule>::Cursor {
