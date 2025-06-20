@@ -20,6 +20,7 @@
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -30,6 +31,7 @@
 
 #include "perfetto/base/logging.h"
 #include "perfetto/ext/base/string_utils.h"
+#include "src/trace_processor/dataframe/cursor_impl.h"  // IWYU pragma: keep
 #include "src/trace_processor/dataframe/dataframe.h"
 #include "src/trace_processor/dataframe/specs.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_type.h"
@@ -119,6 +121,7 @@ std::string ToSqliteCreateTableType(dataframe::StorageType type) {
 }
 
 std::string CreateTableStmt(const dataframe::DataframeSpec& spec) {
+  std::string id;
   std::string create_stmt = "CREATE TABLE x(";
   for (uint32_t i = 0; i < spec.column_specs.size(); ++i) {
     create_stmt += spec.column_names[i] + " " +
@@ -126,9 +129,12 @@ std::string CreateTableStmt(const dataframe::DataframeSpec& spec) {
     if (spec.column_names[i] == "_auto_id") {
       create_stmt += " HIDDEN";
     }
+    if (spec.column_names[i] == "id" || spec.column_names[i] == "_auto_id") {
+      id = spec.column_names[i];
+    }
     create_stmt += ", ";
   }
-  create_stmt += "PRIMARY KEY(_auto_id)) WITHOUT ROWID";
+  create_stmt += "PRIMARY KEY(" + id + ")) WITHOUT ROWID";
   return create_stmt;
 }
 
@@ -224,12 +230,18 @@ int DataframeModule::BestIndex(sqlite3_vtab* tab, sqlite3_index_info* info) {
           PERFETTO_DCHECK(op == SQLITE_INDEX_CONSTRAINT_OFFSET);
           limit_spec.offset = cast;
         }
+        continue;
       }
     }
     auto df_op = SqliteOpToDataframeOp(op);
     if (!df_op) {
       has_unknown_constraint = true;
       continue;
+    }
+    // Convert the eq constraint to a Is constraint if possible.
+    if (df_op->Is<dataframe::Eq>() && sqlite3_vtab_in(info, i, -1)) {
+      df_op = dataframe::In();
+      PERFETTO_CHECK(sqlite3_vtab_in(info, i, 1));
     }
     filter_specs.emplace_back(dataframe::FilterSpec{
         static_cast<uint32_t>(info->aConstraint[i].iColumn),
@@ -355,6 +367,11 @@ int DataframeModule::BestIndex(sqlite3_vtab* tab, sqlite3_index_info* info) {
             record->AddArg(c.string_view(),
                            std::to_string(info->aConstraintUsage[i].omit));
           }
+          {
+            base::StackString<32> c("constraint[%d].in", j);
+            record->AddArg(c.string_view(),
+                           std::to_string(sqlite3_vtab_in(info, i, -1)));
+          }
           j++;
         }
         for (int i = 0; i < info->nOrderBy; ++i) {
@@ -389,7 +406,7 @@ int DataframeModule::Close(sqlite3_vtab_cursor* cursor) {
 int DataframeModule::Filter(sqlite3_vtab_cursor* cur,
                             int idxNum,
                             const char* idxStr,
-                            int,
+                            int argc,
                             sqlite3_value** argv) {
   auto* v = GetVtab(cur->pVtab);
   auto* c = GetCursor(cur);
@@ -409,7 +426,13 @@ int DataframeModule::Filter(sqlite3_vtab_cursor* cur,
     v->dataframe->PrepareCursor(plan, c->df_cursor);
     c->last_idx_str = idxStr;
   }
-  SqliteValueFetcher fetcher{{}, argv};
+  // SQLite's API claims it will never pass more than 16 arguments
+  // so assert that here as our std::array is fixed size.
+  PERFETTO_DCHECK(argc <= 16);
+  SqliteValueFetcher fetcher{{}, {}, argv};
+  memcpy(static_cast<void*>(fetcher.sqlite_value.data()),
+         static_cast<void*>(argv),
+         sizeof(sqlite3_value*) * static_cast<size_t>(argc));
   c->df_cursor.Execute(fetcher);
   return SQLITE_OK;
 }
