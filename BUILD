@@ -678,6 +678,7 @@ perfetto_cc_library(
             ":src_kernel_utils_kernel_wakelock_errors",
             ":src_kernel_utils_syscall_table",
             ":src_protozero_proto_ring_buffer",
+            ":src_traced_probes_android_cpu_per_uid_android_cpu_per_uid",
             ":src_traced_probes_android_game_intervention_list_android_game_intervention_list",
             ":src_traced_probes_android_kernel_wakelocks_android_kernel_wakelocks",
             ":src_traced_probes_android_log_android_log",
@@ -1211,6 +1212,7 @@ perfetto_filegroup(
     name = "src_android_internal_headers",
     srcs = [
         "src/android_internal/atrace_hal.h",
+        "src/android_internal/cpu_time_in_state.h",
         "src/android_internal/health_hal.h",
         "src/android_internal/incident_service.h",
         "src/android_internal/power_stats.h",
@@ -2253,16 +2255,26 @@ perfetto_filegroup(
         "src/trace_processor/importers/proto/winscope/shell_transitions_parser.h",
         "src/trace_processor/importers/proto/winscope/shell_transitions_tracker.cc",
         "src/trace_processor/importers/proto/winscope/shell_transitions_tracker.h",
+        "src/trace_processor/importers/proto/winscope/surfaceflinger_layers_extractor.cc",
+        "src/trace_processor/importers/proto/winscope/surfaceflinger_layers_extractor.h",
         "src/trace_processor/importers/proto/winscope/surfaceflinger_layers_parser.cc",
         "src/trace_processor/importers/proto/winscope/surfaceflinger_layers_parser.h",
+        "src/trace_processor/importers/proto/winscope/surfaceflinger_layers_utils.h",
         "src/trace_processor/importers/proto/winscope/surfaceflinger_transactions_parser.cc",
         "src/trace_processor/importers/proto/winscope/surfaceflinger_transactions_parser.h",
         "src/trace_processor/importers/proto/winscope/viewcapture_args_parser.cc",
         "src/trace_processor/importers/proto/winscope/viewcapture_args_parser.h",
         "src/trace_processor/importers/proto/winscope/viewcapture_parser.cc",
         "src/trace_processor/importers/proto/winscope/viewcapture_parser.h",
+        "src/trace_processor/importers/proto/winscope/winscope_context.h",
+        "src/trace_processor/importers/proto/winscope/winscope_geometry.cc",
+        "src/trace_processor/importers/proto/winscope/winscope_geometry.h",
         "src/trace_processor/importers/proto/winscope/winscope_module.cc",
         "src/trace_processor/importers/proto/winscope/winscope_module.h",
+        "src/trace_processor/importers/proto/winscope/winscope_rect_tracker.cc",
+        "src/trace_processor/importers/proto/winscope/winscope_rect_tracker.h",
+        "src/trace_processor/importers/proto/winscope/winscope_transform_tracker.cc",
+        "src/trace_processor/importers/proto/winscope/winscope_transform_tracker.h",
     ],
 )
 
@@ -3272,6 +3284,7 @@ perfetto_filegroup(
     srcs = [
         "src/trace_processor/perfetto_sql/stdlib/linux/block_io.sql",
         "src/trace_processor/perfetto_sql/stdlib/linux/devfreq.sql",
+        "src/trace_processor/perfetto_sql/stdlib/linux/irqs.sql",
         "src/trace_processor/perfetto_sql/stdlib/linux/threads.sql",
     ],
 )
@@ -3297,6 +3310,7 @@ perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_prelude_after_eof_after_eof",
     srcs = [
         "src/trace_processor/perfetto_sql/stdlib/prelude/after_eof/casts.sql",
+        "src/trace_processor/perfetto_sql/stdlib/prelude/after_eof/indexes.sql",
         "src/trace_processor/perfetto_sql/stdlib/prelude/after_eof/slices.sql",
         "src/trace_processor/perfetto_sql/stdlib/prelude/after_eof/tables_views.sql",
         "src/trace_processor/perfetto_sql/stdlib/prelude/after_eof/views.sql",
@@ -3432,7 +3446,7 @@ perfetto_filegroup(
         "src/trace_processor/perfetto_sql/stdlib/wattson/gpu/freq_idle.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/tasks/attribution.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/tasks/idle_transitions_attribution.sql",
-        "src/trace_processor/perfetto_sql/stdlib/wattson/tasks/threads_w_processes.sql",
+        "src/trace_processor/perfetto_sql/stdlib/wattson/tasks/task_slices.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/ui/continuous_estimates.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/utils.sql",
     ],
@@ -4004,6 +4018,15 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/traced/probes/android_cpu_per_uid:android_cpu_per_uid
+perfetto_filegroup(
+    name = "src_traced_probes_android_cpu_per_uid_android_cpu_per_uid",
+    srcs = [
+        "src/traced/probes/android_cpu_per_uid/android_cpu_per_uid_data_source.cc",
+        "src/traced/probes/android_cpu_per_uid/android_cpu_per_uid_data_source.h",
+    ],
+)
+
 # GN target: //src/traced/probes/android_game_intervention_list:android_game_intervention_list
 perfetto_filegroup(
     name = "src_traced_probes_android_game_intervention_list_android_game_intervention_list",
@@ -4532,6 +4555,7 @@ perfetto_filegroup(
         "src/android_sdk/jni/dev_perfetto_sdk_PerfettoTrace.cc",
         "src/android_sdk/jni/dev_perfetto_sdk_PerfettoTrackEventExtra.cc",
         "src/android_sdk/jni/dev_perfetto_sdk_PerfettoTrackEventExtra.h",
+        "src/android_sdk/jni/macros.h",
     ],
 )
 
@@ -5238,6 +5262,7 @@ perfetto_proto_library(
         "protos/perfetto/config/android/android_sdk_sysprop_guard_config.proto",
         "protos/perfetto/config/android/android_system_property_config.proto",
         "protos/perfetto/config/android/app_wakelock_config.proto",
+        "protos/perfetto/config/android/cpu_per_uid_config.proto",
         "protos/perfetto/config/android/kernel_wakelocks_config.proto",
         "protos/perfetto/config/android/network_trace_config.proto",
         "protos/perfetto/config/android/packages_list_config.proto",
@@ -6019,6 +6044,7 @@ perfetto_proto_library(
         "protos/perfetto/trace/android/app_wakelock_data.proto",
         "protos/perfetto/trace/android/bluetooth_trace.proto",
         "protos/perfetto/trace/android/camera_event.proto",
+        "protos/perfetto/trace/android/cpu_per_uid_data.proto",
         "protos/perfetto/trace/android/frame_timeline_event.proto",
         "protos/perfetto/trace/android/gpu_mem_event.proto",
         "protos/perfetto/trace/android/graphics_frame_event.proto",
@@ -6371,7 +6397,7 @@ perfetto_proto_library(
     name = "protos_perfetto_trace_generic_kernel_protos",
     srcs = [
         "protos/perfetto/trace/generic_kernel/generic_power.proto",
-        "protos/perfetto/trace/generic_kernel/generic_task_state.proto",
+        "protos/perfetto/trace/generic_kernel/generic_task.proto",
     ],
     visibility = [
         PERFETTO_CONFIG.proto_library_visibility,
