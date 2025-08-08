@@ -347,7 +347,6 @@ perfetto_cc_library(
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_synthetic_tid_hdr",
-        ":src_trace_processor_importers_common_trace_parser_hdr",
         ":src_trace_processor_importers_etw_full",
         ":src_trace_processor_importers_etw_minimal",
         ":src_trace_processor_importers_ftrace_ftrace_descriptors",
@@ -360,7 +359,6 @@ perfetto_cc_library(
         ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_generic_kernel_full",
         ":src_trace_processor_importers_i2c_full",
-        ":src_trace_processor_importers_instruments_row",
         ":src_trace_processor_importers_json_json",
         ":src_trace_processor_importers_json_minimal",
         ":src_trace_processor_importers_memory_tracker_graph_processor",
@@ -1862,7 +1860,6 @@ perfetto_filegroup(
         "src/trace_processor/importers/common/thread_state_tracker.h",
         "src/trace_processor/importers/common/trace_file_tracker.cc",
         "src/trace_processor/importers/common/trace_file_tracker.h",
-        "src/trace_processor/importers/common/trace_parser.cc",
         "src/trace_processor/importers/common/track_compressor.cc",
         "src/trace_processor/importers/common/track_compressor.h",
         "src/trace_processor/importers/common/track_tracker.cc",
@@ -1888,14 +1885,6 @@ perfetto_filegroup(
     name = "src_trace_processor_importers_common_synthetic_tid_hdr",
     srcs = [
         "src/trace_processor/importers/common/synthetic_tid.h",
-    ],
-)
-
-# GN target: //src/trace_processor/importers/common:trace_parser_hdr
-perfetto_filegroup(
-    name = "src_trace_processor_importers_common_trace_parser_hdr",
-    srcs = [
-        "src/trace_processor/importers/common/trace_parser.h",
     ],
 )
 
@@ -2045,14 +2034,6 @@ perfetto_filegroup(
     srcs = [
         "src/trace_processor/importers/i2c/i2c_tracker.cc",
         "src/trace_processor/importers/i2c/i2c_tracker.h",
-    ],
-)
-
-# GN target: //src/trace_processor/importers/instruments:row
-perfetto_filegroup(
-    name = "src_trace_processor_importers_instruments_row",
-    srcs = [
-        "src/trace_processor/importers/instruments/row.h",
     ],
 )
 
@@ -2998,6 +2979,14 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/trace_processor/perfetto_sql/stdlib/android/frame_blocking_calls:frame_blocking_calls
+perfetto_filegroup(
+    name = "src_trace_processor_perfetto_sql_stdlib_android_frame_blocking_calls_frame_blocking_calls",
+    srcs = [
+        "src/trace_processor/perfetto_sql/stdlib/android/frame_blocking_calls/blocking_calls_aggregation.sql",
+    ],
+)
+
 # GN target: //src/trace_processor/perfetto_sql/stdlib/android/frames:frames
 perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_android_frames_frames",
@@ -3141,6 +3130,7 @@ perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_callstacks_callstacks",
     srcs = [
         "src/trace_processor/perfetto_sql/stdlib/callstacks/stack_profile.sql",
+        "src/trace_processor/perfetto_sql/stdlib/callstacks/symbolize.sql",
     ],
 )
 
@@ -3388,7 +3378,7 @@ perfetto_filegroup(
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/freq_idle.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/hotplug.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/idle.sql",
-        "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/split.sql",
+        "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/pivot.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/w_cpu_dependence.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/cpu/w_dsu_dependence.sql",
         "src/trace_processor/perfetto_sql/stdlib/wattson/curves/device_cpu.sql",
@@ -3416,6 +3406,7 @@ perfetto_cc_amalgamated_sql(
         ":src_trace_processor_perfetto_sql_stdlib_android_cpu_cpu",
         ":src_trace_processor_perfetto_sql_stdlib_android_cujs_cujs",
         ":src_trace_processor_perfetto_sql_stdlib_android_dumpsys_dumpsys",
+        ":src_trace_processor_perfetto_sql_stdlib_android_frame_blocking_calls_frame_blocking_calls",
         ":src_trace_processor_perfetto_sql_stdlib_android_frames_frames",
         ":src_trace_processor_perfetto_sql_stdlib_android_gpu_gpu",
         ":src_trace_processor_perfetto_sql_stdlib_android_memory_heap_graph_heap_graph",
@@ -6312,6 +6303,7 @@ perfetto_proto_library(
         "protos/perfetto/trace/ftrace/gpu_mem.proto",
         "protos/perfetto/trace/ftrace/gpu_scheduler.proto",
         "protos/perfetto/trace/ftrace/hyp.proto",
+        "protos/perfetto/trace/ftrace/hypervisor.proto",
         "protos/perfetto/trace/ftrace/i2c.proto",
         "protos/perfetto/trace/ftrace/ion.proto",
         "protos/perfetto/trace/ftrace/ipi.proto",
@@ -7325,7 +7317,6 @@ perfetto_cc_library(
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_synthetic_tid_hdr",
-        ":src_trace_processor_importers_common_trace_parser_hdr",
         ":src_trace_processor_importers_etw_full",
         ":src_trace_processor_importers_etw_minimal",
         ":src_trace_processor_importers_ftrace_ftrace_descriptors",
@@ -7338,7 +7329,6 @@ perfetto_cc_library(
         ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_generic_kernel_full",
         ":src_trace_processor_importers_i2c_full",
-        ":src_trace_processor_importers_instruments_row",
         ":src_trace_processor_importers_json_json",
         ":src_trace_processor_importers_json_minimal",
         ":src_trace_processor_importers_memory_tracker_graph_processor",
@@ -7532,7 +7522,6 @@ perfetto_cc_binary(
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_synthetic_tid_hdr",
-        ":src_trace_processor_importers_common_trace_parser_hdr",
         ":src_trace_processor_importers_etw_full",
         ":src_trace_processor_importers_etw_minimal",
         ":src_trace_processor_importers_ftrace_ftrace_descriptors",
@@ -7545,7 +7534,6 @@ perfetto_cc_binary(
         ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_generic_kernel_full",
         ":src_trace_processor_importers_i2c_full",
-        ":src_trace_processor_importers_instruments_row",
         ":src_trace_processor_importers_json_json",
         ":src_trace_processor_importers_json_minimal",
         ":src_trace_processor_importers_memory_tracker_graph_processor",
@@ -7731,7 +7719,6 @@ perfetto_cc_binary(
         ":src_trace_processor_importers_common_common",
         ":src_trace_processor_importers_common_parser_types",
         ":src_trace_processor_importers_common_synthetic_tid_hdr",
-        ":src_trace_processor_importers_common_trace_parser_hdr",
         ":src_trace_processor_importers_etw_full",
         ":src_trace_processor_importers_etw_minimal",
         ":src_trace_processor_importers_ftrace_ftrace_descriptors",
@@ -7744,7 +7731,6 @@ perfetto_cc_binary(
         ":src_trace_processor_importers_gecko_gecko_event",
         ":src_trace_processor_importers_generic_kernel_full",
         ":src_trace_processor_importers_i2c_full",
-        ":src_trace_processor_importers_instruments_row",
         ":src_trace_processor_importers_json_json",
         ":src_trace_processor_importers_json_minimal",
         ":src_trace_processor_importers_memory_tracker_graph_processor",
