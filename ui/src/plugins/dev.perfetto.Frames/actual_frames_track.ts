@@ -43,7 +43,7 @@ export function createActualFramesTrack(
   maxDepth: number,
   trackIds: ReadonlyArray<number>,
 ) {
-  return new DatasetSliceTrack({
+  return DatasetSliceTrack.create({
     trace,
     uri,
     dataset: new SourceDataset({
@@ -56,6 +56,8 @@ export function createActualFramesTrack(
         jank_type: STR,
         jank_tag: STR_NULL,
         jank_severity_type: STR_NULL,
+        arg_set_id: NUM,
+        track_id: NUM,
       },
       filter: {
         col: 'track_id',
