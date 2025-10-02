@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {Cpu} from '../../base/multi_machine_trace';
 import {Store} from '../../base/store';
 import {materialColorScheme} from '../../components/colorizer';
 import {DatasetSliceTrack} from '../../components/tracks/dataset_slice_track';
@@ -27,10 +26,10 @@ const FTRACE_INSTANT_WIDTH_PX = 8;
 export function createFtraceTrack(
   trace: Trace,
   uri: string,
-  cpu: Cpu,
+  ucpu: number,
   store: Store<FtraceFilter>,
 ) {
-  return new DatasetSliceTrack({
+  return DatasetSliceTrack.create({
     trace,
     uri,
     dataset: () => {
@@ -53,7 +52,7 @@ export function createFtraceTrack(
         },
         filter: {
           col: 'ucpu',
-          eq: cpu.ucpu,
+          eq: ucpu,
         },
       });
     },
