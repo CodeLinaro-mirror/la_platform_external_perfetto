@@ -82,8 +82,9 @@ void FtraceSchedEventTracker::PushSchedSwitch(uint32_t cpu,
                                               base::StringView next_comm,
                                               int32_t next_prio) {
   StringId next_comm_id = context_->storage->InternString(next_comm);
-  UniqueTid next_utid = context_->process_tracker->UpdateThreadName(
-      next_pid, next_comm_id, ThreadNamePriority::kFtrace);
+  UniqueTid next_utid = context_->process_tracker->GetOrCreateThread(next_pid);
+  context_->process_tracker->UpdateThreadName(next_utid, next_comm_id,
+                                              ThreadNamePriority::kFtrace);
 
   // First use this data to close the previous slice.
   bool prev_pid_match_prev_next_pid = false;
@@ -108,8 +109,9 @@ void FtraceSchedEventTracker::PushSchedSwitch(uint32_t cpu,
   // this event's |prev_comm| == previous event's |next_comm| does not hold
   // if the thread changed its name while scheduled.
   StringId prev_comm_id = context_->storage->InternString(prev_comm);
-  UniqueTid prev_utid = context_->process_tracker->UpdateThreadName(
-      prev_pid, prev_comm_id, ThreadNamePriority::kFtrace);
+  UniqueTid prev_utid = context_->process_tracker->GetOrCreateThread(prev_pid);
+  context_->process_tracker->UpdateThreadName(prev_utid, prev_comm_id,
+                                              ThreadNamePriority::kFtrace);
 
   AddRawSchedSwitchEvent(cpu, ts, prev_utid, prev_pid, prev_comm_id, prev_prio,
                          prev_state, next_pid, next_comm_id, next_prio);
@@ -135,8 +137,9 @@ void FtraceSchedEventTracker::PushSchedSwitchCompact(uint32_t cpu,
                                                      int32_t next_prio,
                                                      StringId next_comm_id,
                                                      bool parse_only_into_raw) {
-  UniqueTid next_utid = context_->process_tracker->UpdateThreadName(
-      next_pid, next_comm_id, ThreadNamePriority::kFtrace);
+  UniqueTid next_utid = context_->process_tracker->GetOrCreateThread(next_pid);
+  context_->process_tracker->UpdateThreadName(next_utid, next_comm_id,
+                                              ThreadNamePriority::kFtrace);
 
   // If we're processing the first compact event for this cpu, don't start a
   // slice since we're missing the "prev_*" fields. The successive events will
@@ -239,7 +242,8 @@ void FtraceSchedEventTracker::PushSchedWakingCompact(uint32_t cpu,
         context_->storage->mutable_ftrace_event_table()->Insert(row).id;
 
     using SW = protos::pbzero::SchedWakingFtraceEvent;
-    auto inserter = context_->args_tracker->AddArgsTo(id);
+    ArgsTracker args_tracker(context_);
+    auto inserter = args_tracker.AddArgsTo(id);
     auto add_raw_arg = [this, &inserter](int field_num, Variadic var) {
       StringId key = sched_waking_field_ids_[static_cast<size_t>(field_num)];
       inserter.AddArg(key, var);
@@ -283,7 +287,8 @@ void FtraceSchedEventTracker::AddRawSchedSwitchEvent(uint32_t cpu,
     // to index these events using the field ids.
     using SS = protos::pbzero::SchedSwitchFtraceEvent;
 
-    auto inserter = context_->args_tracker->AddArgsTo(id);
+    ArgsTracker args_tracker(context_);
+    auto inserter = args_tracker.AddArgsTo(id);
     auto add_raw_arg = [this, &inserter](int field_num, Variadic var) {
       StringId key = sched_switch_field_ids_[static_cast<size_t>(field_num)];
       inserter.AddArg(key, var);

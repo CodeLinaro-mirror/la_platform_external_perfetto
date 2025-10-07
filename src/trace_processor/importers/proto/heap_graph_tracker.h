@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include "perfetto/ext/base/circular_queue.h"
 #include "perfetto/ext/base/flat_hash_map.h"
 #include "perfetto/ext/base/string_view.h"
 #include "src/trace_processor/storage/trace_storage.h"
@@ -82,6 +83,7 @@ class HeapGraphTracker : public Destructible {
 
     std::vector<uint64_t> field_name_ids;
     std::vector<uint64_t> referred_objects;
+    std::vector<uint64_t> runtime_internal_objects;
 
     // If this object is an instance of `libcore.util.NativeAllocationRegistry`,
     // this is the value of its `size` field.
@@ -95,11 +97,7 @@ class HeapGraphTracker : public Destructible {
 
   explicit HeapGraphTracker(TraceStorage* storage);
 
-  static HeapGraphTracker* GetOrCreate(TraceProcessorContext* context) {
-    if (!context->heap_graph_tracker) {
-      context->heap_graph_tracker.reset(
-          new HeapGraphTracker(context->storage.get()));
-    }
+  static HeapGraphTracker* Get(TraceProcessorContext* context) {
     return static_cast<HeapGraphTracker*>(context->heap_graph_tracker.get());
   }
 
@@ -176,6 +174,7 @@ class HeapGraphTracker : public Destructible {
     protos::pbzero::HeapGraphObject::HeapType last_heap_type =
         protos::pbzero::HeapGraphObject::HEAP_TYPE_UNKNOWN;
     std::vector<SourceRoot> current_roots;
+    std::vector<uint64_t> internal_vm_roots;
 
     // Note: the below maps are a mix of std::map and base::FlatHashMap because
     // of the incremental evolution of this code (i.e. when the code was written
@@ -244,7 +243,10 @@ class HeapGraphTracker : public Destructible {
                    std::vector<tables::HeapGraphObjectTable::Id>&);
   void MarkRoot(tables::HeapGraphObjectTable::RowReference, StringId type);
   size_t RankRoot(StringId type);
-  void UpdateShortestPaths(tables::HeapGraphObjectTable::RowReference row_ref);
+  void UpdateShortestPaths(
+      base::CircularQueue<
+          std::pair<int32_t, tables::HeapGraphObjectTable::RowReference>>&,
+      tables::HeapGraphObjectTable::RowReference row_ref);
   void FindPathFromRoot(tables::HeapGraphObjectTable::RowReference,
                         PathFromRoot* path);
 
