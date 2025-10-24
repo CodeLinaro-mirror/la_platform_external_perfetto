@@ -34,7 +34,6 @@ using testing::Contains;
 using testing::ElementsAre;
 using testing::ElementsAreArray;
 using testing::Eq;
-using testing::Invoke;
 using testing::IsEmpty;
 using testing::NiceMock;
 using testing::Not;
@@ -944,12 +943,12 @@ TEST_F(FtraceConfigMuxerFakeTableTest, AtraceErrorsPropagated) {
       RunAtrace(ElementsAreArray({"atrace", "--async_start", "--only_userspace",
                                   "cat_1", "cat_2"}),
                 _))
-      .WillOnce(Invoke([](const std::vector<std::string>&, std::string* err) {
+      .WillOnce([](const std::vector<std::string>&, std::string* err) {
         EXPECT_NE(err, nullptr);
         if (err)
           err->append("foo\nbar\n");
         return true;
-      }));
+      });
 
   FtraceSetupErrors errors{};
   FtraceConfigId id_a = 23;
@@ -1333,6 +1332,89 @@ TEST_F(FtraceConfigMuxerFakeTableTest, PreserveFtraceBufferNotSetBufferSizeKb) {
 
   FtraceConfigId id = 44;
   ASSERT_TRUE(model_.SetupConfig(id, config));
+}
+
+TEST_F(FtraceConfigMuxerFakeTableTest, TidFilter) {
+  FtraceConfig config;
+  config.add_tids_to_trace(123);
+  config.add_tids_to_trace(456);
+
+  ON_CALL(ftrace_, ReadFileIntoString("/root/current_tracer"))
+      .WillByDefault(Return("nop"));
+
+  // Ignore other calls.
+  EXPECT_CALL(ftrace_, WriteToFile(Not("/root/set_event_pid"), _))
+      .Times(AnyNumber());
+  EXPECT_CALL(ftrace_, ClearFile(Not("/root/set_event_pid")))
+      .Times(AnyNumber());
+
+  EXPECT_CALL(ftrace_, WriteToFile("/root/set_event_pid", "123 456"))
+      .WillOnce(Return(true));
+
+  FtraceConfigId id = 43;
+  ASSERT_TRUE(model_.SetupConfig(id, config));
+  ASSERT_TRUE(model_.GetExclusiveFeatureActiveForTesting());
+
+  EXPECT_CALL(ftrace_, ClearFile("/root/set_event_pid"));
+  ASSERT_TRUE(model_.RemoveConfig(id));
+  ASSERT_FALSE(model_.GetExclusiveFeatureActiveForTesting());
+}
+
+TEST_F(FtraceConfigMuxerFakeTableTest,
+       ExclusiveFeatureFailsIfAnotherConfigActive) {
+  ON_CALL(ftrace_, ReadFileIntoString("/root/current_tracer"))
+      .WillByDefault(Return("nop"));
+  ON_CALL(ftrace_, ReadOneCharFromFile("/root/tracing_on"))
+      .WillByDefault(Return('0'));
+
+  FtraceConfig regular_config;
+  FtraceConfigId regular_id = 1;
+  ASSERT_TRUE(model_.SetupConfig(regular_id, regular_config));
+
+  FtraceConfig advanced_config;
+  advanced_config.add_tids_to_trace(123);
+  FtraceConfigId advanced_id = 2;
+  FtraceSetupErrors errors;
+  ASSERT_FALSE(model_.SetupConfig(advanced_id, advanced_config, &errors));
+  EXPECT_EQ(errors.exclusive_feature_error,
+            "Attempted to start an ftrace session with advanced features "
+            "while another session was active.");
+
+  ASSERT_TRUE(model_.RemoveConfig(regular_id));
+}
+
+TEST_F(FtraceConfigMuxerFakeTableTest,
+       AnotherConfigFailsIfExclusiveFeatureActive) {
+  ON_CALL(ftrace_, ReadFileIntoString("/root/current_tracer"))
+      .WillByDefault(Return("nop"));
+  ON_CALL(ftrace_, ReadOneCharFromFile("/root/tracing_on"))
+      .WillByDefault(Return('0'));
+
+  FtraceConfig advanced_config;
+  advanced_config.add_tids_to_trace(123);
+  FtraceConfigId advanced_id = 1;
+
+  // We only care about set_event_pid, so we'll ignore other calls.
+  EXPECT_CALL(ftrace_, WriteToFile(Not(Eq("/root/set_event_pid")), _))
+      .Times(AnyNumber());
+  EXPECT_CALL(ftrace_, ClearFile(Not(Eq("/root/set_event_pid"))))
+      .Times(AnyNumber());
+
+  EXPECT_CALL(ftrace_, WriteToFile("/root/set_event_pid", "123"));
+  ASSERT_TRUE(model_.SetupConfig(advanced_id, advanced_config));
+  ASSERT_TRUE(model_.GetExclusiveFeatureActiveForTesting());
+
+  FtraceConfig regular_config;
+  FtraceConfigId regular_id = 2;
+  FtraceSetupErrors errors;
+  ASSERT_FALSE(model_.SetupConfig(regular_id, regular_config, &errors));
+  EXPECT_EQ(errors.exclusive_feature_error,
+            "Attempted to start an ftrace session while another session with "
+            "advanced features was active.");
+
+  EXPECT_CALL(ftrace_, ClearFile("/root/set_event_pid"));
+  ASSERT_TRUE(model_.RemoveConfig(advanced_id));
+  ASSERT_FALSE(model_.GetExclusiveFeatureActiveForTesting());
 }
 
 // Fixture that constructs a FtraceConfigMuxer with a mock

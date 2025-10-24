@@ -13,23 +13,27 @@
 // limitations under the License.
 
 import m from 'mithril';
+import z from 'zod';
 import {searchSegment} from '../../base/binary_search';
+import {AsyncDisposableStack} from '../../base/disposable_stack';
 import {assertTrue, assertUnreachable} from '../../base/logging';
 import {Time, time} from '../../base/time';
 import {uuidv4Sql} from '../../base/uuid';
 import {raf} from '../../core/raf_scheduler';
-import {CacheKey} from './timeline_cache';
+import {Trace} from '../../public/trace';
 import {
-  TrackRenderer,
   TrackMouseEvent,
   TrackRenderContext,
+  TrackRenderer,
+  TrackSetting,
+  TrackSettingDescriptor,
 } from '../../public/track';
+import {LONG, NUM} from '../../trace_processor/query_result';
 import {Button} from '../../widgets/button';
 import {MenuDivider, MenuItem, PopupMenu} from '../../widgets/menu';
-import {LONG, NUM} from '../../trace_processor/query_result';
 import {checkerboardExcept} from '../checkerboard';
-import {AsyncDisposableStack} from '../../base/disposable_stack';
-import {Trace} from '../../public/trace';
+import {CacheKey} from './timeline_cache';
+import {valueIfAllEqual} from '../../base/array_utils';
 
 function roundAway(n: number): number {
   const exp = Math.ceil(Math.log10(Math.max(Math.abs(n), 1)));
@@ -105,7 +109,7 @@ class RangeSharer {
 
     const tag = `${options.yRangeSharingKey}-${options.yMode}-${
       options.yDisplay
-    }-${!!options.enlarge}`;
+    }-${options.chartHeightSize}`;
     const cachedRange = this.tagToRange.get(tag);
     if (cachedRange === undefined) {
       this.tagToRange.set(tag, [min, max]);
@@ -141,6 +145,16 @@ interface CounterTooltipState {
   tsEnd?: time;
 }
 
+type ChartHeightSize = 1 | 4 | 8 | 16 | 32;
+
+const CHART_HEIGHT_LABELS: [string, ChartHeightSize][] = [
+  ['Small (1x)', 1],
+  ['Medium (4x)', 4],
+  ['Large (8x)', 8],
+  ['XLarge (16x)', 16],
+  ['XXLarge (32x)', 32],
+];
+
 export interface CounterOptions {
   // Mode for computing the y value. Options are:
   // value = v[t] directly the value of the counter at time t
@@ -163,6 +177,9 @@ export interface CounterOptions {
   // readable value.
   yRangeRounding: 'strict' | 'human_readable';
 
+  // Scales the height of the chart.
+  chartHeightSize: ChartHeightSize;
+
   // Allows *extending* the range of the y-axis counter increasing
   // the maximum (via yOverrideMaximum) or decreasing the minimum
   // (via yOverrideMinimum). This is useful for percentage counters
@@ -174,9 +191,6 @@ export interface CounterOptions {
   // If set all counters with the same key share a range.
   yRangeSharingKey?: string;
 
-  // Show the chart as 4x the height.
-  enlarge?: boolean;
-
   // unit for the counter. This is displayed in the tooltip and
   // legend.
   unit?: string;
@@ -186,6 +200,186 @@ export interface CounterOptions {
   // may be set to Watts. If not specified, unit/s will be used.
   rateUnit?: string;
 }
+
+const radioIconChecked = 'radio_button_checked';
+const radioIconUnchecked = 'radio_button_unchecked';
+
+const ymodeSchema = z.enum(['value', 'delta', 'rate']);
+type yMode = z.infer<typeof ymodeSchema>;
+
+const yRangeSchema = z.union([z.literal('all'), z.literal('viewport')]);
+type YRange = z.infer<typeof yRangeSchema>;
+
+const yDisplaySchema = z.enum(['zero', 'minmax', 'log']);
+type YDisplay = z.infer<typeof yDisplaySchema>;
+
+const yRangeRoundingSchema = z.union([
+  z.literal('strict'),
+  z.literal('human_readable'),
+]);
+type YRangeRounding = z.infer<typeof yRangeRoundingSchema>;
+
+const chartHeightSizeSchema = z.union([
+  z.literal(1),
+  z.literal(4),
+  z.literal(8),
+  z.literal(16),
+  z.literal(32),
+]);
+
+const yModeSettingDescriptor: TrackSettingDescriptor<yMode> = {
+  id: 'yMode',
+  name: 'Mode',
+  description: 'value, delta, rate',
+  schema: ymodeSchema,
+  defaultValue: 'value',
+  render(setter, values) {
+    const value = valueIfAllEqual(values);
+    return m(MenuItem, {label: `Mode (currently: ${value ?? 'mixed'})`}, [
+      m(MenuItem, {
+        label: 'Value',
+        onclick: () => setter('value'),
+        icon: value === 'value' ? radioIconChecked : radioIconUnchecked,
+      }),
+      m(MenuItem, {
+        label: 'Delta',
+        onclick: () => setter('delta'),
+        icon: value === 'delta' ? radioIconChecked : radioIconUnchecked,
+      }),
+      m(MenuItem, {
+        label: 'Rate',
+        onclick: () => setter('rate'),
+        icon: value === 'rate' ? radioIconChecked : radioIconUnchecked,
+      }),
+    ]);
+  },
+};
+
+const yRangeSettingDescriptor: TrackSettingDescriptor<YRange> = {
+  id: 'yRange',
+  name: 'Y-axis range',
+  description: 'all, viewport',
+  schema: yRangeSchema,
+  defaultValue: 'all',
+  render(setter, values) {
+    const value = valueIfAllEqual(values);
+
+    const icon = (() => {
+      switch (value) {
+        case 'viewport':
+          return 'check_box';
+        case 'all':
+          return 'check_box_outline_blank';
+        default:
+          return 'indeterminate_check_box';
+      }
+    })();
+
+    return m(MenuItem, {
+      label: 'Zoom on scroll',
+      icon,
+      onclick: () => {
+        switch (value) {
+          case 'all':
+            setter('viewport');
+            break;
+          case 'viewport':
+          default:
+            setter('all');
+            break;
+        }
+      },
+    });
+  },
+};
+
+const yDisplaySettingDescriptor: TrackSettingDescriptor<YDisplay> = {
+  id: 'yDisplay',
+  name: 'Y-axis display',
+  description: 'zero, minmax, log',
+  schema: yDisplaySchema,
+  defaultValue: 'zero',
+  render(setter, values) {
+    const value = valueIfAllEqual(values);
+    return m(MenuItem, {label: `Display (currently: ${value ?? 'mixed'})`}, [
+      m(MenuItem, {
+        label: 'Zero-based',
+        onclick: () => setter('zero'),
+        icon: value === 'zero' ? radioIconChecked : radioIconUnchecked,
+      }),
+      m(MenuItem, {
+        label: 'Min/Max',
+        onclick: () => setter('minmax'),
+        icon: value === 'minmax' ? radioIconChecked : radioIconUnchecked,
+      }),
+      m(MenuItem, {
+        label: 'Log',
+        onclick: () => setter('log'),
+        icon: value === 'log' ? radioIconChecked : radioIconUnchecked,
+      }),
+    ]);
+  },
+};
+
+const yRangeRoundingSettingDescriptor: TrackSettingDescriptor<YRangeRounding> =
+  {
+    id: 'yRangeRounding',
+    name: 'Y-axis rounding',
+    description: 'strict, human_readable',
+    schema: yRangeRoundingSchema,
+    defaultValue: 'human_readable',
+    render(setter, values) {
+      const value = valueIfAllEqual(values);
+
+      const icon = (() => {
+        switch (value) {
+          case 'human_readable':
+            return 'check_box';
+          case 'strict':
+            return 'check_box_outline_blank';
+          default:
+            return 'indeterminate_check_box';
+        }
+      })();
+
+      return m(MenuItem, {
+        label: 'Round y-axis scale',
+        icon,
+        onclick: () => {
+          switch (value) {
+            case 'human_readable':
+              setter('strict');
+              break;
+            case 'strict':
+            default:
+              setter('human_readable');
+              break;
+          }
+        },
+      });
+    },
+  };
+
+const chartHeightSizeSettingDescriptor: TrackSettingDescriptor<ChartHeightSize> =
+  {
+    id: 'chartHeightSize',
+    name: 'Chart height',
+    description: '1, 4, 8, 16, 32',
+    schema: chartHeightSizeSchema,
+    defaultValue: 1,
+    render(setter, values) {
+      const value = valueIfAllEqual(values);
+      return m(MenuItem, {label: `Enlarge (currently: ${value ?? 'mixed'})`}, [
+        CHART_HEIGHT_LABELS.map(([label, size]) =>
+          m(MenuItem, {
+            label,
+            onclick: () => setter(size),
+            icon: value === size ? radioIconChecked : radioIconUnchecked,
+          }),
+        ),
+      ]);
+    },
+  };
 
 export abstract class BaseCounterTrack implements TrackRenderer {
   protected trackUuid = uuidv4Sql();
@@ -268,6 +462,7 @@ export abstract class BaseCounterTrack implements TrackRenderer {
       yRangeRounding: 'human_readable',
       yMode: 'value',
       yDisplay: 'zero',
+      chartHeightSize: 1,
     };
   }
 
@@ -281,7 +476,7 @@ export abstract class BaseCounterTrack implements TrackRenderer {
 
   getHeight() {
     const height = 40;
-    return this.getCounterOptions().enlarge ? height * 4 : height;
+    return height * this.getCounterOptions().chartHeightSize;
   }
 
   // A method to render menu items for switching the defualt
@@ -334,6 +529,26 @@ export abstract class BaseCounterTrack implements TrackRenderer {
         }),
       ),
 
+      m(
+        MenuItem,
+        {
+          label: `Enlarge (currently: ${options.chartHeightSize}x)`,
+        },
+        CHART_HEIGHT_LABELS.map(([label, size]) =>
+          m(MenuItem, {
+            label,
+            icon:
+              options.chartHeightSize === size
+                ? 'radio_button_checked'
+                : 'radio_button_unchecked',
+            onclick: () => {
+              options.chartHeightSize = size;
+              this.invalidate();
+            },
+          }),
+        ),
+      ),
+
       m(MenuItem, {
         label: 'Zoom on scroll',
         icon:
@@ -342,15 +557,6 @@ export abstract class BaseCounterTrack implements TrackRenderer {
             : 'check_box_outline_blank',
         onclick: () => {
           options.yRange = options.yRange === 'viewport' ? 'all' : 'viewport';
-          this.invalidate();
-        },
-      }),
-
-      m(MenuItem, {
-        label: `Enlarge`,
-        icon: options.enlarge ? 'check_box' : 'check_box_outline_blank',
-        onclick: () => {
-          options.enlarge = !options.enlarge;
           this.invalidate();
         },
       }),
@@ -469,6 +675,59 @@ export abstract class BaseCounterTrack implements TrackRenderer {
     result && this.trash.use(result);
     this.limits = await this.createTableAndFetchLimits(false);
   }
+
+  readonly yModeSetting: TrackSetting<yMode> = {
+    descriptor: yModeSettingDescriptor,
+    getValue: () => this.getCounterOptions().yMode,
+    setValue: (yMode) => {
+      this.options = {...this.getCounterOptions(), yMode};
+      this.invalidate();
+    },
+  };
+
+  readonly yRangeSetting: TrackSetting<YRange> = {
+    descriptor: yRangeSettingDescriptor,
+    getValue: () => this.getCounterOptions().yRange,
+    setValue: (yRange) => {
+      this.options = {...this.getCounterOptions(), yRange};
+      this.invalidate();
+    },
+  };
+
+  readonly yDisplaySetting: TrackSetting<YDisplay> = {
+    descriptor: yDisplaySettingDescriptor,
+    getValue: () => this.getCounterOptions().yDisplay,
+    setValue: (yDisplay) => {
+      this.options = {...this.getCounterOptions(), yDisplay};
+      this.invalidate();
+    },
+  };
+
+  readonly yRangeRoundingSetting: TrackSetting<YRangeRounding> = {
+    descriptor: yRangeRoundingSettingDescriptor,
+    getValue: () => this.getCounterOptions().yRangeRounding,
+    setValue: (yRangeRounding) => {
+      this.options = {...this.getCounterOptions(), yRangeRounding};
+      this.invalidate();
+    },
+  };
+
+  readonly chartHeightSizeSetting: TrackSetting<ChartHeightSize> = {
+    descriptor: chartHeightSizeSettingDescriptor,
+    getValue: () => this.getCounterOptions().chartHeightSize,
+    setValue: (chartHeightSize) => {
+      this.options = {...this.getCounterOptions(), chartHeightSize};
+      this.invalidate();
+    },
+  };
+
+  readonly settings: ReadonlyArray<TrackSetting<unknown>> = [
+    this.yModeSetting,
+    this.yRangeSetting,
+    this.yDisplaySetting,
+    this.yRangeRoundingSetting,
+    this.chartHeightSizeSetting,
+  ];
 
   async onUpdate({visibleWindow, size}: TrackRenderContext): Promise<void> {
     const windowSizePx = Math.max(1, size.width);
