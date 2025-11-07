@@ -42,6 +42,7 @@ export enum NodeType {
   // Multi node operations
   kIntervalIntersect,
   kUnion,
+  kMerge,
 }
 
 export function singleNodeOperation(type: NodeType): boolean {
@@ -61,7 +62,6 @@ export function singleNodeOperation(type: NodeType): boolean {
 export interface QueryNodeState {
   prevNode?: QueryNode;
   prevNodes?: QueryNode[];
-  customTitle?: string;
   comment?: string;
   trace?: Trace;
   sqlModules?: SqlModules;
@@ -76,6 +76,11 @@ export interface QueryNodeState {
 
   // Caching
   hasOperationChanged?: boolean;
+
+  // Whether queries should automatically execute when this node changes.
+  // If false, the user must manually click "Run" to execute queries.
+  // Set by the node registry when the node is created.
+  autoExecute?: boolean;
 }
 
 export interface BaseNode {
@@ -103,11 +108,11 @@ export interface BaseNode {
 export interface SourceNode extends BaseNode {}
 
 export interface ModificationNode extends BaseNode {
-  prevNode: QueryNode;
+  prevNode?: QueryNode;
 }
 
 export interface MultiSourceNode extends BaseNode {
-  prevNodes: QueryNode[];
+  prevNodes: (QueryNode | undefined)[];
 }
 
 export type QueryNode = SourceNode | ModificationNode | MultiSourceNode;
@@ -249,4 +254,108 @@ export function isAQuery(
     !(maybeQuery instanceof Error) &&
     maybeQuery.sql !== undefined
   );
+}
+
+// ========================================
+// GRAPH CONNECTION OPERATIONS
+// ========================================
+// These functions encapsulate the bidirectional relationship management
+// between nodes, ensuring consistency when adding/removing connections.
+
+/**
+ * Adds a connection from one node to another, updating both forward and
+ * backward links. For multi-source nodes, adds to the specified port index.
+ */
+export function addConnection(
+  fromNode: QueryNode,
+  toNode: QueryNode,
+  portIndex?: number,
+): void {
+  // Update forward link (fromNode -> toNode)
+  if (!fromNode.nextNodes.includes(toNode)) {
+    fromNode.nextNodes.push(toNode);
+  }
+
+  // Update backward link based on node type
+  if ('prevNode' in toNode && singleNodeOperation(toNode.type)) {
+    // ModificationNode - single input
+    (toNode as ModificationNode).prevNode = fromNode;
+  } else if ('prevNodes' in toNode && Array.isArray(toNode.prevNodes)) {
+    // MultiSourceNode - multiple inputs
+    const multiSourceNode = toNode as MultiSourceNode;
+    const arrayIndex = portIndex ?? multiSourceNode.prevNodes.length;
+
+    // Expand array if needed to accommodate the new connection
+    while (multiSourceNode.prevNodes.length <= arrayIndex) {
+      multiSourceNode.prevNodes.push(undefined);
+    }
+
+    multiSourceNode.prevNodes[arrayIndex] = fromNode;
+    multiSourceNode.onPrevNodesUpdated?.();
+  }
+}
+
+/**
+ * Removes a connection from one node to another, cleaning up both forward
+ * and backward links.
+ */
+export function removeConnection(fromNode: QueryNode, toNode: QueryNode): void {
+  // Remove forward link (fromNode -> toNode)
+  const nextIndex = fromNode.nextNodes.indexOf(toNode);
+  if (nextIndex !== -1) {
+    fromNode.nextNodes.splice(nextIndex, 1);
+  }
+
+  // Remove backward link based on node type
+  if ('prevNode' in toNode && singleNodeOperation(toNode.type)) {
+    // ModificationNode - single input
+    const modNode = toNode as ModificationNode;
+    if (modNode.prevNode === fromNode) {
+      modNode.prevNode = undefined;
+    }
+  } else if ('prevNodes' in toNode && Array.isArray(toNode.prevNodes)) {
+    // MultiSourceNode - multiple inputs
+    const multiSourceNode = toNode as MultiSourceNode;
+    const prevIndex = multiSourceNode.prevNodes.indexOf(fromNode);
+    if (prevIndex !== -1) {
+      multiSourceNode.prevNodes[prevIndex] = undefined;
+      multiSourceNode.onPrevNodesUpdated?.();
+    }
+  }
+}
+
+/**
+ * Removes all connections to a specific node from all parent nodes.
+ * Used when deleting a node from the graph.
+ */
+export function removeAllIncomingConnections(node: QueryNode): void {
+  const parentsToRemove: QueryNode[] = [];
+
+  // Find all parent nodes
+  if ('prevNode' in node && node.prevNode) {
+    parentsToRemove.push(node.prevNode);
+  } else if ('prevNodes' in node && Array.isArray(node.prevNodes)) {
+    const multiSourceNode = node as MultiSourceNode;
+    for (const parent of multiSourceNode.prevNodes) {
+      if (parent !== undefined) {
+        parentsToRemove.push(parent);
+      }
+    }
+  }
+
+  // Remove connections from each parent
+  for (const parent of parentsToRemove) {
+    removeConnection(parent, node);
+  }
+}
+
+/**
+ * Removes all connections from a specific node to all child nodes.
+ * Used when deleting a node from the graph.
+ */
+export function removeAllOutgoingConnections(node: QueryNode): void {
+  const childrenToRemove = [...node.nextNodes];
+  for (const child of childrenToRemove) {
+    removeConnection(node, child);
+  }
 }

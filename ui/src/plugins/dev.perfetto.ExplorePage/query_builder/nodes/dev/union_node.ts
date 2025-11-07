@@ -33,7 +33,6 @@ export interface UnionSerializedState {
   unionNodes: string[];
   selectedColumns: ColumnInfo[];
   filters?: UIFilter[];
-  customTitle?: string;
   comment?: string;
 }
 
@@ -49,7 +48,6 @@ export class UnionNode implements MultiSourceNode {
   readonly prevNodes: QueryNode[];
   nextNodes: QueryNode[];
   readonly state: UnionNodeState;
-  customTitle?: string;
   comment?: string;
   filters?: UIFilter[];
 
@@ -61,6 +59,7 @@ export class UnionNode implements MultiSourceNode {
     this.nodeId = nextNodeId();
     this.state = {
       ...state,
+      autoExecute: state.autoExecute ?? false,
     };
     this.prevNodes = state.prevNodes;
     this.nextNodes = [];
@@ -92,9 +91,16 @@ export class UnionNode implements MultiSourceNode {
     if (this.prevNodes.length === 0) {
       return [];
     }
-    let commonCols = newColumnInfoList(this.prevNodes[0].finalCols, true);
-    for (let i = 1; i < this.prevNodes.length; i++) {
-      const currentNodeCols = this.prevNodes[i].finalCols;
+    // Filter out undefined entries before processing
+    const validPrevNodes = this.prevNodes.filter(
+      (node): node is QueryNode => node !== undefined,
+    );
+    if (validPrevNodes.length === 0) {
+      return [];
+    }
+    let commonCols = newColumnInfoList(validPrevNodes[0].finalCols, true);
+    for (let i = 1; i < validPrevNodes.length; i++) {
+      const currentNodeCols = validPrevNodes[i].finalCols;
       commonCols = commonCols.filter((commonCol) =>
         currentNodeCols.some(
           (currentNodeCol) =>
@@ -106,6 +112,19 @@ export class UnionNode implements MultiSourceNode {
   }
 
   validate(): boolean {
+    // Check for undefined entries (disconnected inputs)
+    const validPrevNodes = this.prevNodes.filter(
+      (node): node is QueryNode => node !== undefined,
+    );
+
+    if (validPrevNodes.length < this.prevNodes.length) {
+      if (!this.state.issues) this.state.issues = new NodeIssues();
+      this.state.issues.queryError = new Error(
+        'Union node has disconnected inputs. Please connect all inputs or remove this node.',
+      );
+      return false;
+    }
+
     if (this.prevNodes.length < 2) {
       if (!this.state.issues) this.state.issues = new NodeIssues();
       this.state.issues.queryError = new Error(
@@ -128,6 +147,9 @@ export class UnionNode implements MultiSourceNode {
     }
 
     for (const prevNode of this.prevNodes) {
+      // Skip undefined entries (already handled above)
+      if (prevNode === undefined) continue;
+
       if (!prevNode.validate()) {
         if (!this.state.issues) this.state.issues = new NodeIssues();
         this.state.issues.queryError =
@@ -141,7 +163,7 @@ export class UnionNode implements MultiSourceNode {
   }
 
   getTitle(): string {
-    return this.customTitle ?? 'Union';
+    return 'Union';
   }
 
   nodeDetails(): m.Child {
@@ -213,7 +235,6 @@ export class UnionNode implements MultiSourceNode {
     };
     const clone = new UnionNode(stateCopy);
     clone.filters = this.filters ? [...this.filters] : undefined;
-    clone.customTitle = this.customTitle;
     clone.comment = this.comment;
     return clone;
   }
@@ -227,7 +248,6 @@ export class UnionNode implements MultiSourceNode {
       unionNodes: this.prevNodes.slice(1).map((n) => n.nodeId),
       selectedColumns: this.state.selectedColumns,
       filters: this.filters,
-      customTitle: this.customTitle,
       comment: this.comment,
     };
   }

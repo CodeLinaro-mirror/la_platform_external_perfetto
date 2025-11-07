@@ -50,7 +50,6 @@ export interface AggregationSerializedState {
     isEditing?: boolean;
   }[];
   filters?: UIFilter[];
-  customTitle?: string;
   comment?: string;
 }
 
@@ -135,6 +134,11 @@ export class AggregationNode implements ModificationNode {
     if (this.state.issues) {
       this.state.issues.queryError = undefined;
     }
+    if (this.prevNode === undefined) {
+      if (!this.state.issues) this.state.issues = new NodeIssues();
+      this.state.issues.queryError = new Error('No input node connected');
+      return false;
+    }
     if (!this.prevNode.validate()) {
       if (!this.state.issues) this.state.issues = new NodeIssues();
       this.state.issues.queryError = new Error('Previous node is invalid');
@@ -169,7 +173,7 @@ export class AggregationNode implements ModificationNode {
   }
 
   getTitle(): string {
-    return this.state.customTitle ?? 'Aggregation';
+    return 'Aggregation';
   }
 
   nodeDetails?(): m.Child | undefined {
@@ -223,7 +227,6 @@ export class AggregationNode implements ModificationNode {
       groupByColumns: newColumnInfoList(this.state.groupByColumns),
       aggregations: this.state.aggregations.map((a) => ({...a})),
       filters: this.state.filters ? [...this.state.filters] : undefined,
-      customTitle: this.state.customTitle,
       onchange: this.state.onchange,
       issues: this.state.issues,
     };
@@ -303,7 +306,6 @@ export class AggregationNode implements ModificationNode {
         isEditing: a.isEditing,
       })),
       filters: this.state.filters,
-      customTitle: this.state.customTitle,
       comment: this.state.comment,
     };
   }
