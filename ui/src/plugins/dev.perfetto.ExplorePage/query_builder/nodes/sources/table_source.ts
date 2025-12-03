@@ -35,6 +35,13 @@ import {TableList} from '../../table_list';
 import {redrawModal} from '../../../../../widgets/modal';
 import {SourceNode} from '../../source_node';
 
+export interface TableSourceSerializedState {
+  sqlTable?: string;
+  filters?: FilterDefinition[];
+  customTitle?: string;
+  comment?: string;
+}
+
 export interface TableSourceState extends QueryNodeState {
   readonly trace: Trace;
   readonly sqlModules: SqlModules;
@@ -117,7 +124,7 @@ export class TableSourceNode extends SourceNode {
       trace: this.state.trace,
       sqlModules: this.state.sqlModules,
       sqlTable: this.state.sqlTable,
-      filters: this.state.filters.map((f) => ({...f})),
+      filters: this.state.filters?.map((f) => ({...f})),
       customTitle: this.state.customTitle,
       onchange: this.state.onchange,
     };
@@ -125,7 +132,7 @@ export class TableSourceNode extends SourceNode {
   }
 
   nodeSpecificModify(): m.Child {
-    if (this.state.sqlTable) {
+    if (this.state.sqlTable != null) {
       const table = this.state.sqlTable;
       return m(
         '.pf-stdlib-table-node',
@@ -181,7 +188,7 @@ export class TableSourceNode extends SourceNode {
   }
 
   getTitle(): string {
-    return this.state.customTitle ?? `Table ${this.state.sqlTable?.name}`;
+    return this.state.customTitle ?? `${this.state.sqlTable?.name}`;
   }
 
   isMaterialised(): boolean {
@@ -211,5 +218,30 @@ export class TableSourceNode extends SourceNode {
     const selectedColumns = createSelectColumnsProto(this);
     if (selectedColumns) sq.selectColumns = selectedColumns;
     return sq;
+  }
+
+  serializeState(): TableSourceSerializedState {
+    return {
+      sqlTable: this.state.sqlTable?.name,
+      filters: this.state.filters,
+      customTitle: this.state.customTitle,
+      comment: this.state.comment,
+    };
+  }
+
+  static deserializeState(
+    trace: Trace,
+    sqlModules: SqlModules,
+    state: TableSourceSerializedState,
+  ): TableSourceState {
+    const sqlTable = state.sqlTable
+      ? sqlModules.getTable(state.sqlTable)
+      : undefined;
+    return {
+      ...state,
+      trace,
+      sqlModules,
+      sqlTable,
+    };
   }
 }

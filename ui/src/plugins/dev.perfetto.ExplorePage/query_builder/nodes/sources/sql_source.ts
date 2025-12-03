@@ -31,6 +31,14 @@ import {Trace} from '../../../../../public/trace';
 import {SourceNode} from '../../source_node';
 
 import {ColumnInfo} from '../../column_info';
+import {FilterDefinition} from '../../../../../components/widgets/data_grid/common';
+
+export interface SqlSourceSerializedState {
+  sql?: string;
+  filters?: FilterDefinition[];
+  customTitle?: string;
+  comment?: string;
+}
 
 export interface SqlSourceState extends QueryNodeState {
   sql?: string;
@@ -70,7 +78,7 @@ export class SqlSourceNode extends SourceNode {
   clone(): QueryNode {
     const stateCopy: SqlSourceState = {
       sql: this.state.sql,
-      filters: [],
+      filters: this.state.filters ? [...this.state.filters] : undefined,
       customTitle: this.state.customTitle,
       issues: this.state.issues,
       trace: this.state.trace,
@@ -89,6 +97,16 @@ export class SqlSourceNode extends SourceNode {
   isMaterialised(): boolean {
     return this.state.isExecuted === true && this.meterialisedAs !== undefined;
   }
+
+  serializeState(): SqlSourceSerializedState {
+    return {
+      sql: this.state.sql,
+      filters: this.state.filters,
+      customTitle: this.state.customTitle,
+      comment: this.state.comment,
+    };
+  }
+
   getStructuredQuery(): protos.PerfettoSqlStructuredQuery | undefined {
     const sq = new protos.PerfettoSqlStructuredQuery();
     sq.id = this.nodeId;

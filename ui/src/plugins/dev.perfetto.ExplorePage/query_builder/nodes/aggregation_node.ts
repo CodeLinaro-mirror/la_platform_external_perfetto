@@ -34,10 +34,24 @@ import {TextInput} from '../../../../widgets/text_input';
 import {Button} from '../../../../widgets/button';
 import {NodeIssues} from '../node_issues';
 
+export interface AggregationSerializedState {
+  groupByColumns: {name: string; checked: boolean}[];
+  aggregations: {
+    column?: ColumnInfo;
+    aggregationOp?: string;
+    newColumnName?: string;
+    isValid?: boolean;
+    isEditing?: boolean;
+  }[];
+  filters?: FilterDefinition[];
+  customTitle?: string;
+  comment?: string;
+}
+
 export interface AggregationNodeState extends QueryNodeState {
   prevNodes?: QueryNode[];
   groupByColumns: ColumnInfo[];
-  readonly aggregations: Aggregation[];
+  aggregations: Aggregation[];
 }
 
 export interface Aggregation {
@@ -76,10 +90,14 @@ export class AggregationNode implements QueryNode {
     this.nodeId = nextNodeId();
     this.state = {
       ...state,
+      groupByColumns: state.groupByColumns ?? [],
+      aggregations: state.aggregations ?? [],
     };
     this.prevNodes = state.prevNodes;
     this.nextNodes = [];
-    this.state.groupByColumns = newColumnInfoList(this.sourceCols, false);
+    if (this.state.groupByColumns.length === 0) {
+      this.state.groupByColumns = newColumnInfoList(this.sourceCols, false);
+    }
   }
 
   updateGroupByColumns() {
@@ -145,6 +163,32 @@ export class AggregationNode implements QueryNode {
     return this.state.customTitle ?? 'Aggregation';
   }
 
+  nodeDetails?(): m.Child | undefined {
+    const details: m.Child[] = [];
+    const groupByCols = this.state.groupByColumns
+      .filter((c) => c.checked)
+      .map((c) => c.name);
+    if (groupByCols.length > 0) {
+      details.push(m('div', `Group by: ${groupByCols.join(', ')}`));
+    }
+
+    const aggs = this.state.aggregations
+      .filter((agg) => agg.isValid)
+      .map(
+        (agg) =>
+          `${agg.aggregationOp}(${agg.column?.name}) AS ${agg.newColumnName ?? placeholderNewColumnName(agg)}`,
+      );
+
+    if (aggs.length > 0) {
+      details.push(m('div', `${aggs.join(', ')}`));
+    }
+
+    if (details.length === 0) {
+      return m('div', `No aggregation`);
+    }
+    return m('.pf-aggregation-node-details', details);
+  }
+
   nodeSpecificModify(): m.Child {
     return m(
       '.node-specific-modify',
@@ -169,7 +213,7 @@ export class AggregationNode implements QueryNode {
       prevNodes: this.state.prevNodes,
       groupByColumns: newColumnInfoList(this.state.groupByColumns),
       aggregations: this.state.aggregations.map((a) => ({...a})),
-      filters: [],
+      filters: this.state.filters ? [...this.state.filters] : undefined,
       customTitle: this.state.customTitle,
       onchange: this.state.onchange,
       issues: this.state.issues,
@@ -222,6 +266,67 @@ export class AggregationNode implements QueryNode {
     }
 
     return sq;
+  }
+
+  resolveColumns() {
+    const sourceCols = this.sourceCols;
+    this.state.groupByColumns.forEach((c) => {
+      const sourceCol = sourceCols.find((s) => s.name === c.name);
+      if (sourceCol) {
+        c.column = sourceCol.column;
+      }
+    });
+    this.state.aggregations.forEach((a) => {
+      if (a.column) {
+        const sourceCol = sourceCols.find((s) => s.name === a.column?.name);
+        if (sourceCol) {
+          a.column = sourceCol;
+        }
+      }
+    });
+  }
+
+  serializeState(): AggregationSerializedState {
+    return {
+      groupByColumns: this.state.groupByColumns.map((c) => ({
+        name: c.name,
+        checked: c.checked,
+      })),
+      aggregations: this.state.aggregations.map((a) => ({
+        column: a.column,
+        aggregationOp: a.aggregationOp,
+        newColumnName: a.newColumnName,
+        isValid: a.isValid,
+        isEditing: a.isEditing,
+      })),
+      filters: this.state.filters,
+      customTitle: this.state.customTitle,
+      comment: this.state.comment,
+    };
+  }
+
+  static deserializeState(
+    state: AggregationSerializedState,
+  ): AggregationNodeState {
+    const groupByColumns = state.groupByColumns.map((c) => {
+      const col = columnInfoFromName(c.name);
+      col.checked = c.checked;
+      return col;
+    });
+    const aggregations = state.aggregations.map((a) => {
+      return {
+        column: a.column,
+        aggregationOp: a.aggregationOp,
+        newColumnName: a.newColumnName,
+        isValid: a.isValid,
+        isEditing: a.isEditing,
+      };
+    });
+    return {
+      ...state,
+      groupByColumns,
+      aggregations,
+    };
   }
 }
 

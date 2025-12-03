@@ -19,12 +19,13 @@ import {SqlModules} from '../../dev.perfetto.SqlModules/sql_modules';
 import {QueryNode, Query, isAQuery, queryToRun, NodeType} from '../query_node';
 import {ExplorePageHelp} from './help';
 import {NodeExplorer} from './node_explorer';
-import {Graph} from './graph';
+import {Graph} from './graph/graph';
 import {Trace} from 'src/public/trace';
 import {DataExplorer} from './data_explorer';
 import {
   DataGridDataSource,
   DataGridModel,
+  FilterDefinition,
 } from '../../../components/widgets/data_grid/common';
 import {InMemoryDataSource} from '../../../components/widgets/data_grid/in_memory_data_source';
 import {QueryResponse} from '../../../components/query_table/queries';
@@ -33,33 +34,39 @@ import {SqlSourceNode} from './nodes/sources/sql_source';
 import {QueryService} from './query_service';
 import {findErrors, findWarnings} from './query_builder_utils';
 import {NodeIssues} from './node_issues';
-import {NodeBoxLayout} from './node_box';
+import {NodeBoxLayout} from './graph/node_box';
 
 export interface BuilderAttrs {
   readonly trace: Trace;
-
   readonly sqlModules: SqlModules;
+
+  readonly devMode?: boolean;
+
   readonly rootNodes: QueryNode[];
   readonly selectedNode?: QueryNode;
   readonly nodeLayouts: Map<string, NodeBoxLayout>;
+
+  readonly onDevModeChange?: (enabled: boolean) => void;
+
+  // Add nodes.
+  readonly onAddSourceNode: (id: string) => void;
+  readonly onAddDerivedNode: (id: string) => void;
 
   readonly onRootNodeCreated: (node: QueryNode) => void;
   readonly onNodeSelected: (node?: QueryNode) => void;
   readonly onDeselect: () => void;
   readonly onNodeLayoutChange: (nodeId: string, layout: NodeBoxLayout) => void;
 
-  // Add source nodes.
-  readonly onAddStdlibTableSource: () => void;
-  readonly onAddSlicesSource: () => void;
-  readonly onAddSqlSource: () => void;
-
-  // Add derived nodes.
-  readonly onAddAggregationNode: (node: QueryNode) => void;
-  readonly onAddIntervalIntersectNode: (node: QueryNode) => void;
-
+  readonly onDeleteNode: (node: QueryNode) => void;
   readonly onClearAllNodes: () => void;
   readonly onDuplicateNode: (node: QueryNode) => void;
-  readonly onDeleteNode: (node: QueryNode) => void;
+  readonly onRemoveFilter: (node: QueryNode, filter: FilterDefinition) => void;
+
+  // Import / Export JSON
+  readonly onImport: () => void;
+  readonly onExport: () => void;
+
+  readonly onImportWithStatement: () => void;
 }
 
 export class Builder implements m.ClassComponent<BuilderAttrs> {
@@ -82,9 +89,6 @@ export class Builder implements m.ClassComponent<BuilderAttrs> {
       rootNodes,
       onNodeSelected,
       selectedNode,
-      onAddStdlibTableSource,
-      onAddSlicesSource,
-      onAddSqlSource,
       onClearAllNodes,
       sqlModules,
     } = attrs;
@@ -129,7 +133,6 @@ export class Builder implements m.ClassComponent<BuilderAttrs> {
             }
           },
           onExecute: () => {
-            console.log('Executing');
             this.queryExecuted = false;
             this.runQuery(selectedNode);
             m.redraw();
@@ -165,19 +168,22 @@ export class Builder implements m.ClassComponent<BuilderAttrs> {
           nodeLayouts: attrs.nodeLayouts,
           onNodeLayoutChange: attrs.onNodeLayoutChange,
           onDeselect: attrs.onDeselect,
-          onAddStdlibTableSource,
-          onAddSlicesSource,
-          onAddSqlSource,
+          onAddSourceNode: attrs.onAddSourceNode,
           onClearAllNodes,
           onDuplicateNode: attrs.onDuplicateNode,
-          onAddAggregation: attrs.onAddAggregationNode,
-          onAddIntervalIntersect: attrs.onAddIntervalIntersectNode,
+          onAddDerivedNode: attrs.onAddDerivedNode,
+          devMode: attrs.devMode,
+          onDevModeChange: attrs.onDevModeChange,
           onDeleteNode: (node: QueryNode) => {
             if (node.isMaterialised()) {
               trace.engine.query(`DROP TABLE IF EXISTS ${node.meterialisedAs}`);
             }
             attrs.onDeleteNode(node);
           },
+          onImport: attrs.onImport,
+          onImportWithStatement: attrs.onImportWithStatement,
+          onExport: attrs.onExport,
+          onRemoveFilter: attrs.onRemoveFilter,
         }),
       ),
       m('.pf-qb-explorer', explorer),

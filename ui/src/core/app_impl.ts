@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import {AsyncLimiter} from '../base/async_limiter';
+import {defer} from '../base/deferred';
 import {assertExists, assertTrue} from '../base/logging';
 import {createProxy, getOrCreate} from '../base/utils';
 import {ServiceWorkerController} from '../frontend/service_worker_controller';
@@ -22,7 +23,7 @@ import {FeatureFlagManager, FlagSettings} from '../public/feature_flag';
 import {PageHandler} from '../public/page';
 import {Raf} from '../public/raf';
 import {RouteArg, RouteArgs} from '../public/route_schema';
-import {Setting, SettingsManager} from '../public/settings';
+import {Setting, SettingDescriptor, SettingsManager} from '../public/settings';
 import {DurationPrecision, TimestampFormat} from '../public/timeline';
 import {NewEngineMode} from '../trace_processor/engine';
 import {AnalyticsInternal, initAnalytics} from './analytics_impl';
@@ -93,6 +94,17 @@ export class AppContext {
   // This is normally empty and is injected with extra google-internal packages
   // via is_internal_user.js
   extraSqlPackages: SqlPackage[] = [];
+
+  // This is normally empty and is injected with Base64-encoded protobuf
+  // descriptor sets via is_internal_user.js.
+  extraParsingDescriptors: string[] = [];
+
+  // This is normally empty and is injected with extra google-internal macros
+  // via is_internal_user.js
+  extraMacros: Record<string, CommandInvocation[]>[] = [];
+
+  // Promise which is resolved when extra loading is completed.
+  extrasLoadingDeferred = defer<undefined>();
 
   // The currently open trace.
   currentTrace?: TraceContext;
@@ -204,6 +216,7 @@ export class AppImpl implements App {
   readonly initialPluginRouteArgs: RouteArgs;
   private readonly appCtx: AppContext;
   private readonly pageMgrProxy: PageManagerImpl;
+  private readonly settingsMgrProxy: SettingsManager;
 
   // Invoked by frontend/index.ts.
   static initialize(args: AppInitArgs) {
@@ -245,6 +258,12 @@ export class AppImpl implements App {
           ...pageHandler,
           pluginId,
         });
+      },
+    });
+
+    this.settingsMgrProxy = createProxy(this.appCtx.settingsManager, {
+      register<T>(setting: SettingDescriptor<T>): Setting<T> {
+        return appCtx.settingsManager.register(setting, pluginId);
       },
     });
   }
@@ -294,7 +313,7 @@ export class AppImpl implements App {
   }
 
   get settings(): SettingsManager {
-    return this.appCtx.settingsManager;
+    return this.settingsMgrProxy;
   }
 
   get featureFlags(): FeatureFlagManager {
@@ -352,6 +371,10 @@ export class AppImpl implements App {
     // complete trace loading (we don't bother supporting cancellations. If the
     // user is too bothered, they can reload the tab).
     this.appCtx.openTraceAsyncLimiter.schedule(async () => {
+      // Wait for extras parsing descriptors to be loaded
+      // via is_internal_user.js. This prevents a race condition where
+      // trace loading would otherwise begin before this data is available.
+      await this.extraLoadingPromise;
       this.appCtx.closeCurrentTrace();
       this.appCtx.isLoadingTrace = true;
       try {
@@ -401,6 +424,14 @@ export class AppImpl implements App {
     return this.appCtx.extraSqlPackages;
   }
 
+  get extraParsingDescriptors(): ReadonlyArray<string> {
+    return this.appCtx.extraParsingDescriptors;
+  }
+
+  get extraMacros(): Record<string, CommandInvocation[]>[] {
+    return this.appCtx.extraMacros;
+  }
+
   get perfDebugging(): PerfManager {
     return this.appCtx.perfMgr;
   }
@@ -426,5 +457,13 @@ export class AppImpl implements App {
 
   set isInternalUser(value: boolean) {
     this.appCtx.isInternalUser = value;
+  }
+
+  notifyOnExtrasLoadingCompleted() {
+    this.appCtx.extrasLoadingDeferred.resolve();
+  }
+
+  get extraLoadingPromise(): Promise<undefined> {
+    return this.appCtx.extrasLoadingDeferred;
   }
 }

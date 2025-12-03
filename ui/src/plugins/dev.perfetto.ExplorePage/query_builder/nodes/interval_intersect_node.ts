@@ -25,11 +25,19 @@ import {Button} from '../../../../widgets/button';
 import {Callout} from '../../../../widgets/callout';
 import {Select} from '../../../../widgets/select';
 import {NodeIssues} from '../node_issues';
+import {FilterDefinition} from '../../../../components/widgets/data_grid/common';
+
+export interface IntervalIntersectSerializedState {
+  intervalNodes: string[];
+  filters?: FilterDefinition[];
+  customTitle?: string;
+  comment?: string;
+}
 
 export interface IntervalIntersectNodeState extends QueryNodeState {
   readonly prevNodes: QueryNode[];
   readonly allNodes: QueryNode[];
-  readonly intervalNodes: QueryNode[];
+  intervalNodes: QueryNode[];
   onExecute?: () => void;
 }
 
@@ -137,7 +145,7 @@ export class IntervalIntersectNode implements QueryNode {
       prevNodes: this.state.prevNodes,
       allNodes: this.state.allNodes,
       intervalNodes: [...this.state.intervalNodes],
-      filters: [],
+      filters: this.state.filters ? [...this.state.filters] : undefined,
       customTitle: this.state.customTitle,
       onchange: this.state.onchange,
       onExecute: this.state.onExecute,
@@ -167,6 +175,27 @@ export class IntervalIntersectNode implements QueryNode {
     sq.intervalIntersect.intervalIntersect =
       intervalSqs as protos.PerfettoSqlStructuredQuery[];
     return sq;
+  }
+
+  serializeState(): IntervalIntersectSerializedState {
+    return {
+      intervalNodes: this.state.intervalNodes.map((n) => n.nodeId),
+      filters: this.state.filters,
+      customTitle: this.state.customTitle,
+      comment: this.state.comment,
+    };
+  }
+
+  static deserializeState(
+    nodes: Map<string, QueryNode>,
+    state: IntervalIntersectSerializedState,
+  ): {intervalNodes: QueryNode[]} {
+    const intervalNodes = state.intervalNodes
+      .map((id) => nodes.get(id))
+      .filter((node): node is QueryNode => node !== undefined);
+    return {
+      intervalNodes,
+    };
   }
 }
 
