@@ -18,6 +18,9 @@ import {
   QueryNode,
   QueryNodeState,
   NodeType,
+  createFinalColumns,
+  MultiSourceNode,
+  nextNodeId,
 } from '../../../query_node';
 import {columnInfoFromName} from '../../column_info';
 import protos from '../../../../../protos';
@@ -28,46 +31,48 @@ import {
   queryHistoryStorage,
 } from '../../../../../components/widgets/query_history';
 import {Trace} from '../../../../../public/trace';
-import {SourceNode} from '../../source_node';
 
 import {ColumnInfo} from '../../column_info';
-import {FilterDefinition} from '../../../../../components/widgets/data_grid/common';
+import {UIFilter} from '../../operations/filter';
 
 export interface SqlSourceSerializedState {
   sql?: string;
-  filters?: FilterDefinition[];
-  customTitle?: string;
+  filters?: UIFilter[];
   comment?: string;
 }
 
 export interface SqlSourceState extends QueryNodeState {
   sql?: string;
   trace: Trace;
-  sourceCols?: ColumnInfo[];
 }
 
-export class SqlSourceNode extends SourceNode {
+export class SqlSourceNode implements MultiSourceNode {
+  readonly nodeId: string;
   readonly state: SqlSourceState;
   prevNodes: QueryNode[] = [];
+  finalCols: ColumnInfo[];
+  nextNodes: QueryNode[];
 
   constructor(attrs: SqlSourceState) {
-    super(attrs);
-    this.state = attrs;
-    this.state.sourceCols = [];
+    this.nodeId = nextNodeId();
+    this.state = {
+      ...attrs,
+      // SQL source nodes require manual execution since users write SQL
+      autoExecute: attrs.autoExecute ?? false,
+    };
+    this.finalCols = createFinalColumns([]);
     this.nextNodes = [];
+    this.prevNodes = attrs.prevNodes ?? [];
   }
 
   get type() {
     return NodeType.kSqlSource;
   }
 
-  get sourceCols() {
-    return this.state.sourceCols ?? [];
-  }
-
   setSourceColumns(columns: string[]) {
-    this.state.sourceCols = columns.map((c) => columnInfoFromName(c));
-    this.finalCols = this.sourceCols;
+    this.finalCols = createFinalColumns(
+      columns.map((c) => columnInfoFromName(c)),
+    );
     m.redraw();
   }
 
@@ -79,7 +84,6 @@ export class SqlSourceNode extends SourceNode {
     const stateCopy: SqlSourceState = {
       sql: this.state.sql,
       filters: this.state.filters ? [...this.state.filters] : undefined,
-      customTitle: this.state.customTitle,
       issues: this.state.issues,
       trace: this.state.trace,
     };
@@ -91,18 +95,29 @@ export class SqlSourceNode extends SourceNode {
   }
 
   getTitle(): string {
-    return this.state.customTitle ?? 'Sql source';
-  }
-
-  isMaterialised(): boolean {
-    return this.state.isExecuted === true && this.meterialisedAs !== undefined;
+    return 'Sql source';
   }
 
   serializeState(): SqlSourceSerializedState {
     return {
       sql: this.state.sql,
-      filters: this.state.filters,
-      customTitle: this.state.customTitle,
+      filters: this.state.filters?.map((f) => {
+        // Explicitly extract only serializable fields to avoid circular references
+        if ('value' in f) {
+          return {
+            column: f.column,
+            op: f.op,
+            value: f.value,
+            enabled: f.enabled,
+          };
+        } else {
+          return {
+            column: f.column,
+            op: f.op,
+            enabled: f.enabled,
+          };
+        }
+      }),
       comment: this.state.comment,
     };
   }
@@ -113,7 +128,7 @@ export class SqlSourceNode extends SourceNode {
     const sqlProto = new protos.PerfettoSqlStructuredQuery.Sql();
 
     if (this.state.sql) sqlProto.sql = this.state.sql;
-    sqlProto.columnNames = this.sourceCols.map((c) => c.column.name);
+    sqlProto.columnNames = this.finalCols.map((c) => c.column.name);
 
     for (const prevNode of this.prevNodes) {
       const dependency = new protos.PerfettoSqlStructuredQuery.Sql.Dependency();
@@ -129,7 +144,7 @@ export class SqlSourceNode extends SourceNode {
     return sq;
   }
 
-  nodeSpecificModify(onExecute: () => void): m.Child {
+  nodeSpecificModify(): m.Child {
     const runQuery = (sql: string) => {
       this.state.sql = sql.trim();
       m.redraw();
@@ -155,7 +170,8 @@ export class SqlSourceNode extends SourceNode {
           onExecute: (text: string) => {
             queryHistoryStorage.saveQuery(text);
             this.state.sql = text.trim();
-            onExecute();
+            // Note: Execution is now handled by the Run button in DataExplorer
+            // This callback only saves to query history and updates the SQL text
             m.redraw();
           },
           autofocus: true,

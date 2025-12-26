@@ -35,7 +35,12 @@ import {postMessageHandler} from './post_message_handler';
 import {Route, Router} from '../core/router';
 import {checkHttpRpcConnection} from './rpc_http_dialog';
 import {maybeOpenTraceFromRoute} from './trace_url_handler';
-import {renderViewerPage} from './viewer_page/viewer_page';
+import {
+  DEFAULT_TRACK_MIN_HEIGHT_PX,
+  MINIMUM_TRACK_MIN_HEIGHT_PX,
+  TRACK_MIN_HEIGHT_SETTING,
+} from './timeline_page/track_view';
+import {renderTimelinePage} from './timeline_page/timeline_page';
 import {HttpRpcEngine} from '../trace_processor/http_rpc_engine';
 import {showModal} from '../widgets/modal';
 import {IdleDetector} from './idle_detector';
@@ -325,7 +330,7 @@ function onCssLoaded() {
 
   const pages = AppImpl.instance.pages;
   pages.registerPage({route: '/', render: () => m(HomePage)});
-  pages.registerPage({route: '/viewer', render: () => renderViewerPage()});
+  pages.registerPage({route: '/viewer', render: () => renderTimelinePage()});
   const router = new Router();
   router.onRouteChanged = routeChange;
 
@@ -335,6 +340,15 @@ function onCssLoaded() {
     description: 'Warning: Dark mode is not fully supported yet.',
     schema: z.enum(['dark', 'light']),
     defaultValue: 'light',
+  } as const);
+
+  AppImpl.instance.settings.register({
+    id: TRACK_MIN_HEIGHT_SETTING,
+    name: 'Track Height',
+    description:
+      'Minimum height of tracks in the trace viewer page, in pixels.',
+    schema: z.number().int().min(MINIMUM_TRACK_MIN_HEIGHT_PX),
+    defaultValue: DEFAULT_TRACK_MIN_HEIGHT_PX,
   });
 
   // Add command to toggle the theme.
@@ -362,7 +376,17 @@ function onCssLoaded() {
         }
       }
 
-      return m(ThemeProvider, {theme: themeSetting.get() as 'dark' | 'light'}, [
+      const currentTraceId = app.trace?.engine.engineId ?? 'no-trace';
+
+      // Trace data is cached inside many components on the tree. To avoid
+      // issues with stale data when reloading a trace, we force-remount the
+      // entire tree whenever the trace changes by using the trace ID as part of
+      // the key. We also know that UIMain reloads the theme CSS variables on
+      // mount, so include the theme in the key so that changing the theme also
+      // forces a remount.
+      const uiMainKey = `${currentTraceId}-${themeSetting.get()}`;
+
+      return m(ThemeProvider, {theme: themeSetting.get()}, [
         m(
           HotkeyContext,
           {
@@ -374,11 +398,7 @@ function onCssLoaded() {
             // behavior).
             focusable: false,
           },
-          [
-            m(OverlayContainer, {fillParent: true}, [
-              m(UiMain, {key: themeSetting.get()}),
-            ]),
-          ],
+          m(OverlayContainer, {fillHeight: true}, m(UiMain, {key: uiMainKey})),
         ),
       ]);
     },

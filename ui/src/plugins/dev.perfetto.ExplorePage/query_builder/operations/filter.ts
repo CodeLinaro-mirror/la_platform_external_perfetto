@@ -13,43 +13,50 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {
-  FilterDefinition,
-  FilterValue,
-} from '../../../../components/widgets/data_grid/common';
 import {Button} from '../../../../widgets/button';
+import {Card} from '../../../../widgets/card';
+import {Checkbox} from '../../../../widgets/checkbox';
 import {Chip} from '../../../../widgets/chip';
 import {Intent} from '../../../../widgets/common';
 import {Select} from '../../../../widgets/select';
+import {Switch} from '../../../../widgets/switch';
 import {TextInput} from '../../../../widgets/text_input';
 import {SqlValue} from '../../../../trace_processor/query_result';
 import {ColumnInfo} from '../column_info';
 import protos from '../../../../protos';
 import {Stack} from '../../../../widgets/stack';
 
-// Partial representation of FilterDefinition used in the UI.
-export interface UIFilter {
-  readonly column?: string;
-  readonly op?: FilterValue['op'] | 'is null' | 'is not null';
-  readonly value?: SqlValue;
+interface FilterValue {
+  readonly column: string;
+  readonly op: '=' | '!=' | '<' | '<=' | '>' | '>=' | 'glob';
+  readonly value: SqlValue;
+  enabled?: boolean; // Default true - controls if filter is active
 }
+
+interface FilterNull {
+  readonly column: string;
+  readonly op: 'is null' | 'is not null';
+  enabled?: boolean; // Default true - controls if filter is active
+}
+
+export type UIFilter = FilterValue | FilterNull;
 
 /**
  * Attributes for the FilterOperation component.
  */
 export interface FilterAttrs {
   readonly sourceCols: ColumnInfo[];
-  readonly filters?: ReadonlyArray<FilterDefinition>;
-  readonly onFiltersChanged?: (
-    filters: ReadonlyArray<FilterDefinition>,
-  ) => void;
+  readonly filters?: ReadonlyArray<UIFilter>;
+  readonly filterOperator?: 'AND' | 'OR';
+  readonly onFiltersChanged?: (filters: ReadonlyArray<UIFilter>) => void;
+  readonly onFilterOperatorChanged?: (operator: 'AND' | 'OR') => void;
   readonly onchange?: () => void;
 }
 
 export class FilterOperation implements m.ClassComponent<FilterAttrs> {
   private error?: string;
-  private uiFilters: UIFilter[] = [];
-  private editingFilter?: UIFilter;
+  private uiFilters: Partial<UIFilter>[] = [];
+  private editingFilter?: Partial<UIFilter>;
 
   oncreate({attrs}: m.Vnode<FilterAttrs>) {
     this.uiFilters = [...(attrs.filters ?? [])];
@@ -63,9 +70,9 @@ export class FilterOperation implements m.ClassComponent<FilterAttrs> {
   }
 
   private setFilters(
-    nextFilters: UIFilter[],
+    nextFilters: Partial<UIFilter>[],
     attrs: FilterAttrs,
-    editing?: UIFilter,
+    editing?: Partial<UIFilter>,
   ) {
     this.uiFilters = nextFilters;
     this.editingFilter = editing;
@@ -76,6 +83,56 @@ export class FilterOperation implements m.ClassComponent<FilterAttrs> {
     }
     attrs.onchange?.();
     m.redraw();
+  }
+
+  private renderFilterChip(
+    filter: Partial<UIFilter>,
+    attrs: FilterAttrs,
+  ): m.Child {
+    const isComplete = isFilterDefinitionValid(filter);
+    const isEnabled = filter.enabled !== false; // Default to true
+    const label = isComplete
+      ? `${filter.column} ${filter.op} ${'value' in filter ? filter.value : ''}`
+      : 'New Filter';
+
+    return m(
+      'div',
+      {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          opacity: isEnabled ? 1 : 0.5,
+        },
+      },
+      isComplete &&
+        m(Checkbox, {
+          checked: isEnabled,
+          onchange: () => {
+            const nextFilters = this.uiFilters.map((f) =>
+              f === filter ? {...f, enabled: !isEnabled} : f,
+            );
+            this.setFilters(nextFilters, attrs);
+          },
+        }),
+      m(Chip, {
+        label,
+        rounded: true,
+        intent: isComplete
+          ? isEnabled
+            ? Intent.Primary
+            : Intent.None
+          : Intent.None,
+        onclick: () => {
+          // When we start editing a chip, we remove all other invalid
+          // filters from the list.
+          const nextFilters = this.uiFilters.filter(
+            (f) => f === filter || isFilterDefinitionValid(f),
+          );
+          this.setFilters(nextFilters, attrs, filter);
+        },
+      }),
+    );
   }
 
   view({attrs}: m.CVnode<FilterAttrs>) {
@@ -105,11 +162,31 @@ export class FilterOperation implements m.ClassComponent<FilterAttrs> {
             },
           });
 
-    return m('.pf-exp-query-operations', [
-      m('.pf-exp-section', [
+    const operator = attrs.filterOperator ?? 'AND';
+    const hasMultipleFilters =
+      this.uiFilters.filter(isFilterDefinitionValid).length > 1;
+
+    return m(
+      '.pf-exp-query-operations',
+      m(Card, {}, [
         m(
           '.pf-exp-filters-header',
           m('h2.pf-exp-filters-title', 'Filters'),
+          hasMultipleFilters &&
+            m(
+              '.pf-exp-filter-operator',
+              m(Switch, {
+                checked: operator === 'OR',
+                onchange: () => {
+                  const newOp = operator === 'AND' ? 'OR' : 'AND';
+                  attrs.onFilterOperatorChanged?.(newOp);
+                  attrs.onchange?.();
+                },
+                labelLeft: 'AND',
+                label: 'OR',
+                title: 'Toggle between AND and OR operators',
+              }),
+            ),
           m(TextInput, {
             placeholder: 'e.g. ts > 1000',
             onkeydown: (e: KeyboardEvent) => {
@@ -140,29 +217,8 @@ export class FilterOperation implements m.ClassComponent<FilterAttrs> {
         this.error && m('.pf-exp-error-message', this.error),
         m(
           Stack,
-          {orientation: 'horizontal'},
-          this.uiFilters.map((filter) => {
-            const isComplete = isFilterDefinitionValid(filter);
-            const label = isComplete
-              ? `${filter.column} ${filter.op} ${
-                  'value' in filter ? filter.value : ''
-                }`
-              : 'New Filter';
-
-            return m(Chip, {
-              label,
-              rounded: true,
-              intent: isComplete ? Intent.Primary : Intent.None,
-              onclick: () => {
-                // When we start editing a chip, we remove all other invalid
-                // filters from the list.
-                const nextFilters = this.uiFilters.filter(
-                  (f) => f === filter || isFilterDefinitionValid(f),
-                );
-                this.setFilters(nextFilters, attrs, filter);
-              },
-            });
-          }),
+          {orientation: 'vertical'},
+          this.uiFilters.map((filter) => this.renderFilterChip(filter, attrs)),
           m(Button, {
             icon: 'add',
             rounded: true,
@@ -177,23 +233,23 @@ export class FilterOperation implements m.ClassComponent<FilterAttrs> {
                 );
                 this.setFilters(nextFilters, attrs, undefined);
               } else {
-                const newFilter = {};
+                const newFilter: Partial<UIFilter> = {};
                 const nextFilters = [...this.uiFilters, newFilter];
                 this.setFilters(nextFilters, attrs, newFilter);
               }
             },
           }),
         ),
-        editor && m('.pf-exp-filter-editor-box', editor),
+        editor && m('.pf-exp-editor-box', editor),
       ]),
-    ]);
+    );
   }
 }
 
 interface FilterEditorAttrs {
-  readonly filter: UIFilter;
+  readonly filter: Partial<UIFilter>;
   readonly sourceCols: ColumnInfo[];
-  readonly onUpdate: (filter: UIFilter) => void;
+  readonly onUpdate: (filter: Partial<UIFilter>) => void;
   readonly onRemove: () => void;
   readonly onDone: () => void;
 }
@@ -225,7 +281,7 @@ class FilterEditor implements m.ClassComponent<FilterEditorAttrs> {
     });
 
     return m(
-      '.pf-exp-filter-editor',
+      '.pf-exp-editor',
       {className: isValid ? 'is-valid' : 'is-invalid'},
       [
         m(
@@ -251,7 +307,7 @@ class FilterEditor implements m.ClassComponent<FilterEditorAttrs> {
               const newOp = ALL_FILTER_OPS.find(
                 (op) => op.key === target.value,
               );
-              const newFilter: UIFilter = {
+              const newFilter: Partial<UIFilter> = {
                 ...filter,
                 op: newOp?.displayName as UIFilter['op'],
               };
@@ -271,11 +327,10 @@ class FilterEditor implements m.ClassComponent<FilterEditorAttrs> {
             oninput: (e: Event) => {
               const target = e.target as HTMLInputElement;
               const value = parseFilterValue(target.value);
-              const {value: _value, ...rest} = filter;
               if (value !== undefined) {
-                onUpdate({...rest, value});
+                onUpdate({...filter, value} as Partial<UIFilter>);
               } else {
-                onUpdate(rest);
+                onUpdate(filter);
               }
             },
           }),
@@ -302,8 +357,8 @@ class FilterEditor implements m.ClassComponent<FilterEditorAttrs> {
  * @returns True if the filter is valid.
  */
 export function isFilterDefinitionValid(
-  filter: UIFilter,
-): filter is FilterDefinition & UIFilter {
+  filter: Partial<UIFilter>,
+): filter is UIFilter {
   const {column, op} = filter;
 
   if (column === undefined || op === undefined) {
@@ -329,7 +384,7 @@ export function isFilterDefinitionValid(
 // for simple filters and does not support complex values with spaces or quotes.
 // TODO(mayzner): Improve this parser to handle more complex cases, such as
 // quoted strings, escaped characters, or operators within values.
-function fromString(text: string, sourceCols: ColumnInfo[]): UIFilter {
+function fromString(text: string, sourceCols: ColumnInfo[]): Partial<UIFilter> {
   // Sort operators by length descending to match "is not null" before "is
   // null".
   const ops = ALL_FILTER_OPS.slice().sort(
@@ -389,7 +444,7 @@ function fromString(text: string, sourceCols: ColumnInfo[]): UIFilter {
     };
   }
 
-  const result: UIFilter = {
+  const result: Partial<UIFilter> = {
     column: col.name,
     op: op.displayName as UIFilter['op'],
   };
@@ -495,41 +550,225 @@ export const ALL_FILTER_OPS: FilterOp[] = [
 ];
 
 export function createFiltersProto(
-  filters: FilterDefinition[] | undefined,
+  filters: UIFilter[] | undefined,
   sourceCols: ColumnInfo[],
 ): protos.PerfettoSqlStructuredQuery.Filter[] | undefined {
   if (filters === undefined || filters.length === 0) {
     return undefined;
   }
 
-  const protoFilters: protos.PerfettoSqlStructuredQuery.Filter[] = filters.map(
-    (f: FilterDefinition): protos.PerfettoSqlStructuredQuery.Filter => {
-      const result = new protos.PerfettoSqlStructuredQuery.Filter();
-      result.columnName = f.column;
+  // Filter out disabled filters (enabled defaults to true if not set)
+  const enabledFilters = filters.filter((f) => f.enabled !== false);
+  if (enabledFilters.length === 0) {
+    return undefined;
+  }
 
-      const op = ALL_FILTER_OPS.find((o) => o.displayName === f.op);
-      if (op === undefined) {
-        // Should be handled by validation before this.
-        throw new Error(`Unknown filter operator: ${f.op}`);
-      }
-      result.op = op.proto;
+  const protoFilters: protos.PerfettoSqlStructuredQuery.Filter[] =
+    enabledFilters.map(
+      (f: UIFilter): protos.PerfettoSqlStructuredQuery.Filter => {
+        const result = new protos.PerfettoSqlStructuredQuery.Filter();
+        result.columnName = f.column;
 
-      if ('value' in f) {
-        const value = f.value;
-        const col = sourceCols.find((c) => c.name === f.column);
-        if (typeof value === 'string') {
-          result.stringRhs = [value];
-        } else if (typeof value === 'number' || typeof value === 'bigint') {
-          if (col && (col.type === 'long' || col.type === 'int')) {
-            result.int64Rhs = [Number(value)];
-          } else {
-            result.doubleRhs = [Number(value)];
-          }
+        const op = ALL_FILTER_OPS.find((o) => o.displayName === f.op);
+        if (op === undefined) {
+          // Should be handled by validation before this.
+          throw new Error(`Unknown filter operator: ${f.op}`);
         }
-        // Not handling Uint8Array here. The original FilterToProto also didn't seem to.
-      }
-      return result;
-    },
-  );
+        result.op = op.proto;
+
+        if ('value' in f) {
+          const value = f.value;
+          const col = sourceCols.find((c) => c.name === f.column);
+          if (typeof value === 'string') {
+            result.stringRhs = [value];
+          } else if (typeof value === 'number' || typeof value === 'bigint') {
+            if (col && (col.type === 'long' || col.type === 'int')) {
+              result.int64Rhs = [Number(value)];
+            } else {
+              result.doubleRhs = [Number(value)];
+            }
+          }
+          // Not handling Uint8Array here. The original FilterToProto also didn't seem to.
+        }
+        return result;
+      },
+    );
   return protoFilters;
+}
+
+export function createExperimentalFiltersProto(
+  filters: UIFilter[] | undefined,
+  sourceCols: ColumnInfo[],
+  operator?: 'AND' | 'OR',
+): protos.PerfettoSqlStructuredQuery.ExperimentalFilterGroup | undefined {
+  if (filters === undefined || filters.length === 0) {
+    return undefined;
+  }
+
+  const protoFilters = createFiltersProto(filters, sourceCols);
+  if (!protoFilters) {
+    return undefined;
+  }
+
+  const filterGroup =
+    new protos.PerfettoSqlStructuredQuery.ExperimentalFilterGroup();
+
+  // Use the provided operator, defaulting to AND for backward compatibility
+  const op = operator ?? 'AND';
+  filterGroup.op =
+    op === 'OR'
+      ? protos.PerfettoSqlStructuredQuery.ExperimentalFilterGroup.Operator.OR
+      : protos.PerfettoSqlStructuredQuery.ExperimentalFilterGroup.Operator.AND;
+
+  filterGroup.filters = protoFilters;
+
+  return filterGroup;
+}
+
+/**
+ * Helper to render FilterOperation with standard wiring for any node.
+ * This avoids repeating the same pattern in every node type.
+ */
+export function renderFilterOperation(
+  filters: UIFilter[] | undefined,
+  filterOperator: 'AND' | 'OR' | undefined,
+  sourceCols: ColumnInfo[],
+  onFiltersChanged: (filters: ReadonlyArray<UIFilter>) => void,
+  onFilterOperatorChanged: (operator: 'AND' | 'OR') => void,
+): m.Child {
+  return m(FilterOperation, {
+    filters,
+    filterOperator,
+    sourceCols,
+    onFiltersChanged,
+    onFilterOperatorChanged,
+  });
+}
+
+/**
+ * Helper to format a single filter as a readable string.
+ */
+function formatSingleFilter(filter: UIFilter): string {
+  if ('value' in filter) {
+    // FilterValue
+    const valueStr =
+      typeof filter.value === 'string'
+        ? `"${filter.value}"`
+        : String(filter.value);
+    return `${filter.column} ${filter.op} ${valueStr}`;
+  } else {
+    // FilterNull
+    return `${filter.column} ${filter.op}`;
+  }
+}
+
+/**
+ * Helper to create a toggle callback for filter enable/disable in nodeDetails.
+ */
+function createFilterToggleCallback(state: {
+  filters?: UIFilter[];
+  onchange?: () => void;
+}): (filter: UIFilter) => void {
+  return (filter: UIFilter) => {
+    if (state.filters) {
+      state.filters = state.filters.map((f) =>
+        f === filter ? {...f, enabled: f.enabled !== false ? false : true} : f,
+      );
+      state.onchange?.();
+    }
+  };
+}
+
+/**
+ * Helper to format filter details for nodeDetails display.
+ * Returns interactive chips that can be clicked to toggle enabled/disabled state.
+ * When using OR operator, shows individual filter chips for visibility.
+ *
+ * Pass the node state to enable interactive toggling, or omit for read-only display.
+ */
+export function formatFilterDetails(
+  filters: UIFilter[] | undefined,
+  filterOperator: 'AND' | 'OR' | undefined,
+  state?: {filters?: UIFilter[]; onchange?: () => void},
+  onRemove?: (filter: UIFilter) => void,
+): m.Child | undefined {
+  if (!filters || filters.length === 0) {
+    return undefined;
+  }
+
+  const count = filters.length;
+  const enabledCount = filters.filter((f) => f.enabled !== false).length;
+  const operator = filterOperator ?? 'AND';
+  const onFilterToggle = state ? createFilterToggleCallback(state) : undefined;
+
+  // Helper to render a filter chip
+  const renderFilterChip = (filter: UIFilter) => {
+    const isEnabled = filter.enabled !== false;
+    const label = formatSingleFilter(filter);
+    return m(
+      'span',
+      {
+        className: isEnabled
+          ? 'pf-filter-chip-wrapper'
+          : 'pf-filter-chip-wrapper pf-filter-chip-wrapper--disabled',
+      },
+      m(Chip, {
+        label,
+        rounded: true,
+        removable: !!onRemove,
+        intent: isEnabled ? Intent.Primary : Intent.None,
+        onclick: onFilterToggle ? () => onFilterToggle(filter) : undefined,
+        onRemove: onRemove ? () => onRemove(filter) : undefined,
+      }),
+    );
+  };
+
+  // For 4 or fewer filters
+  if (count <= 4) {
+    // For OR filters, show chips in visual boundary without summary text
+    if (operator === 'OR') {
+      return m(
+        '.pf-filter-or-group',
+        m('.pf-filter-or-badge', 'OR'),
+        m(
+          '.pf-filter-chips.pf-filter-chips--no-count',
+          filters.map((filter) => renderFilterChip(filter)),
+        ),
+      );
+    }
+    // For AND filters, just show chips
+    return m(
+      '.pf-filter-container',
+      m(
+        '.pf-filter-chips',
+        filters.map((filter) => renderFilterChip(filter)),
+      ),
+    );
+  }
+
+  // For more than 4 filters with AND operator, show summary only
+  if (operator === 'AND') {
+    return m(
+      '.pf-filter-container',
+      m(
+        '.pf-filter-and-header',
+        m('.pf-filter-operator-badge', 'AND'),
+        enabledCount === count
+          ? `${count} filters`
+          : `${enabledCount} of ${count} enabled`,
+      ),
+    );
+  }
+
+  // For more than 4 filters with OR operator, show summary only
+  return m(
+    '.pf-filter-container',
+    m(
+      '.pf-filter-and-header',
+      m('.pf-filter-operator-badge', 'OR'),
+      enabledCount === count
+        ? `${count} filters`
+        : `${enabledCount} of ${count} enabled`,
+    ),
+  );
 }
