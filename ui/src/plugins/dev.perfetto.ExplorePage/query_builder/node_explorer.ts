@@ -15,23 +15,21 @@
 import m from 'mithril';
 
 import {AsyncLimiter} from '../../../base/async_limiter';
-import {ExplorePageHelp} from './help';
 import {
   analyzeNode,
   isAQuery,
   Query,
   QueryNode,
   queryToRun,
-  addConnection,
 } from '../query_node';
-import {Button, ButtonVariant} from '../../../widgets/button';
-import {Icons} from '../../../base/semantic_icons';
 import {Trace} from '../../../public/trace';
-import {MenuItem, PopupMenu} from '../../../widgets/menu';
 import {SqlSourceNode} from './nodes/sources/sql_source';
 import {CodeSnippet} from '../../../widgets/code_snippet';
 import {AggregationNode} from './nodes/aggregation_node';
 import {NodeIssues} from './node_issues';
+import {TabStrip} from '../../../widgets/tabs';
+import {NodeModifyAttrs} from './node_explorer_types';
+import {Button, ButtonAttrs, ButtonVariant} from '../../../widgets/button';
 
 export interface NodeExplorerAttrs {
   readonly node?: QueryNode;
@@ -41,43 +39,38 @@ export interface NodeExplorerAttrs {
   readonly onchange?: () => void;
   readonly resolveNode: (nodeId: string) => QueryNode | undefined;
   readonly isCollapsed?: boolean;
-  readonly onToggleCollapse?: () => void;
+  readonly selectedView?: number;
+  readonly onViewChange?: (view: number) => void;
 }
 
 enum SelectedView {
-  kModify = 0,
-  kSql = 1,
-  kProto = 2,
+  kInfo = 0,
+  kModify = 1,
+  kResult = 2,
 }
 
 export class NodeExplorer implements m.ClassComponent<NodeExplorerAttrs> {
   private readonly tableAsyncLimiter = new AsyncLimiter();
 
-  private selectedView: number = 0;
-
   private prevSqString?: string;
 
   private currentQuery?: Query | Error;
   private sqlForDisplay?: string;
+  private resultTabMode: 'sql' | 'proto' = 'sql';
 
-  private renderTitleRow(node: QueryNode, renderMenu: () => m.Child): m.Child {
+  private renderTitleRow(node: QueryNode): m.Child {
     return m(
       '.pf-exp-node-explorer__title-row',
       m('.title', m('h2', node.getTitle())),
-      m('span.spacer'), // Added spacer to push menu to the right
-      renderMenu(),
     );
   }
 
   private updateQuery(node: QueryNode, attrs: NodeExplorerAttrs) {
+    // TODO: Re-implement WITH statement dependencies for SqlSourceNode
+    // This was removed during the connection model migration
     if (node instanceof SqlSourceNode && node.state.sql) {
-      // Clear this node from the prevNodes
-      for (const prevNode of node.prevNodes) {
-        prevNode.nextNodes = prevNode.nextNodes.filter((n) => n !== node);
-      }
-
+      // Validate that the node doesn't reference itself
       const nodeIds = node.findDependencies();
-      const dependencies: QueryNode[] = [];
       for (const nodeId of nodeIds) {
         if (nodeId === node.nodeId) {
           node.state.issues = new NodeIssues();
@@ -85,18 +78,6 @@ export class NodeExplorer implements m.ClassComponent<NodeExplorerAttrs> {
             'Node cannot depend on itself',
           );
           return;
-        }
-
-        const dependencyNode = attrs.resolveNode(nodeId);
-        if (dependencyNode) {
-          dependencies.push(dependencyNode);
-        }
-      }
-      node.prevNodes = dependencies;
-      for (let i = 0; i < node.prevNodes.length; i++) {
-        const prevNode = node.prevNodes[i];
-        if (prevNode !== undefined) {
-          addConnection(prevNode, node, i);
         }
       }
     }
@@ -152,7 +133,111 @@ export class NodeExplorer implements m.ClassComponent<NodeExplorerAttrs> {
     }
   }
 
-  private renderContent(node: QueryNode): m.Child {
+  private renderButtons(
+    buttons?: NodeModifyAttrs['topLeftButtons'],
+  ): m.Children {
+    if (!buttons || buttons.length === 0) {
+      return [];
+    }
+    const result: m.Children = [];
+    for (const btn of buttons) {
+      const attrs: Partial<ButtonAttrs> = {
+        onclick: btn.onclick,
+        variant: btn.variant ?? ButtonVariant.Outlined, // Default to Outlined
+      };
+      if (btn.label) attrs.label = btn.label;
+      if (btn.icon) attrs.icon = btn.icon;
+      if (btn.compact !== undefined) attrs.compact = btn.compact;
+      result.push(m(Button, attrs as ButtonAttrs));
+    }
+    return result;
+  }
+
+  private renderCornerButtons(buttons: NodeModifyAttrs): m.Child {
+    if (
+      !buttons.topLeftButtons &&
+      !buttons.topRightButtons &&
+      !buttons.bottomLeftButtons &&
+      !buttons.bottomRightButtons
+    ) {
+      return null;
+    }
+
+    return m('.pf-exp-node-explorer__buttons', [
+      m('.pf-exp-node-explorer__buttons-top', [
+        m(
+          '.pf-exp-node-explorer__buttons-top-left',
+          this.renderButtons(buttons.topLeftButtons),
+        ),
+        m(
+          '.pf-exp-node-explorer__buttons-top-right',
+          this.renderButtons(buttons.topRightButtons),
+        ),
+      ]),
+      m('.pf-exp-node-explorer__buttons-bottom', [
+        m(
+          '.pf-exp-node-explorer__buttons-bottom-left',
+          this.renderButtons(buttons.bottomLeftButtons),
+        ),
+        m(
+          '.pf-exp-node-explorer__buttons-bottom-right',
+          this.renderButtons(buttons.bottomRightButtons),
+        ),
+      ]),
+    ]);
+  }
+
+  private renderSections(sections?: NodeModifyAttrs['sections']): m.Child {
+    if (!sections || sections.length === 0) {
+      return null;
+    }
+
+    return m(
+      '.pf-exp-node-explorer__sections',
+      sections.map((section) =>
+        m(
+          '.pf-exp-node-explorer__section',
+          section.title &&
+            m('h3.pf-exp-node-explorer__section-title', section.title),
+          m('.pf-exp-node-explorer__section-content', section.content),
+        ),
+      ),
+    );
+  }
+
+  private renderModifyView(node: QueryNode): m.Child {
+    const modifyResult = node.nodeSpecificModify();
+
+    // Check if node returned attrs (new pattern) or m.Child (old pattern)
+    if (this.isNodeModifyAttrs(modifyResult)) {
+      const attrs = modifyResult as NodeModifyAttrs;
+      return m('.pf-exp-node-explorer__modify', [
+        this.renderCornerButtons(attrs),
+        this.renderSections(attrs.sections),
+      ]);
+    }
+
+    // Fallback to old pattern for backwards compatibility
+    return modifyResult as m.Child;
+  }
+
+  private isNodeModifyAttrs(value: unknown): value is NodeModifyAttrs {
+    if (value === null || value === undefined) return false;
+    if (typeof value !== 'object') return false;
+
+    const obj = value as Record<string, unknown>;
+
+    // Check if it has any of the NodeModifyAttrs properties
+    return (
+      'sections' in obj ||
+      'topLeftButtons' in obj ||
+      'topRightButtons' in obj ||
+      'bottomLeftButtons' in obj ||
+      'bottomRightButtons' in obj
+    );
+  }
+
+  private renderContent(node: QueryNode, selectedView: number): m.Child {
     const sql: string =
       this.sqlForDisplay ??
       (isAQuery(this.currentQuery)
@@ -166,71 +251,50 @@ export class NodeExplorer implements m.ClassComponent<NodeExplorerAttrs> {
 
     return m(
       'article',
-      this.selectedView === SelectedView.kModify && [
-        node.nodeSpecificModify(),
-        m('textarea.pf-exp-node-explorer__comment', {
-          'aria-label': 'Comment',
-          'placeholder': 'Add a comment...',
-          'oninput': (e: InputEvent) => {
-            if (!e.target) return;
-            node.state.comment = (e.target as HTMLTextAreaElement).value;
-          },
-          'value': node.state.comment,
-        }),
-      ],
-      this.selectedView === SelectedView.kSql &&
-        (isAQuery(this.currentQuery)
-          ? m(CodeSnippet, {language: 'SQL', text: sql})
-          : m('div', sql)),
-      this.selectedView === SelectedView.kProto &&
-        (isAQuery(this.currentQuery)
-          ? m(CodeSnippet, {text: textproto, language: 'textproto'})
-          : m('div', textproto)),
+      selectedView === SelectedView.kInfo && node.nodeInfo(),
+      selectedView === SelectedView.kModify && this.renderModifyView(node),
+      selectedView === SelectedView.kResult &&
+        m('.', [
+          m(TabStrip, {
+            tabs: [
+              {key: 'sql', title: 'SQL'},
+              {key: 'proto', title: 'Proto'},
+            ],
+            currentTabKey: this.resultTabMode,
+            onTabChange: (key: string) => {
+              this.resultTabMode = key as 'sql' | 'proto';
+            },
+          }),
+          m('hr', {
+            style: {
+              margin: '0',
+              borderTop: '1px solid var(--separator-color)',
+            },
+          }),
+          this.resultTabMode === 'sql'
+            ? isAQuery(this.currentQuery)
+              ? m(CodeSnippet, {language: 'SQL', text: sql})
+              : m('div', sql)
+            : isAQuery(this.currentQuery)
+              ? m(CodeSnippet, {text: textproto, language: 'textproto'})
+              : m('div', textproto),
+        ]),
     );
   }
 
   view({attrs}: m.CVnode<NodeExplorerAttrs>) {
-    const {node, isCollapsed, onToggleCollapse} = attrs;
+    const {node, isCollapsed, selectedView = SelectedView.kInfo} = attrs;
     if (!node) {
-      return m(ExplorePageHelp);
+      return null;
     }
 
     // Update the node's onchange callback to point to our attrs.onchange
     // This ensures that changes in the node's UI components trigger the callback chain
     node.state.onchange = attrs.onchange;
 
+    // Always analyze to generate the query object (needed to enable Run button)
+    // The autoExecute flag only controls whether we automatically execute after analysis
     this.updateQuery(node, attrs);
-
-    const renderModeMenu = (): m.Child => {
-      return m(
-        PopupMenu,
-        {
-          trigger: m(Button, {
-            icon: Icons.ContextMenuAlt,
-          }),
-        },
-        [
-          m(MenuItem, {
-            label: 'Modify',
-            onclick: () => {
-              this.selectedView = SelectedView.kModify;
-            },
-          }),
-          m(MenuItem, {
-            label: 'Show SQL',
-            onclick: () => {
-              this.selectedView = SelectedView.kSql;
-            },
-          }),
-          m(MenuItem, {
-            label: 'Show proto',
-            onclick: () => {
-              this.selectedView = SelectedView.kProto;
-            },
-          }),
-        ],
-      );
-    };
 
     if (isCollapsed) {
       return m('.pf-exp-node-explorer.collapsed');
@@ -240,20 +304,8 @@ export class NodeExplorer implements m.ClassComponent<NodeExplorerAttrs> {
       `.pf-exp-node-explorer${
         node instanceof SqlSourceNode ? '.pf-exp-node-explorer-sql-source' : ''
       }`,
-      m(
-        '.pf-exp-node-explorer__header',
-        this.renderTitleRow(node, renderModeMenu),
-        m(
-          '.pf-exp-node-explorer__collapse-button',
-          m(Button, {
-            icon: Icons.GoForward,
-            title: 'Collapse panel',
-            onclick: onToggleCollapse,
-            variant: ButtonVariant.Filled,
-          }),
-        ),
-      ),
-      this.renderContent(node),
+      m('.pf-exp-node-explorer__header', this.renderTitleRow(node)),
+      this.renderContent(node, selectedView),
     );
   }
 }

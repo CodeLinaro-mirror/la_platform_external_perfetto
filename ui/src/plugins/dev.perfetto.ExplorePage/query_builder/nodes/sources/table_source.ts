@@ -23,28 +23,21 @@ import {
   QueryNodeState,
   NodeType,
   createFinalColumns,
-  SourceNode,
   nextNodeId,
 } from '../../../query_node';
+import {StructuredQueryBuilder} from '../../structured_query_builder';
 import {ColumnInfo, columnInfoFromSqlColumn} from '../../column_info';
 import protos from '../../../../../protos';
-import {TextParagraph} from '../../../../../widgets/text_paragraph';
-import {Button} from '../../../../../widgets/button';
 import {Trace} from '../../../../../public/trace';
-import {
-  createExperimentalFiltersProto,
-  renderFilterOperation,
-  UIFilter,
-} from '../../operations/filter';
 import {closeModal, showModal} from '../../../../../widgets/modal';
 import {TableList} from '../../table_list';
 import {redrawModal} from '../../../../../widgets/modal';
-import {perfettoSqlTypeToString} from '../../../../../trace_processor/perfetto_sql_type';
+import {setValidationError} from '../../node_issues';
+import {TableDescription} from '../../widgets';
+import {NodeDetailsAttrs} from '../../node_explorer_types';
 
 export interface TableSourceSerializedState {
   sqlTable?: string;
-  filters?: UIFilter[];
-  filterOperator?: 'AND' | 'OR';
   comment?: string;
 }
 
@@ -63,48 +56,99 @@ interface TableSelectionResult {
 
 export function modalForTableSelection(
   sqlModules: SqlModules,
-): Promise<TableSelectionResult | undefined> {
+): Promise<TableSelectionResult[] | undefined> {
   return new Promise((resolve) => {
     let searchQuery = '';
+    const selectedTables = new Set<string>();
 
-    showModal({
-      title: 'Choose a table',
-      content: () => {
-        return m(
-          '.pf-exp-node-explorer-help',
-          m(TableList, {
-            sqlModules,
-            onTableClick: (tableName: string) => {
-              const sqlTable = sqlModules.getTable(tableName);
-              if (!sqlTable) {
-                resolve(undefined);
-                return;
-              }
-              const sourceCols = sqlTable.columns.map((c) =>
-                columnInfoFromSqlColumn(c, true),
-              );
-              resolve({sqlTable, sourceCols});
-              closeModal();
-            },
-            searchQuery,
-            onSearchQueryChange: (query) => {
-              searchQuery = query;
-              redrawModal();
-            },
-            autofocus: true,
-          }),
+    const updateModal = () => {
+      showModal({
+        key: 'table-selection-modal',
+        title:
+          selectedTables.size > 0
+            ? `Choose tables - ${selectedTables.size} selected`
+            : 'Choose a table - Ctrl+click for multiple selection',
+        content: () => {
+          return m(
+            '.pf-exp-node-explorer-help',
+            m(TableList, {
+              sqlModules,
+              onTableClick: handleTableClick,
+              searchQuery,
+              onSearchQueryChange: (query) => {
+                searchQuery = query;
+                redrawModal();
+              },
+              autofocus: true,
+              selectedTables,
+            }),
+          );
+        },
+        buttons:
+          selectedTables.size > 0
+            ? [
+                {
+                  text: `Add ${selectedTables.size} table${selectedTables.size > 1 ? 's' : ''}`,
+                  primary: true,
+                  action: handleConfirm,
+                },
+              ]
+            : [],
+      });
+    };
+
+    const handleTableClick = (tableName: string, event: MouseEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        // Multi-select mode: toggle selection
+        if (selectedTables.has(tableName)) {
+          selectedTables.delete(tableName);
+        } else {
+          selectedTables.add(tableName);
+        }
+        updateModal();
+      } else {
+        // Single-select mode: immediately select and close
+        const sqlTable = sqlModules.getTable(tableName);
+        if (!sqlTable) {
+          resolve(undefined);
+          return;
+        }
+        const sourceCols = sqlTable.columns.map((c) =>
+          columnInfoFromSqlColumn(c, true),
         );
-      },
-      buttons: [],
-    });
+        resolve([{sqlTable, sourceCols}]);
+        closeModal();
+      }
+    };
+
+    const handleConfirm = () => {
+      if (selectedTables.size === 0) {
+        resolve(undefined);
+        closeModal();
+        return;
+      }
+
+      const results: TableSelectionResult[] = [];
+      for (const tableName of selectedTables) {
+        const sqlTable = sqlModules.getTable(tableName);
+        if (sqlTable) {
+          const sourceCols = sqlTable.columns.map((c) =>
+            columnInfoFromSqlColumn(c, true),
+          );
+          results.push({sqlTable, sourceCols});
+        }
+      }
+      resolve(results);
+      closeModal();
+    };
+
+    updateModal();
   });
 }
 
-export class TableSourceNode implements SourceNode {
+export class TableSourceNode implements QueryNode {
   readonly nodeId: string;
   readonly state: TableSourceState;
-  readonly prevNodes: QueryNode[] = [];
-  showColumns: boolean = false;
   readonly finalCols: ColumnInfo[];
   nextNodes: QueryNode[];
 
@@ -118,8 +162,6 @@ export class TableSourceNode implements SourceNode {
       ) ?? [],
     );
     this.nextNodes = [];
-
-    this.state.filters = attrs.filters ?? [];
   }
 
   get type() {
@@ -131,98 +173,53 @@ export class TableSourceNode implements SourceNode {
       trace: this.state.trace,
       sqlModules: this.state.sqlModules,
       sqlTable: this.state.sqlTable,
-      filters: this.state.filters?.map((f) => ({...f})),
       onchange: this.state.onchange,
     };
     return new TableSourceNode(stateCopy);
   }
 
   nodeSpecificModify(): m.Child {
-    if (this.state.sqlTable != null) {
-      const table = this.state.sqlTable;
-      return m(
-        '.pf-stdlib-table-node',
-        m(
-          '.pf-details-box',
-          m(TextParagraph, {text: table.description}),
-          m(Button, {
-            label: this.showColumns ? 'Hide Columns' : 'Show Columns',
-            onclick: () => {
-              this.showColumns = !this.showColumns;
-            },
-          }),
-          this.showColumns &&
-            m(
-              'table.pf-table.pf-table-striped',
-              m(
-                'thead',
-                m(
-                  'tr',
-                  m('th', 'Column'),
-                  m('th', 'Type'),
-                  m('th', 'Description'),
-                ),
-              ),
-              m(
-                'tbody',
-                table.columns.map((col) => {
-                  return m(
-                    'tr',
-                    m('td', col.name),
-                    m('td', perfettoSqlTypeToString(col.type)),
-                    m('td', col.description),
-                  );
-                }),
-              ),
-            ),
-        ),
-        renderFilterOperation(
-          this.state.filters,
-          this.state.filterOperator,
-          this.finalCols,
-          (newFilters) => {
-            this.state.filters = [...newFilters];
-            this.state.onchange?.();
-          },
-          (operator) => {
-            this.state.filterOperator = operator;
-            this.state.onchange?.();
-          },
-        ),
-      );
-    }
-    return m(TextParagraph, 'No description available for this table.');
+    return undefined;
   }
 
   validate(): boolean {
-    return this.state.sqlTable !== undefined;
+    // Clear any previous errors at the start of validation
+    if (this.state.issues) {
+      this.state.issues.clear();
+    }
+
+    if (this.state.sqlTable === undefined) {
+      setValidationError(this.state, 'No table selected');
+      return false;
+    }
+
+    return true;
   }
 
   getTitle(): string {
     return `${this.state.sqlTable?.name}`;
   }
 
+  nodeDetails(): NodeDetailsAttrs {
+    return {
+      content: this.state.sqlTable?.name ?? '',
+    };
+  }
+
   getStructuredQuery(): protos.PerfettoSqlStructuredQuery | undefined {
     if (!this.validate()) return;
     if (!this.state.sqlTable) return;
 
-    const sq = new protos.PerfettoSqlStructuredQuery();
-    sq.id = this.nodeId;
-    sq.table = new protos.PerfettoSqlStructuredQuery.Table();
-    sq.table.tableName = this.state.sqlTable.name;
-    sq.table.moduleName = this.state.sqlTable.includeKey
-      ? this.state.sqlTable.includeKey
-      : undefined;
-    sq.table.columnNames = this.finalCols
+    const columnNames = this.finalCols
       .filter((c) => c.checked)
       .map((c) => c.column.name);
 
-    const filtersProto = createExperimentalFiltersProto(
-      this.state.filters,
-      this.finalCols,
-      this.state.filterOperator,
+    const sq = StructuredQueryBuilder.fromTable(
+      this.state.sqlTable.name,
+      this.state.sqlTable.includeKey || undefined,
+      columnNames,
+      this.nodeId,
     );
-    if (filtersProto) sq.experimentalFilterGroup = filtersProto;
 
     const selectedColumns = createSelectColumnsProto(this);
     if (selectedColumns) sq.selectColumns = selectedColumns;
@@ -232,26 +229,27 @@ export class TableSourceNode implements SourceNode {
   serializeState(): TableSourceSerializedState {
     return {
       sqlTable: this.state.sqlTable?.name,
-      filters: this.state.filters?.map((f) => {
-        // Explicitly extract only serializable fields to avoid circular references
-        if ('value' in f) {
-          return {
-            column: f.column,
-            op: f.op,
-            value: f.value,
-            enabled: f.enabled,
-          };
-        } else {
-          return {
-            column: f.column,
-            op: f.op,
-            enabled: f.enabled,
-          };
-        }
-      }),
-      filterOperator: this.state.filterOperator,
-      comment: this.state.comment,
     };
+  }
+
+  nodeInfo(): m.Children {
+    if (this.state.sqlTable != null) {
+      return m(
+        '.pf-stdlib-table-node',
+        m('.pf-details-box', m(TableDescription, {table: this.state.sqlTable})),
+      );
+    }
+    return m(
+      'div',
+      m(
+        'p',
+        'Provides direct access to trace data tables like slices, processes, threads, counters, and more.',
+      ),
+      m(
+        'p',
+        'Select a table from the modal dialog to see its description and available columns.',
+      ),
+    );
   }
 
   static deserializeState(

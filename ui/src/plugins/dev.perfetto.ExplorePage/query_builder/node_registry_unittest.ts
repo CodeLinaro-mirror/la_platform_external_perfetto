@@ -26,6 +26,8 @@ describe('NodeRegistry', () => {
       validate: () => true,
       getTitle: () => 'Test',
       nodeSpecificModify: () => null,
+      nodeDetails: () => ({content: null}),
+      nodeInfo: () => null,
       clone: () => createMockNode(nodeId),
       getStructuredQuery: () => undefined,
       serializeState: () => ({}),
@@ -107,7 +109,6 @@ describe('NodeRegistry', () => {
         icon: 'advanced-icon',
         type: 'multisource',
         hotkey: 'ctrl+a',
-        devOnly: true,
         preCreate,
         factory: (_state: QueryNodeState) => createMockNode('advanced'),
       };
@@ -116,7 +117,6 @@ describe('NodeRegistry', () => {
 
       const retrieved = registry.get('advanced-node');
       expect(retrieved?.hotkey).toBe('ctrl+a');
-      expect(retrieved?.devOnly).toBe(true);
       expect(retrieved?.preCreate).toBe(preCreate);
     });
   });

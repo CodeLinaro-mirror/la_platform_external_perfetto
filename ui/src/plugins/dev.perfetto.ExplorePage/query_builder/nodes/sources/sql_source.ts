@@ -19,12 +19,13 @@ import {
   QueryNodeState,
   NodeType,
   createFinalColumns,
-  MultiSourceNode,
   nextNodeId,
+  notifyNextNodes,
 } from '../../../query_node';
 import {columnInfoFromName} from '../../column_info';
 import protos from '../../../../../protos';
 import {Editor} from '../../../../../widgets/editor';
+import {StructuredQueryBuilder} from '../../structured_query_builder';
 
 import {
   QueryHistoryComponent,
@@ -33,11 +34,14 @@ import {
 import {Trace} from '../../../../../public/trace';
 
 import {ColumnInfo} from '../../column_info';
-import {UIFilter} from '../../operations/filter';
+import {setValidationError} from '../../node_issues';
+import {NodeDetailsAttrs} from '../../node_explorer_types';
+import {findRef, toHTMLElement} from '../../../../../base/dom_utils';
+import {assertExists} from '../../../../../base/logging';
+import {ResizeHandle} from '../../../../../widgets/resize_handle';
 
 export interface SqlSourceSerializedState {
   sql?: string;
-  filters?: UIFilter[];
   comment?: string;
 }
 
@@ -46,10 +50,46 @@ export interface SqlSourceState extends QueryNodeState {
   trace: Trace;
 }
 
-export class SqlSourceNode implements MultiSourceNode {
+interface SqlEditorAttrs {
+  sql: string;
+  onUpdate: (text: string) => void;
+  onExecute: (text: string) => void;
+}
+
+class SqlEditor implements m.ClassComponent<SqlEditorAttrs> {
+  private editorHeight: number = 0;
+  private editorElement?: HTMLElement;
+
+  oncreate({dom}: m.VnodeDOM<SqlEditorAttrs>) {
+    this.editorElement = toHTMLElement(assertExists(findRef(dom, 'editor')));
+    this.editorElement.style.height = '400px';
+  }
+
+  view({attrs}: m.CVnode<SqlEditorAttrs>) {
+    return [
+      m(Editor, {
+        ref: 'editor',
+        text: attrs.sql,
+        onUpdate: attrs.onUpdate,
+        onExecute: attrs.onExecute,
+        autofocus: true,
+      }),
+      m(ResizeHandle, {
+        onResize: (deltaPx: number) => {
+          this.editorHeight += deltaPx;
+          this.editorElement!.style.height = `${this.editorHeight}px`;
+        },
+        onResizeStart: () => {
+          this.editorHeight = this.editorElement!.clientHeight;
+        },
+      }),
+    ];
+  }
+}
+
+export class SqlSourceNode implements QueryNode {
   readonly nodeId: string;
   readonly state: SqlSourceState;
-  prevNodes: QueryNode[] = [];
   finalCols: ColumnInfo[];
   nextNodes: QueryNode[];
 
@@ -62,7 +102,6 @@ export class SqlSourceNode implements MultiSourceNode {
     };
     this.finalCols = createFinalColumns([]);
     this.nextNodes = [];
-    this.prevNodes = attrs.prevNodes ?? [];
   }
 
   get type() {
@@ -78,12 +117,15 @@ export class SqlSourceNode implements MultiSourceNode {
 
   onQueryExecuted(columns: string[]) {
     this.setSourceColumns(columns);
+    // Notify downstream nodes that our columns have changed, but don't mark
+    // this node as having an operation change (which would cause hash to change
+    // and trigger re-execution). Column discovery is metadata, not a query change.
+    notifyNextNodes(this);
   }
 
   clone(): QueryNode {
     const stateCopy: SqlSourceState = {
       sql: this.state.sql,
-      filters: this.state.filters ? [...this.state.filters] : undefined,
       issues: this.state.issues,
       trace: this.state.trace,
     };
@@ -91,53 +133,52 @@ export class SqlSourceNode implements MultiSourceNode {
   }
 
   validate(): boolean {
-    return this.state.sql !== undefined && this.state.sql.trim() !== '';
+    // Clear any previous errors at the start of validation
+    if (this.state.issues) {
+      this.state.issues.clear();
+    }
+
+    if (this.state.sql === undefined || this.state.sql.trim() === '') {
+      setValidationError(this.state, 'SQL query is empty');
+      return false;
+    }
+
+    return true;
   }
 
   getTitle(): string {
     return 'Sql source';
   }
 
+  nodeDetails(): NodeDetailsAttrs {
+    return {
+      content: m('.pf-exp-node-title', this.getTitle()),
+    };
+  }
+
   serializeState(): SqlSourceSerializedState {
     return {
       sql: this.state.sql,
-      filters: this.state.filters?.map((f) => {
-        // Explicitly extract only serializable fields to avoid circular references
-        if ('value' in f) {
-          return {
-            column: f.column,
-            op: f.op,
-            value: f.value,
-            enabled: f.enabled,
-          };
-        } else {
-          return {
-            column: f.column,
-            op: f.op,
-            enabled: f.enabled,
-          };
-        }
-      }),
-      comment: this.state.comment,
     };
   }
 
   getStructuredQuery(): protos.PerfettoSqlStructuredQuery | undefined {
-    const sq = new protos.PerfettoSqlStructuredQuery();
-    sq.id = this.nodeId;
-    const sqlProto = new protos.PerfettoSqlStructuredQuery.Sql();
+    // Source nodes don't have dependencies
+    const dependencies: Array<{
+      alias: string;
+      query: protos.PerfettoSqlStructuredQuery | undefined;
+    }> = [];
 
-    if (this.state.sql) sqlProto.sql = this.state.sql;
-    sqlProto.columnNames = this.finalCols.map((c) => c.column.name);
+    // Pass empty array for column names - the engine will discover them when analyzing the query
+    // Using this.finalCols here would pass stale columns from the previous execution
+    const columnNames: string[] = [];
 
-    for (const prevNode of this.prevNodes) {
-      const dependency = new protos.PerfettoSqlStructuredQuery.Sql.Dependency();
-      dependency.alias = prevNode.nodeId;
-      dependency.query = prevNode.getStructuredQuery();
-      sqlProto.dependencies.push(dependency);
-    }
-
-    sq.sql = sqlProto;
+    const sq = StructuredQueryBuilder.fromSql(
+      this.state.sql || '',
+      dependencies,
+      columnNames,
+      this.nodeId,
+    );
 
     const selectedColumns = createSelectColumnsProto(this);
     if (selectedColumns) sq.selectColumns = selectedColumns;
@@ -152,31 +193,20 @@ export class SqlSourceNode implements MultiSourceNode {
 
     return m(
       '.sql-source-node',
-      m(
-        'div',
-        {
-          style: {
-            minHeight: '400px',
-            backgroundColor: '#282c34',
-            position: 'relative',
-          },
+      m(SqlEditor, {
+        sql: this.state.sql ?? '',
+        onUpdate: (text: string) => {
+          this.state.sql = text;
+          m.redraw();
         },
-        m(Editor, {
-          text: this.state.sql ?? '',
-          onUpdate: (text: string) => {
-            this.state.sql = text;
-            m.redraw();
-          },
-          onExecute: (text: string) => {
-            queryHistoryStorage.saveQuery(text);
-            this.state.sql = text.trim();
-            // Note: Execution is now handled by the Run button in DataExplorer
-            // This callback only saves to query history and updates the SQL text
-            m.redraw();
-          },
-          autofocus: true,
-        }),
-      ),
+        onExecute: (text: string) => {
+          queryHistoryStorage.saveQuery(text);
+          this.state.sql = text.trim();
+          // Note: Execution is now handled by the Run button in DataExplorer
+          // This callback only saves to query history and updates the SQL text
+          m.redraw();
+        },
+      }),
       m(QueryHistoryComponent, {
         className: '.pf-query-history-container',
         trace: this.state.trace,
@@ -186,6 +216,30 @@ export class SqlSourceNode implements MultiSourceNode {
           m.redraw();
         },
       }),
+    );
+  }
+
+  nodeInfo(): m.Children {
+    return m(
+      'div',
+      m(
+        'p',
+        'Write custom queries to access any data in the trace. Use ',
+        m('code', '$node_id'),
+        ' to reference other nodes in your query.',
+      ),
+      m(
+        'p',
+        'Most flexible option for complex logic or operations not available through other nodes.',
+      ),
+      m(
+        'p',
+        m('strong', 'Example:'),
+        ' Write ',
+        m('code', 'SELECT * FROM slice WHERE dur > 1000'),
+        ' or reference another node with ',
+        m('code', 'SELECT * FROM $other_node WHERE ...'),
+      ),
     );
   }
 
