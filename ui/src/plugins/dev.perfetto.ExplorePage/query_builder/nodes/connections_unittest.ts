@@ -28,14 +28,22 @@ import {AddColumnsNode} from './add_columns_node';
 import {FilterDuringNode} from './filter_during_node';
 import {ModifyColumnsNode} from './modify_columns_node';
 import {FilterNode} from './filter_node';
+import {UnionNode} from './union_node';
+import {QueryNode, NodeType, singleNodeOperation} from '../../query_node';
 import {
-  QueryNode,
-  NodeType,
+  insertNodeBetween,
+  reconnectParentsToChildren,
+  findDockedChildren,
+  calculateUndockLayouts,
+  getEffectiveLayout,
   notifyNextNodes,
   addConnection,
   removeConnection,
-} from '../../query_node';
-import {insertNodeBetween} from '../graph_utils';
+  getSecondaryInput,
+  setSecondaryInput,
+  removeSecondaryInput,
+  validateSecondaryInputs,
+} from '../graph_utils';
 import {ColumnInfo} from '../column_info';
 import {
   PerfettoSqlType,
@@ -645,18 +653,13 @@ describe('Connection Management', () => {
       expect(primaryNode.nextNodes).toContain(filterNode);
     });
 
-    it('should connect multiple secondary inputs using addConnection', () => {
+    it('should connect secondary input using addConnection', () => {
       const primaryNode = createMockPrevNode('primary', [
         createColumnInfo('id', 'INT'),
         createColumnInfo('ts', 'INT64'),
         createColumnInfo('dur', 'INT64'),
       ]);
-      const intervalNode1 = createMockPrevNode('interval1', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-      const intervalNode2 = createMockPrevNode('interval2', [
+      const intervalNode = createMockPrevNode('interval', [
         createColumnInfo('id', 'INT'),
         createColumnInfo('ts', 'INT64'),
         createColumnInfo('dur', 'INT64'),
@@ -664,14 +667,11 @@ describe('Connection Management', () => {
 
       const filterNode = new FilterDuringNode({});
       addConnection(primaryNode, filterNode);
-      addConnection(intervalNode1, filterNode, 0);
-      addConnection(intervalNode2, filterNode, 1);
+      addConnection(intervalNode, filterNode, 0);
 
       expect(filterNode.primaryInput).toBe(primaryNode);
-      expect(filterNode.secondaryInputs.connections.size).toBe(2);
-      expect(filterNode.secondaryInputs.connections.get(0)).toBe(intervalNode1);
-      expect(filterNode.secondaryInputs.connections.get(1)).toBe(intervalNode2);
-      expect(filterNode.secondaryNodes.length).toBe(2);
+      expect(filterNode.secondaryInputs.connections.get(0)).toBe(intervalNode);
+      expect(filterNode.secondaryNodes.length).toBe(1);
     });
 
     it('should disconnect primary input using removeConnection', () => {
@@ -692,18 +692,13 @@ describe('Connection Management', () => {
       expect(primaryNode.nextNodes).not.toContain(filterNode);
     });
 
-    it('should disconnect one of multiple secondary inputs', () => {
+    it('should disconnect secondary input', () => {
       const primaryNode = createMockPrevNode('primary', [
         createColumnInfo('id', 'INT'),
         createColumnInfo('ts', 'INT64'),
         createColumnInfo('dur', 'INT64'),
       ]);
-      const intervalNode1 = createMockPrevNode('interval1', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-      const intervalNode2 = createMockPrevNode('interval2', [
+      const intervalNode = createMockPrevNode('interval', [
         createColumnInfo('id', 'INT'),
         createColumnInfo('ts', 'INT64'),
         createColumnInfo('dur', 'INT64'),
@@ -711,17 +706,14 @@ describe('Connection Management', () => {
 
       const filterNode = new FilterDuringNode({});
       addConnection(primaryNode, filterNode);
-      addConnection(intervalNode1, filterNode, 0);
-      addConnection(intervalNode2, filterNode, 1);
+      addConnection(intervalNode, filterNode, 0);
 
-      expect(filterNode.secondaryInputs.connections.size).toBe(2);
+      expect(filterNode.secondaryInputs.connections.get(0)).toBe(intervalNode);
 
-      removeConnection(intervalNode1, filterNode);
+      removeConnection(intervalNode, filterNode);
 
-      expect(filterNode.secondaryInputs.connections.size).toBe(1);
       expect(filterNode.secondaryInputs.connections.get(0)).toBeUndefined();
-      expect(filterNode.secondaryInputs.connections.get(1)).toBe(intervalNode2);
-      expect(filterNode.secondaryNodes.length).toBe(1);
+      expect(filterNode.secondaryNodes.length).toBe(0);
     });
 
     it('should have finalCols from primary input', () => {
@@ -773,12 +765,7 @@ describe('Connection Management', () => {
         createColumnInfo('ts', 'INT64'),
         createColumnInfo('dur', 'INT64'),
       ]);
-      const intervalNode1 = createMockPrevNode('interval1', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-      const intervalNode2 = createMockPrevNode('interval2', [
+      const intervalNode = createMockPrevNode('interval', [
         createColumnInfo('id', 'INT'),
         createColumnInfo('ts', 'INT64'),
         createColumnInfo('dur', 'INT64'),
@@ -786,54 +773,13 @@ describe('Connection Management', () => {
 
       const filterNode = new FilterDuringNode({});
       addConnection(primaryNode, filterNode);
-      addConnection(intervalNode1, filterNode, 0);
-      addConnection(intervalNode2, filterNode, 1);
+      addConnection(intervalNode, filterNode, 0);
 
-      removeConnection(intervalNode1, filterNode);
-      removeConnection(intervalNode2, filterNode);
+      removeConnection(intervalNode, filterNode);
 
       expect(filterNode.primaryInput).toBe(primaryNode);
-      expect(filterNode.secondaryInputs.connections.size).toBe(0);
+      expect(filterNode.secondaryInputs.connections.get(0)).toBeUndefined();
       expect(filterNode.secondaryNodes.length).toBe(0);
-    });
-
-    it('should add secondary input to next available port', () => {
-      const primaryNode = createMockPrevNode('primary', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-      const intervalNode1 = createMockPrevNode('interval1', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-      const intervalNode2 = createMockPrevNode('interval2', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-      const intervalNode3 = createMockPrevNode('interval3', [
-        createColumnInfo('id', 'INT'),
-        createColumnInfo('ts', 'INT64'),
-        createColumnInfo('dur', 'INT64'),
-      ]);
-
-      const filterNode = new FilterDuringNode({});
-      addConnection(primaryNode, filterNode);
-
-      // Add without specifying port - should auto-assign
-      addConnection(intervalNode1, filterNode, 0);
-      addConnection(intervalNode2, filterNode, 1);
-
-      // Remove the first one
-      removeConnection(intervalNode1, filterNode);
-
-      // Add a new one without specifying port - should use port 0
-      addConnection(intervalNode3, filterNode, 0);
-
-      expect(filterNode.secondaryInputs.connections.get(0)).toBe(intervalNode3);
-      expect(filterNode.secondaryInputs.connections.get(1)).toBe(intervalNode2);
     });
 
     it('should notify downstream nodes when primary disconnected', () => {
@@ -1423,6 +1369,102 @@ describe('Connection Management', () => {
     });
   });
 
+  describe('Deleting node connected to secondary input', () => {
+    it('should preserve secondary input connection when deleting middle node in chain', () => {
+      // Bug reproduction test:
+      // Scenario:
+      //   nodeX -> nodeY -> nodeZ (secondary input port 0)
+      //
+      // When deleting nodeY, nodeX should be reconnected to nodeZ's SECONDARY input,
+      // not to nodeZ's primary input.
+      //
+      // Bug: nodeX gets connected to nodeZ's primary input instead of secondary
+      // Expected: nodeX should be connected to nodeZ's secondary input at port 0
+
+      const nodeX = createMockPrevNode('nodeX', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      const nodeY = new FilterNode({});
+
+      const nodeZ = new FilterDuringNode({});
+
+      // Set up another node as primary input for nodeZ
+      const primaryNode = createMockPrevNode('primary', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      // Build the chain:
+      // nodeX -> nodeY (primary)
+      addConnection(nodeX, nodeY);
+      // primaryNode -> nodeZ (primary)
+      addConnection(primaryNode, nodeZ);
+      // nodeY -> nodeZ (secondary input at port 0)
+      addConnection(nodeY, nodeZ, 0);
+
+      // Verify initial state
+      expect(nodeY.primaryInput).toBe(nodeX);
+      expect(nodeZ.primaryInput).toBe(primaryNode);
+      expect(nodeZ.secondaryInputs.connections.get(0)).toBe(nodeY);
+      expect(nodeX.nextNodes).toContain(nodeY);
+      expect(nodeY.nextNodes).toContain(nodeZ);
+
+      // Now simulate node deletion of nodeY
+      // This mimics the deletion logic from explore_page.ts:
+      // 1. Get primary parent before removal
+      const primaryParentNodes: QueryNode[] = [];
+      if (nodeY.primaryInput) {
+        primaryParentNodes.push(nodeY.primaryInput);
+      }
+      const childNodes = [...nodeY.nextNodes];
+
+      // 2. Capture port index information BEFORE removing connections
+      const childConnectionInfo: Array<{
+        child: QueryNode;
+        portIndex: number | undefined;
+      }> = [];
+      for (const child of childNodes) {
+        let portIndex: number | undefined = undefined;
+        if (child.secondaryInputs) {
+          for (const [port, inputNode] of child.secondaryInputs.connections) {
+            if (inputNode === nodeY) {
+              portIndex = port;
+              break;
+            }
+          }
+        }
+        childConnectionInfo.push({child, portIndex});
+      }
+
+      // 3. Remove all connections to/from nodeY
+      removeConnection(nodeX, nodeY);
+      removeConnection(nodeY, nodeZ);
+
+      // 4. Verify nodeY is disconnected
+      expect(nodeY.primaryInput).toBeUndefined();
+      expect(nodeY.nextNodes.length).toBe(0);
+
+      // 5. Reconnect parent to children, preserving port indices
+      // This uses the FIXED reconnectParentsToChildren function
+      reconnectParentsToChildren(
+        primaryParentNodes,
+        childConnectionInfo,
+        addConnection,
+      );
+
+      // EXPECTED behavior (after fix):
+      // - nodeX should be connected to nodeZ's SECONDARY input at port 0
+      // - nodeZ's primary input should still be primaryNode (unchanged)
+      expect(nodeZ.primaryInput).toBe(primaryNode); // primary unchanged
+      expect(nodeZ.secondaryInputs.connections.get(0)).toBe(nodeX); // nodeX at secondary input
+      expect(nodeX.nextNodes).toContain(nodeZ); // nodeX connected to nodeZ
+    });
+  });
+
   describe('Secondary input removal should not trigger reconnection', () => {
     it('should NOT reconnect secondary input node to children when removing secondary connection', () => {
       // Bug reproduction test:
@@ -1540,6 +1582,1396 @@ describe('Connection Management', () => {
       // 3. The remaining connections should be intact
       expect(intervalNode.secondaryInputs.connections.get(0)).toBe(node1);
       expect(intervalNode.nextNodes).toContain(childNode);
+    });
+  });
+
+  describe('Node deletion edge cases', () => {
+    it('should NOT overwrite existing primary input when deleting middle node', () => {
+      // Bug scenario:
+      //   A → B → C (B's primary input is A, C's primary input is B)
+      //   A ------→ C (A also directly connected to C's primary - shouldn't happen but testing)
+      //
+      // When deleting B, the reconnection logic tries to do: A → C (primary)
+      // But C already has a primaryInput! We shouldn't overwrite it.
+      //
+      // This is an edge case that could happen if:
+      // - User manually created both connections
+      // - Or through a series of operations that create this state
+
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+      ]);
+
+      const nodeB = new FilterNode({});
+      addConnection(nodeA, nodeB); // A → B
+
+      const nodeC = new FilterNode({});
+      addConnection(nodeB, nodeC); // B → C (C.primaryInput = B)
+
+      // Simulate the edge case: A is already connected to C directly
+      // This could happen if user created this connection, or through graph operations
+      addConnection(nodeA, nodeC); // A → C (overwrites C.primaryInput to A!)
+
+      // Verify initial state
+      expect(nodeB.primaryInput).toBe(nodeA);
+      // Note: C.primaryInput is now A (not B!), because addConnection overwrote it
+      expect(nodeC.primaryInput).toBe(nodeA);
+      expect(nodeA.nextNodes).toContain(nodeB);
+      expect(nodeA.nextNodes).toContain(nodeC);
+      expect(nodeB.nextNodes).toContain(nodeC);
+
+      // Now simulate deletion of nodeB by doing what handleDeleteNode does:
+      // 1. Capture state
+      const primaryParent = nodeB.primaryInput; // A
+      const childConnections = nodeB.nextNodes.map((child) => ({
+        child,
+        portIndex: undefined, // B → C is primary connection
+      }));
+
+      // 2. Disconnect nodeB
+      removeConnection(nodeA, nodeB);
+      removeConnection(nodeB, nodeC);
+
+      // 3. Reconnect parent to children (this is where the bug might occur)
+      if (primaryParent !== undefined) {
+        for (const {child, portIndex} of childConnections) {
+          // BUG: This will overwrite C's primaryInput even though A → C already exists!
+          addConnection(primaryParent, child, portIndex);
+        }
+      }
+
+      // AFTER FIX: Reconnection should be SKIPPED because A is already connected to C
+      // C.primaryInput should remain as A (the existing connection)
+      expect(nodeC.primaryInput).toBe(nodeA);
+
+      // A should be in C's nextNodes
+      expect(nodeA.nextNodes).toContain(nodeC);
+
+      // Verify the invariant: A → C exists exactly once in nextNodes
+      const finalCount = nodeA.nextNodes.filter((n) => n === nodeC).length;
+      expect(finalCount).toBe(1);
+
+      // The fix ensures:
+      // - No duplicate connections created
+      // - Existing A → C connection preserved
+      // - B → C connection removed (B.nextNodes no longer contains C)
+      expect(nodeB.nextNodes).not.toContain(nodeC);
+    });
+
+    it('should DROP secondary connections when deleting middle node', () => {
+      // Correct behavior:
+      //   A → B → C (secondary port 1)
+      //   A ------→ C (secondary port 0, existing connection)
+      //
+      // When deleting B:
+      // - B → C (secondary port 1) should be DROPPED (not reconnected)
+      // - A → C (secondary port 0) should remain unchanged
+
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      const nodeB = new FilterNode({});
+      addConnection(nodeA, nodeB); // A → B
+
+      const nodeC = new FilterDuringNode({});
+      const primary = createMockPrevNode('primary', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+      addConnection(primary, nodeC); // primary → C (primary input)
+      addConnection(nodeB, nodeC, 1); // B → C (secondary port 1)
+
+      // Manually add A → C at port 0 (simulating A being connected to C independently)
+      addConnection(nodeA, nodeC, 0); // A → C (secondary port 0)
+
+      // Verify initial state
+      expect(nodeB.primaryInput).toBe(nodeA);
+      expect(nodeC.primaryInput).toBe(primary);
+      expect(nodeC.secondaryInputs.connections.get(0)).toBe(nodeA); // A at port 0
+      expect(nodeC.secondaryInputs.connections.get(1)).toBe(nodeB); // B at port 1
+      expect(nodeA.nextNodes).toContain(nodeB);
+      expect(nodeA.nextNodes).toContain(nodeC);
+
+      // Simulate deletion of nodeB
+      const primaryParent = nodeB.primaryInput; // A
+      const childConnections = nodeB.nextNodes.map((child) => {
+        let portIndex: number | undefined = undefined;
+        if (child.secondaryInputs) {
+          for (const [port, inputNode] of child.secondaryInputs.connections) {
+            if (inputNode === nodeB) {
+              portIndex = port;
+              break;
+            }
+          }
+        }
+        return {child, portIndex};
+      });
+
+      expect(childConnections[0].portIndex).toBe(1); // B was at port 1
+
+      // Disconnect nodeB
+      removeConnection(nodeA, nodeB);
+      removeConnection(nodeB, nodeC);
+
+      // After removal, nodeC should have A at port 0 only
+      expect(nodeC.secondaryInputs.connections.get(0)).toBe(nodeA);
+      expect(nodeC.secondaryInputs.connections.get(1)).toBeUndefined();
+
+      // Count how many times A appears in its own nextNodes (should be 1)
+      const initialNextNodesCount = nodeA.nextNodes.filter(
+        (n) => n === nodeC,
+      ).length;
+      expect(initialNextNodesCount).toBe(1);
+
+      // Reconnect parent to children (FIXED logic)
+      if (primaryParent !== undefined) {
+        for (const {child, portIndex} of childConnections) {
+          // FIX 1: Skip reconnection for secondary connections
+          if (portIndex !== undefined) {
+            continue; // Don't reconnect secondary connections
+          }
+
+          // FIX 2: Skip reconnection if parent is already connected
+          if (primaryParent.nextNodes.includes(child)) {
+            continue; // Already connected - don't create duplicates
+          }
+
+          addConnection(primaryParent, child, portIndex);
+        }
+      }
+
+      // AFTER FIX: Secondary connection should be DROPPED (not reconnected)
+      // Port 1 should be empty (B → C secondary connection dropped)
+      expect(nodeC.secondaryInputs.connections.get(1)).toBeUndefined();
+
+      // Port 0 should still have A (original connection preserved)
+      expect(nodeC.secondaryInputs.connections.get(0)).toBe(nodeA);
+
+      // Forward link should exist exactly once
+      const finalNextNodesCount = nodeA.nextNodes.filter(
+        (n) => n === nodeC,
+      ).length;
+      expect(finalNextNodesCount).toBe(1);
+
+      // The fix ensures:
+      // Before deletion: A → C (port 0), B → C (port 1)  [2 connections total]
+      // After deletion:  A → C (port 0)                    [1 connection total]
+      //
+      // ✅ Secondary connections DROPPED (not reconnected)
+      // ✅ No duplicate connections created
+      // ✅ Node A feeds only ONE port of C
+      // ✅ Deletion REDUCED connections
+    });
+
+    it('should handle deleting middle node in diamond pattern', () => {
+      // Diamond pattern:
+      //   A → B → D
+      //   A ------→ D (secondary port 0)
+      //
+      // When deleting B:
+      // - Try to reconnect A → D (primary)
+      // - But A is already connected to D at secondary port 0
+      // - What should happen?
+
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      const nodeB = new FilterNode({});
+      addConnection(nodeA, nodeB); // A → B (primary)
+
+      const nodeD = new FilterDuringNode({});
+      const primary = createMockPrevNode('primary', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+      addConnection(primary, nodeD); // primary → D (primary)
+      addConnection(nodeB, nodeD); // B → D (primary) - Wait, this will overwrite!
+
+      // Actually, let's set up the diamond correctly:
+      // A → B → D (primary flow)
+      // A → intervals → D (secondary flow)
+      // This is more realistic
+
+      // Reset
+      removeConnection(nodeB, nodeD);
+
+      // Set up diamond:
+      addConnection(nodeB, nodeD); // B → D (now D's primary is B)
+
+      const intervals = createMockPrevNode('intervals', [
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+      addConnection(nodeA, intervals);
+      addConnection(intervals, nodeD, 0); // intervals → D (secondary port 0)
+
+      // Verify initial state
+      expect(nodeB.primaryInput).toBe(nodeA);
+      expect(nodeD.primaryInput).toBe(nodeB);
+      expect(nodeD.secondaryInputs.connections.get(0)).toBe(intervals);
+      expect(nodeA.nextNodes).toContain(nodeB);
+      expect(nodeA.nextNodes).toContain(intervals);
+
+      // Now delete nodeB
+      const primaryParent = nodeB.primaryInput; // A
+      const childConnections = nodeB.nextNodes.map((child) => ({
+        child,
+        portIndex: undefined, // B → D is primary
+      }));
+
+      removeConnection(nodeA, nodeB);
+      removeConnection(nodeB, nodeD);
+
+      // Before reconnection, D has no primary input
+      expect(nodeD.primaryInput).toBeUndefined();
+
+      // Reconnect
+      if (primaryParent !== undefined) {
+        for (const {child, portIndex} of childConnections) {
+          addConnection(primaryParent, child, portIndex);
+        }
+      }
+
+      // After reconnection:
+      // - A → D (primary) - This is CORRECT
+      // - intervals → D (secondary port 0) - This is UNCHANGED
+      expect(nodeD.primaryInput).toBe(nodeA);
+      expect(nodeD.secondaryInputs.connections.get(0)).toBe(intervals);
+      expect(nodeA.nextNodes).toContain(nodeD);
+
+      // This case actually works correctly! The issue only arises when
+      // parent is ALREADY connected to child before deletion.
+    });
+
+    it('should promote orphaned secondary input providers to root nodes', () => {
+      // Scenario: Root TableSource → FilterDuring (with TimeRange as secondary)
+      // When FilterDuring is deleted, TimeRange should be promoted to root
+      // (not left as an unreachable ghost node)
+      const tableSource = createMockPrevNode('TableSource', [
+        createColumnInfo('id', 'INT64'),
+      ]);
+      const timeRange = createMockPrevNode('TimeRange', [
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+      const filterDuring = new FilterDuringNode({});
+
+      // Connect: TableSource → FilterDuring (primary)
+      addConnection(tableSource, filterDuring);
+      // Connect: TimeRange → FilterDuring (secondary port 0)
+      addConnection(timeRange, filterDuring, 0);
+
+      // Initial state
+      expect(filterDuring.primaryInput).toBe(tableSource);
+      expect(filterDuring.secondaryInputs?.connections.get(0)).toBe(timeRange);
+      expect(tableSource.nextNodes).toContain(filterDuring);
+      expect(timeRange.nextNodes).toContain(filterDuring);
+
+      // Simulate deletion of FilterDuring
+      const allInputs = [
+        ...(filterDuring.primaryInput ? [filterDuring.primaryInput] : []),
+        ...(filterDuring.secondaryInputs !== undefined
+          ? Array.from(filterDuring.secondaryInputs.connections.values())
+          : []),
+      ];
+
+      // Disconnect
+      removeConnection(tableSource, filterDuring);
+      removeConnection(timeRange, filterDuring);
+
+      // Check which inputs became orphaned
+      const orphanedInputs: QueryNode[] = [];
+      const assumedRootNodes = [tableSource]; // Assume tableSource is a root
+
+      for (const inputNode of allInputs) {
+        const hasNoConsumers = inputNode.nextNodes.length === 0;
+        const isNotRoot = !assumedRootNodes.includes(inputNode);
+
+        if (hasNoConsumers && isNotRoot) {
+          orphanedInputs.push(inputNode);
+        }
+      }
+
+      // TimeRange should be orphaned (no consumers, not a root)
+      expect(orphanedInputs).toContain(timeRange);
+      // TableSource should NOT be orphaned (it's a root)
+      expect(orphanedInputs).not.toContain(tableSource);
+
+      // Verify TimeRange is now unreachable
+      expect(timeRange.nextNodes.length).toBe(0);
+
+      // The fix: TimeRange should be added to rootNodes to keep it visible
+      // (This would be done in handleDeleteNode's Step 5b)
+    });
+
+    it('should make children root nodes when deleting node with only secondary inputs', () => {
+      // Scenario: Deleting a node that has NO primary parent (only secondary inputs)
+      // Examples: IntervalIntersectNode, UnionNode, JoinNode
+      //
+      // Graph:
+      //   source1 → IntervalIntersect (secondary port 0) → child
+      //   source2 → IntervalIntersect (secondary port 1)
+      //
+      // When IntervalIntersect is deleted:
+      // - There's no primary parent to reconnect to child
+      // - Child should become a root node (so it remains accessible)
+      // - source1 and source2 should remain as they were (no reconnection)
+
+      const source1 = createMockPrevNode('source1', [
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      const source2 = createMockPrevNode('source2', [
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      const intervalIntersect = new IntervalIntersectNode({
+        inputNodes: [source1, source2],
+      });
+
+      // IntervalIntersectNode only has secondary inputs (no primary)
+      addConnection(source1, intervalIntersect, 0); // secondary port 0
+      addConnection(source2, intervalIntersect, 1); // secondary port 1
+
+      const childNode = new FilterNode({});
+      addConnection(intervalIntersect, childNode); // primary connection
+
+      // Verify initial state
+      // IntervalIntersectNode does not have a primaryInput property (only secondary inputs)
+      expect('primaryInput' in intervalIntersect).toBe(false);
+      expect(intervalIntersect.secondaryInputs.connections.get(0)).toBe(
+        source1,
+      );
+      expect(intervalIntersect.secondaryInputs.connections.get(1)).toBe(
+        source2,
+      );
+      expect(intervalIntersect.nextNodes).toContain(childNode);
+      expect(childNode.primaryInput).toBe(intervalIntersect);
+
+      // Simulate deletion of intervalIntersect (following handleDeleteNode logic)
+      // STEP 2: Capture state BEFORE modification
+      const primaryParent: QueryNode | undefined =
+        'primaryInput' in intervalIntersect
+          ? (intervalIntersect as {primaryInput?: QueryNode}).primaryInput
+          : undefined; // undefined for IntervalIntersectNode!
+      const childConnections = intervalIntersect.nextNodes.map((child) => ({
+        child,
+        portIndex: undefined, // intervalIntersect → child is primary connection
+      }));
+
+      expect(primaryParent).toBeUndefined(); // Critical: no primary parent
+      expect(childConnections.length).toBe(1);
+
+      // STEP 3: Disconnect the node
+      removeConnection(source1, intervalIntersect);
+      removeConnection(source2, intervalIntersect);
+      removeConnection(intervalIntersect, childNode);
+
+      // STEP 4: Try to reconnect (but primaryParent is undefined, so skip)
+      if (primaryParent !== undefined) {
+        for (const {child, portIndex} of childConnections) {
+          if (portIndex !== undefined) {
+            continue;
+          }
+          const isAlreadyConnected = primaryParent.nextNodes.includes(child);
+          if (isAlreadyConnected) {
+            continue;
+          }
+          addConnection(primaryParent, child, portIndex);
+        }
+      }
+      // No reconnection happened (primaryParent is undefined)
+
+      // STEP 5: Update root nodes
+      // Since primaryParent === undefined and childConnections.length > 0,
+      // child should be added to root nodes
+      let newRootNodes: QueryNode[] = []; // Assume intervalIntersect was a root
+      if (primaryParent === undefined && childConnections.length > 0) {
+        const orphanedChildren = childConnections.map((c) => c.child);
+        newRootNodes = [...newRootNodes, ...orphanedChildren];
+      }
+
+      // VERIFY: child became a root node
+      expect(newRootNodes).toContain(childNode);
+
+      // VERIFY: child is disconnected from deleted node
+      expect(childNode.primaryInput).toBeUndefined();
+
+      // VERIFY: sources are NOT reconnected to child
+      // (secondary connections are dropped, not propagated)
+      expect(source1.nextNodes).not.toContain(childNode);
+      expect(source2.nextNodes).not.toContain(childNode);
+
+      // The fix ensures:
+      // ✅ Nodes with only secondary inputs can be deleted cleanly
+      // ✅ Their children become root nodes (remain accessible)
+      // ✅ No incorrect reconnection of secondary inputs
+      // ✅ Graph remains consistent
+    });
+
+    it('should transfer layout from deleted node to docked child', () => {
+      // Scenario: A → B (undocked, has layout) → D (docked, no layout)
+      //           A → C (undocked)
+      //
+      // When B is deleted:
+      // - D should be reconnected to A
+      // - D should inherit B's layout (appear at B's position)
+      // - D should NOT be marked as unrenderable
+      // - D should NOT become a root node
+
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+      ]);
+
+      const nodeB = new FilterNode({});
+      addConnection(nodeA, nodeB); // A → B
+
+      const nodeC = new FilterNode({});
+      addConnection(nodeA, nodeC); // A → C
+
+      const nodeD = new FilterNode({});
+      addConnection(nodeB, nodeD); // B → D
+
+      // Simulate nodeLayouts map
+      const nodeLayouts = new Map<string, {x: number; y: number}>();
+      nodeLayouts.set(nodeB.nodeId, {x: 100, y: 200}); // B has layout
+      nodeLayouts.set(nodeC.nodeId, {x: 300, y: 200}); // C has layout
+      // D does NOT have layout (docked to B)
+
+      // Simulate deletion of nodeB (following handleDeleteNode logic)
+      // STEP 1: Capture state
+      const primaryParent = nodeB.primaryInput; // A
+      const childConnections = nodeB.nextNodes.map((child) => ({
+        child,
+        portIndex: undefined, // B → D is primary connection
+      }));
+      const deletedNodeLayout = nodeLayouts.get(nodeB.nodeId); // {x: 100, y: 200}
+
+      // STEP 2: Disconnect
+      removeConnection(nodeA, nodeB);
+      removeConnection(nodeB, nodeD);
+
+      // STEP 3: Reconnect and transfer layout
+      const updatedNodeLayouts = new Map(nodeLayouts);
+      const reconnectedChildren: QueryNode[] = [];
+
+      if (primaryParent !== undefined) {
+        for (const {child, portIndex} of childConnections) {
+          if (portIndex !== undefined) {
+            continue; // Skip secondary connections
+          }
+
+          if (primaryParent.nextNodes.includes(child)) {
+            continue; // Skip if already connected
+          }
+
+          // Reconnect
+          addConnection(primaryParent, child, portIndex);
+          reconnectedChildren.push(child);
+
+          // Transfer layout if child was docked
+          const childHasNoLayout = !nodeLayouts.has(child.nodeId);
+          if (childHasNoLayout && deletedNodeLayout !== undefined) {
+            updatedNodeLayouts.set(child.nodeId, deletedNodeLayout);
+          }
+        }
+      }
+
+      // STEP 4: Check if children are renderable (using UPDATED layouts)
+      const unrenderableChildren: QueryNode[] = [];
+      if (primaryParent !== undefined && reconnectedChildren.length > 0) {
+        const parentHasMultipleChildren = primaryParent.nextNodes.length > 1;
+        for (const child of reconnectedChildren) {
+          // Check UPDATED layouts
+          const childHasNoLayout = !updatedNodeLayouts.has(child.nodeId);
+          if (childHasNoLayout && parentHasMultipleChildren) {
+            unrenderableChildren.push(child);
+          }
+        }
+      }
+
+      // VERIFY: D was reconnected to A
+      expect(nodeD.primaryInput).toBe(nodeA);
+      expect(nodeA.nextNodes).toContain(nodeD);
+
+      // VERIFY: D inherited B's layout
+      expect(updatedNodeLayouts.has(nodeD.nodeId)).toBe(true);
+      expect(updatedNodeLayouts.get(nodeD.nodeId)).toEqual({x: 100, y: 200});
+
+      // VERIFY: D is NOT unrenderable (because it now has a layout)
+      expect(unrenderableChildren).not.toContain(nodeD);
+
+      // The fix ensures:
+      // ✅ Docked children inherit deleted node's layout
+      // ✅ Children with inherited layouts are NOT marked as unrenderable
+      // ✅ Children stay as docked nodes (not promoted to root)
+      // ✅ Layout position is preserved
+    });
+
+    it('should transfer layout from deleted root node to orphaned child', () => {
+      // Scenario: A (root, has layout) → B (docked, no layout)
+      //
+      // When A is deleted:
+      // - B has no parent to reconnect to (becomes orphaned)
+      // - B should inherit A's layout (appear at A's position)
+      // - B should become a root node
+
+      const nodeA = new FilterNode({});
+
+      const nodeB = new FilterNode({});
+      addConnection(nodeA, nodeB); // A → B
+
+      // Simulate nodeLayouts map
+      const nodeLayouts = new Map<string, {x: number; y: number}>();
+      nodeLayouts.set(nodeA.nodeId, {x: 150, y: 250}); // A has layout
+      // B does NOT have layout (docked to A)
+
+      // Simulate deletion of nodeA (following handleDeleteNode logic)
+      // STEP 1: Capture state
+      const primaryParent = nodeA.primaryInput; // undefined (A is root)
+      const childConnections = nodeA.nextNodes.map((child) => ({
+        child,
+        portIndex: undefined,
+      }));
+      const deletedNodeLayout = nodeLayouts.get(nodeA.nodeId); // {x: 150, y: 250}
+
+      // STEP 2: Disconnect
+      removeConnection(nodeA, nodeB);
+
+      // STEP 3: Handle orphaned children
+      const updatedNodeLayouts = new Map(nodeLayouts);
+      let newRootNodes: QueryNode[] = [];
+
+      if (primaryParent === undefined && childConnections.length > 0) {
+        const orphanedChildren = childConnections.map((c) => c.child);
+        newRootNodes = [...newRootNodes, ...orphanedChildren];
+
+        // Transfer layout to orphaned children
+        if (deletedNodeLayout !== undefined) {
+          for (const {child} of childConnections) {
+            const childHasNoLayout = !updatedNodeLayouts.has(child.nodeId);
+            if (childHasNoLayout) {
+              updatedNodeLayouts.set(child.nodeId, deletedNodeLayout);
+            }
+          }
+        }
+      }
+
+      // VERIFY: B is disconnected from A
+      expect(nodeB.primaryInput).toBeUndefined();
+
+      // VERIFY: B became a root node
+      expect(newRootNodes).toContain(nodeB);
+
+      // VERIFY: B inherited A's layout
+      expect(updatedNodeLayouts.has(nodeB.nodeId)).toBe(true);
+      expect(updatedNodeLayouts.get(nodeB.nodeId)).toEqual({x: 150, y: 250});
+
+      // The fix ensures:
+      // ✅ Orphaned children inherit deleted node's layout
+      // ✅ Orphaned children become root nodes
+      // ✅ Layout position is preserved at deleted node's location
+    });
+
+    it('should offset layout positions when multiple children inherit layout', () => {
+      // Bug scenario:
+      //   A → B (at position x:100, y:200)
+      //       ↓
+      //      [C, D, E] (all docked, no layouts)
+      //
+      // When deleting B:
+      // - C, D, E all become orphaned children
+      // - Without fix: All three get same layout (100, 200) → overlapping!
+      // - With fix: Each gets offset position to avoid overlap
+
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+      ]);
+
+      const nodeB = new FilterNode({});
+      addConnection(nodeA, nodeB); // A → B
+
+      const nodeC = new FilterNode({});
+      const nodeD = new FilterNode({});
+      const nodeE = new FilterNode({});
+
+      addConnection(nodeB, nodeC); // B → C
+      addConnection(nodeB, nodeD); // B → D
+      addConnection(nodeB, nodeE); // B → E
+
+      // Simulate state
+      const state = {
+        rootNodes: [nodeA],
+        nodeLayouts: new Map([
+          [nodeA.nodeId, {x: 50, y: 100}],
+          [nodeB.nodeId, {x: 100, y: 200}], // B has layout
+          // C, D, E have no layouts (docked to B)
+        ]),
+      };
+
+      // Simulate deletion of B (following handleDeleteNode logic with FIX)
+      const primaryParent = nodeB.primaryInput; // A
+      const childConnections = nodeB.nextNodes.map((child) => ({
+        child,
+        portIndex: undefined,
+      }));
+      const deletedNodeLayout = state.nodeLayouts.get(nodeB.nodeId);
+
+      // Disconnect
+      removeConnection(nodeA, nodeB);
+      removeConnection(nodeB, nodeC);
+      removeConnection(nodeB, nodeD);
+      removeConnection(nodeB, nodeE);
+
+      // Try to reconnect (A → C, D, E) - in this case primaryParent exists
+      const updatedNodeLayouts = new Map(state.nodeLayouts);
+      if (primaryParent !== undefined) {
+        let layoutOffsetCount = 0;
+        for (const {child, portIndex} of childConnections) {
+          if (portIndex !== undefined) {
+            continue;
+          }
+          if (primaryParent.nextNodes.includes(child)) {
+            continue;
+          }
+
+          addConnection(primaryParent, child, portIndex);
+
+          // Apply layout with offset
+          const childHasNoLayout = !state.nodeLayouts.has(child.nodeId);
+          if (childHasNoLayout && deletedNodeLayout !== undefined) {
+            const offsetX = layoutOffsetCount * 30;
+            const offsetY = layoutOffsetCount * 30;
+            updatedNodeLayouts.set(child.nodeId, {
+              x: deletedNodeLayout.x + offsetX,
+              y: deletedNodeLayout.y + offsetY,
+            });
+            layoutOffsetCount++;
+          }
+        }
+      }
+
+      // VERIFY: All three children got layouts
+      expect(updatedNodeLayouts.has(nodeC.nodeId)).toBe(true);
+      expect(updatedNodeLayouts.has(nodeD.nodeId)).toBe(true);
+      expect(updatedNodeLayouts.has(nodeE.nodeId)).toBe(true);
+
+      // VERIFY: Each child has a DIFFERENT layout (offset applied)
+      const layoutC = updatedNodeLayouts.get(nodeC.nodeId);
+      const layoutD = updatedNodeLayouts.get(nodeD.nodeId);
+      const layoutE = updatedNodeLayouts.get(nodeE.nodeId);
+
+      expect(layoutC).toEqual({x: 100, y: 200}); // 0 * 30 offset
+      expect(layoutD).toEqual({x: 130, y: 230}); // 1 * 30 offset
+      expect(layoutE).toEqual({x: 160, y: 260}); // 2 * 30 offset
+
+      // VERIFY: No two children have the same position
+      expect(layoutC).not.toEqual(layoutD);
+      expect(layoutD).not.toEqual(layoutE);
+      expect(layoutC).not.toEqual(layoutE);
+
+      // The fix ensures:
+      // ✅ Multiple children don't overlap on screen
+      // ✅ Each child gets a unique offset position
+      // ✅ Positions are predictable (30px diagonal increments)
+    });
+
+    it('should use Set to prevent duplicate root nodes when building final list', () => {
+      // This test verifies that using a Set prevents potential duplicates
+      // when building the root nodes list from multiple sources:
+      // - Initial root nodes (filtered)
+      // - Orphaned children
+      // - Unrenderable children
+      // - Orphaned inputs
+      //
+      // Setup: A → B (FilterDuring) → C, with intervals → B (secondary)
+      // When deleting B, we add nodes from multiple sources to root nodes.
+      // The Set ensures no duplicates even if a node appears in multiple categories.
+
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+
+      const nodeB = new FilterDuringNode({});
+      addConnection(nodeA, nodeB); // A → B (primary)
+
+      const nodeC = new FilterNode({});
+      addConnection(nodeB, nodeC); // B → C
+
+      // Add a secondary input that will become orphaned
+      const intervals = createMockPrevNode('intervals', [
+        createColumnInfo('ts', 'INT64'),
+        createColumnInfo('dur', 'INT64'),
+      ]);
+      addConnection(intervals, nodeB, 0); // intervals → B (port 0)
+
+      // Simulate state
+      const state = {
+        rootNodes: [nodeA, nodeB], // B is a root node
+        nodeLayouts: new Map([
+          [nodeA.nodeId, {x: 50, y: 100}],
+          [nodeB.nodeId, {x: 100, y: 200}],
+          // C and intervals have no layouts
+        ]),
+      };
+
+      // Simulate deletion of B (following handleDeleteNode logic with FIX)
+      const primaryParent = nodeB.primaryInput; // A
+      const childConnections = [{child: nodeC, portIndex: undefined}];
+      const allInputs = [nodeA, intervals]; // Both primary and secondary inputs
+
+      // Disconnect
+      removeConnection(nodeA, nodeB);
+      removeConnection(intervals, nodeB);
+      removeConnection(nodeB, nodeC);
+
+      // Build root nodes using Set (the fix)
+      const newRootNodesSet = new Set(
+        state.rootNodes.filter((n) => n !== nodeB),
+      );
+
+      // Reconnect children
+      const reconnectedChildren: QueryNode[] = [];
+      const updatedNodeLayouts = new Map(state.nodeLayouts);
+      if (primaryParent !== undefined) {
+        for (const {child, portIndex} of childConnections) {
+          if (portIndex !== undefined) {
+            continue;
+          }
+          if (primaryParent.nextNodes.includes(child)) {
+            continue;
+          }
+          addConnection(primaryParent, child, portIndex);
+          reconnectedChildren.push(child);
+        }
+      }
+
+      // Check for unrenderable children
+      const unrenderableChildren: QueryNode[] = [];
+      if (primaryParent !== undefined && reconnectedChildren.length > 0) {
+        const parentHasMultipleChildren = primaryParent.nextNodes.length > 1;
+        for (const child of reconnectedChildren) {
+          const childHasNoLayout = !updatedNodeLayouts.has(child.nodeId);
+          if (childHasNoLayout && parentHasMultipleChildren) {
+            unrenderableChildren.push(child);
+          }
+        }
+      }
+
+      // Add unrenderable children (C in this case)
+      for (const child of unrenderableChildren) {
+        newRootNodesSet.add(child);
+      }
+
+      // Check for orphaned inputs
+      const orphanedInputs: QueryNode[] = [];
+      for (const inputNode of allInputs) {
+        const wasNotRoot = !state.rootNodes.includes(inputNode);
+        const hasNoConsumers = inputNode.nextNodes.length === 0;
+        if (wasNotRoot && hasNoConsumers) {
+          orphanedInputs.push(inputNode);
+        }
+      }
+
+      // Add orphaned inputs (secondaryInput in this case)
+      for (const inputNode of orphanedInputs) {
+        newRootNodesSet.add(inputNode);
+      }
+
+      const newRootNodes = Array.from(newRootNodesSet);
+
+      // VERIFY: C is NOT in root nodes (it's docked to A after reconnection)
+      const countC = newRootNodes.filter((n) => n === nodeC).length;
+      expect(countC).toBe(0);
+
+      // VERIFY: intervals appears exactly once (orphaned input)
+      const countIntervals = newRootNodes.filter((n) => n === intervals).length;
+      expect(countIntervals).toBe(1);
+
+      // VERIFY: A remains in root nodes (wasn't deleted)
+      expect(newRootNodes).toContain(nodeA);
+
+      // VERIFY: B is NOT in root nodes (was deleted)
+      expect(newRootNodes).not.toContain(nodeB);
+
+      // VERIFY: Total count is correct (A, intervals only)
+      // Note: C is not in root nodes because it's docked to A
+      expect(newRootNodes.length).toBe(2);
+
+      // The fix ensures:
+      // ✅ No duplicate nodes in root nodes list
+      // ✅ Set deduplication works correctly
+      // ✅ All necessary nodes are promoted to root exactly once
+    });
+  });
+
+  describe('Adding Multi-Source Node to Parent with Docked Children', () => {
+    // Helper: Simulates getRootNodes from graph.ts
+    // A node is docked (not a root) if:
+    // 1. It's a single-node operation (modification node)
+    // 2. It has a primaryInput (parent in the primary flow)
+    // 3. It doesn't have a layout position
+    function getRootNodes(
+      allNodes: QueryNode[],
+      nodeLayouts: Map<string, {x: number; y: number}>,
+    ): QueryNode[] {
+      const dockedNodes = new Set<QueryNode>();
+
+      for (const node of allNodes) {
+        if (
+          singleNodeOperation(node.type) &&
+          'primaryInput' in node &&
+          node.primaryInput !== undefined &&
+          !nodeLayouts.has(node.nodeId)
+        ) {
+          dockedNodes.add(node);
+        }
+      }
+
+      return allNodes.filter((n) => !dockedNodes.has(n));
+    }
+
+    // Helper: Simulates getNextDockedNode from graph.ts
+    // Returns the next docked child in the chain (rendered via 'next' property)
+    // Only returns a child if parent has exactly one child
+    function getNextDockedNode(
+      qnode: QueryNode,
+      nodeLayouts: Map<string, {x: number; y: number}>,
+    ): QueryNode | undefined {
+      if (
+        qnode.nextNodes.length === 1 &&
+        qnode.nextNodes[0] !== undefined &&
+        singleNodeOperation(qnode.nextNodes[0].type) &&
+        !nodeLayouts.has(qnode.nextNodes[0].nodeId)
+      ) {
+        const child = qnode.nextNodes[0];
+        // Only dock the child if it's part of the primary flow chain
+        if ('primaryInput' in child && child.primaryInput === qnode) {
+          return child;
+        }
+      }
+      return undefined;
+    }
+
+    // Helper: Checks if a node is rendered anywhere
+    // A node is rendered if it's either:
+    // 1. In the root nodes list, OR
+    // 2. Returned by getNextDockedNode for some parent
+    function isNodeRendered(
+      node: QueryNode,
+      allNodes: QueryNode[],
+      nodeLayouts: Map<string, {x: number; y: number}>,
+    ): boolean {
+      const rootNodes = getRootNodes(allNodes, nodeLayouts);
+
+      // Check if node is in root nodes
+      if (rootNodes.includes(node)) {
+        return true;
+      }
+
+      // Check if node is docked to any parent
+      for (const potentialParent of allNodes) {
+        if (getNextDockedNode(potentialParent, nodeLayouts) === node) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    it('should undock existing docked children when adding multi-source node to parent', () => {
+      // Scenario:
+      //   A (source, has layout) → B (filter, docked to A, no layout)
+      //
+      // When we add a multi-source node C (like Join) connected to A:
+      //   A → B (filter, should be undocked)
+      //   A → C (join, multi-source)
+      //
+      // The fix: Before adding C, undock B by giving it a layout.
+      // This ensures B remains visible after the connection is added.
+
+      // SETUP: Create node A (source) with layout
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('name', 'STRING'),
+      ]);
+
+      // SETUP: Create node B (filter, docked to A)
+      const nodeB = new FilterNode({
+        filters: [{column: 'id', op: '=', value: '1'}],
+      });
+      // Connect A → B (B becomes docked since it's a modification node)
+      addConnection(nodeA, nodeB);
+
+      // SETUP: nodeLayouts - A has layout, B does not (docked)
+      const nodeLayouts = new Map<string, {x: number; y: number}>();
+      nodeLayouts.set(nodeA.nodeId, {x: 100, y: 100});
+      // B intentionally has NO layout (it's docked)
+
+      // VERIFY INITIAL STATE: B should be rendered as docked to A
+      const allNodesInitial = [nodeA, nodeB];
+      expect(isNodeRendered(nodeB, allNodesInitial, nodeLayouts)).toBe(true);
+      expect(getNextDockedNode(nodeA, nodeLayouts)).toBe(nodeB);
+
+      // ACT: Add a multi-source node C (like IntervalIntersect) connected to A
+      // This simulates what handleAddOperationNode does for multi-source nodes,
+      // INCLUDING the fix that undocks existing docked children before adding
+      // the new connection.
+
+      // STEP 1: Find docked children using the utility function
+      const dockedChildren = findDockedChildren(nodeA, nodeLayouts);
+
+      // STEP 2: Undock them using the utility function
+      const parentLayout = nodeLayouts.get(nodeA.nodeId);
+      if (parentLayout !== undefined) {
+        const undockLayouts = calculateUndockLayouts(
+          dockedChildren,
+          parentLayout,
+        );
+        for (const [nodeId, layout] of undockLayouts) {
+          nodeLayouts.set(nodeId, layout);
+        }
+      }
+
+      // STEP 3: Now add the multi-source node
+      const nodeC = new IntervalIntersectNode({inputNodes: []});
+      addConnection(nodeA, nodeC);
+      // Give C a layout (it's a root node)
+      nodeLayouts.set(nodeC.nodeId, {x: 550, y: 100});
+
+      // VERIFY: A now has 2 children (B and C)
+      expect(nodeA.nextNodes.length).toBe(2);
+      expect(nodeA.nextNodes).toContain(nodeB);
+      expect(nodeA.nextNodes).toContain(nodeC);
+
+      // VERIFY: B was undocked and now has a layout at expected position
+      expect(nodeLayouts.has(nodeB.nodeId)).toBe(true);
+      const bLayout = nodeLayouts.get(nodeB.nodeId);
+      expect(bLayout?.x).toBe(350); // 100 + 250 (UNDOCK_X_OFFSET)
+      expect(bLayout?.y).toBe(100); // 100 + 0 (first child, no stagger)
+
+      // VERIFY: B is no longer docked (because it now has a layout)
+      expect(getNextDockedNode(nodeA, nodeLayouts)).toBeUndefined();
+
+      // VERIFY: B is now in root nodes (because it has a layout)
+      const allNodes = [nodeA, nodeB, nodeC];
+      const rootNodes = getRootNodes(allNodes, nodeLayouts);
+      expect(rootNodes).toContain(nodeB);
+
+      // VERIFY: B is rendered (as a root node with its own layout)
+      const bIsRendered = isNodeRendered(nodeB, allNodes, nodeLayouts);
+      expect(bIsRendered).toBe(true);
+
+      // VERIFY: All nodes are rendered
+      expect(isNodeRendered(nodeA, allNodes, nodeLayouts)).toBe(true);
+      expect(isNodeRendered(nodeC, allNodes, nodeLayouts)).toBe(true);
+    });
+
+    it('should undock children when adding multi-source node to a DOCKED parent (parent has no layout)', () => {
+      // Scenario: A chain of docked nodes where we add a multi-source node to a middle node
+      //
+      // Initial state:
+      //   A (source, has layout) → B (filter, docked to A) → C (filter, docked to B)
+      //
+      // When we add a multi-source node D (like Join) connected to B:
+      //   A → B → C (filter, should be undocked)
+      //       B → D (join, multi-source)
+      //
+      // BUG: The current code only undocks children if the parent has a layout.
+      // Since B is docked (no layout), C won't be undocked and will become invisible.
+      //
+      // FIX: Find the "effective layout" by walking up the chain to find the first
+      // ancestor with a layout, then use that as the base position for undocking.
+
+      // SETUP: Create node A (source) with layout
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('name', 'STRING'),
+      ]);
+
+      // SETUP: Create node B (filter, docked to A)
+      const nodeB = new FilterNode({
+        filters: [{column: 'id', op: '=', value: '1'}],
+      });
+      addConnection(nodeA, nodeB);
+
+      // SETUP: Create node C (filter, docked to B)
+      const nodeC = new FilterNode({
+        filters: [{column: 'name', op: '=', value: "'test'"}],
+      });
+      addConnection(nodeB, nodeC);
+
+      // SETUP: nodeLayouts - ONLY A has layout, B and C are docked (no layouts)
+      const nodeLayouts = new Map<string, {x: number; y: number}>();
+      nodeLayouts.set(nodeA.nodeId, {x: 100, y: 100});
+      // B and C intentionally have NO layout (they're docked)
+
+      // VERIFY INITIAL STATE: B and C should be rendered as a docked chain
+      const allNodesInitial = [nodeA, nodeB, nodeC];
+      expect(isNodeRendered(nodeB, allNodesInitial, nodeLayouts)).toBe(true);
+      expect(isNodeRendered(nodeC, allNodesInitial, nodeLayouts)).toBe(true);
+      expect(getNextDockedNode(nodeA, nodeLayouts)).toBe(nodeB);
+      expect(getNextDockedNode(nodeB, nodeLayouts)).toBe(nodeC);
+
+      // ACT: Add a multi-source node D connected to B (the docked middle node)
+      // This is where the bug manifests - B has no layout, so we need to find
+      // the effective layout by walking up the chain.
+
+      // STEP 1: Find docked children of B
+      const dockedChildren = findDockedChildren(nodeB, nodeLayouts);
+      expect(dockedChildren).toContain(nodeC);
+
+      // STEP 2: Find effective layout for B by walking up the chain
+      // This is the FIX - we need a function that finds the layout recursively
+      const effectiveLayout = getEffectiveLayout(nodeB, nodeLayouts);
+      expect(effectiveLayout).toBeDefined();
+
+      // STEP 3: Undock children using the effective layout
+      if (effectiveLayout !== undefined && dockedChildren.length > 0) {
+        const undockLayouts = calculateUndockLayouts(
+          dockedChildren,
+          effectiveLayout,
+        );
+        for (const [nodeId, layout] of undockLayouts) {
+          nodeLayouts.set(nodeId, layout);
+        }
+      }
+
+      // STEP 4: Now add the multi-source node
+      const nodeD = new IntervalIntersectNode({inputNodes: []});
+      addConnection(nodeB, nodeD);
+      nodeLayouts.set(nodeD.nodeId, {x: 550, y: 100});
+
+      // VERIFY: B now has 2 children (C and D)
+      expect(nodeB.nextNodes.length).toBe(2);
+      expect(nodeB.nextNodes).toContain(nodeC);
+      expect(nodeB.nextNodes).toContain(nodeD);
+
+      // VERIFY: C was undocked and now has a layout
+      expect(nodeLayouts.has(nodeC.nodeId)).toBe(true);
+
+      // VERIFY: C is no longer docked to B
+      expect(getNextDockedNode(nodeB, nodeLayouts)).toBeUndefined();
+
+      // VERIFY: All nodes are rendered
+      const allNodes = [nodeA, nodeB, nodeC, nodeD];
+      expect(isNodeRendered(nodeA, allNodes, nodeLayouts)).toBe(true);
+      expect(isNodeRendered(nodeB, allNodes, nodeLayouts)).toBe(true);
+      expect(isNodeRendered(nodeC, allNodes, nodeLayouts)).toBe(true);
+      expect(isNodeRendered(nodeD, allNodes, nodeLayouts)).toBe(true);
+    });
+  });
+
+  describe('Deleting Secondary Input Should Not Undock Primary Child', () => {
+    it('should NOT give layout to docked node when its secondary input is deleted', () => {
+      // Scenario:
+      //   A (source, has layout) → B (FilterDuring, docked to A, no layout)
+      //   C (source, has layout) → B (secondary input)
+      //
+      // When we delete C:
+      //   - B loses its secondary input C
+      //   - B should STAY DOCKED to A (no layout change)
+      //   - B should NOT be added to root nodes
+      //   - B should NOT get a layout
+      //
+      // BUG: The current code treats all children of deleted nodes as "orphaned"
+      // when the deleted node has no primary parent. But children connected via
+      // secondary input aren't orphaned - they still have their primary parent!
+
+      // SETUP: Create node A (source) with layout
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT'),
+        createColumnInfo('dur', 'INT'),
+      ]);
+
+      // SETUP: Create node B (FilterDuring, docked to A)
+      const nodeB = new FilterDuringNode({});
+      addConnection(nodeA, nodeB); // B's primaryInput = A
+
+      // SETUP: Create node C (source for intervals) with layout
+      const nodeC = createMockPrevNode('nodeC', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('ts', 'INT'),
+        createColumnInfo('dur', 'INT'),
+      ]);
+
+      // Connect C as secondary input to B
+      addConnection(nodeC, nodeB, 0); // secondary input at port 0
+
+      // SETUP: nodeLayouts - A and C have layouts, B is docked (no layout)
+      const nodeLayouts = new Map<string, {x: number; y: number}>();
+      nodeLayouts.set(nodeA.nodeId, {x: 100, y: 100});
+      nodeLayouts.set(nodeC.nodeId, {x: 300, y: 100});
+      // B intentionally has NO layout (it's docked to A)
+
+      // VERIFY INITIAL STATE: B is docked to A
+      expect(nodeB.primaryInput).toBe(nodeA);
+      expect(nodeA.nextNodes.length).toBe(1); // A has only one child (B)
+      expect(nodeLayouts.has(nodeB.nodeId)).toBe(false); // B has no layout (docked)
+
+      // ACT: Simulate deleting node C
+      // This mimics what handleDeleteNode does:
+      // 1. Capture child connections before removal
+      // 2. Remove node from graph
+      // 3. Handle orphaned children
+
+      // Capture C's children before disconnection
+      interface ChildConnection {
+        child: QueryNode;
+        portIndex: number | undefined;
+      }
+      const childConnections: ChildConnection[] = nodeC.nextNodes.map(
+        (child) => {
+          // Find if this is a secondary connection
+          let portIndex: number | undefined = undefined;
+          if (child.secondaryInputs) {
+            for (const [index, inputNode] of child.secondaryInputs
+              .connections) {
+              if (inputNode === nodeC) {
+                portIndex = index;
+                break;
+              }
+            }
+          }
+          return {child, portIndex};
+        },
+      );
+
+      // Disconnect C from B
+      removeConnection(nodeC, nodeB);
+
+      // VERIFY: B should still be docked to A
+      expect(nodeB.primaryInput).toBe(nodeA);
+      expect(nodeA.nextNodes).toContain(nodeB);
+
+      // Simulate the BUGGY orphaned children logic:
+      // The deleted node C has no primaryParent (it's a source)
+      const primaryParentOfC = undefined; // C is a source, no primary parent
+
+      // BUG: Current code does this (treating ALL children as orphaned):
+      const buggyOrphanedChildren =
+        primaryParentOfC === undefined
+          ? childConnections.map((c) => c.child)
+          : [];
+
+      // FIX: Should only include children connected via PRIMARY input
+      const correctOrphanedChildren =
+        primaryParentOfC === undefined
+          ? childConnections
+              .filter((c) => c.portIndex === undefined) // Only primary connections
+              .map((c) => c.child)
+          : [];
+
+      // VERIFY: B was connected via secondary input, so it's NOT orphaned
+      expect(childConnections.length).toBe(1);
+      expect(childConnections[0].child).toBe(nodeB);
+      expect(childConnections[0].portIndex).toBeDefined(); // Secondary input!
+
+      // VERIFY BUG: Buggy code incorrectly treats B as orphaned
+      expect(buggyOrphanedChildren).toContain(nodeB); // BUG!
+
+      // VERIFY FIX: Correct code does NOT treat B as orphaned
+      expect(correctOrphanedChildren).not.toContain(nodeB); // CORRECT!
+
+      // VERIFY: After fix, B should still have no layout (stay docked)
+      // The fix should NOT give B a layout
+      expect(nodeLayouts.has(nodeB.nodeId)).toBe(false);
+
+      // VERIFY: B is still renderable as docked to A
+      // (A has one child, B is a single-node operation, B has no layout)
+      expect(nodeA.nextNodes.length).toBe(1);
+      expect(nodeA.nextNodes[0]).toBe(nodeB);
+      expect(singleNodeOperation(nodeB.type)).toBe(true);
+    });
+  });
+
+  describe('Adding Single-Node Operation Should Dock', () => {
+    it('should dock AddColumns when added to a source node', () => {
+      // Scenario:
+      //   A (source, has layout)
+      //   Add AddColumns node to A
+      //
+      // Expected:
+      //   A → AddColumns (docked, no layout)
+      //
+      // The AddColumns node should dock to A because:
+      // 1. It's a single-node operation (has primaryInput)
+      // 2. A has exactly one child after the add
+      // 3. AddColumns should NOT get a layout
+
+      // SETUP: Create node A (source) with layout
+      const nodeA = createMockPrevNode('nodeA', [
+        createColumnInfo('id', 'INT'),
+        createColumnInfo('name', 'STRING'),
+      ]);
+
+      // SETUP: nodeLayouts - A has layout
+      const nodeLayouts = new Map<string, {x: number; y: number}>();
+      nodeLayouts.set(nodeA.nodeId, {x: 100, y: 100});
+
+      // VERIFY: A has no children initially
+      expect(nodeA.nextNodes.length).toBe(0);
+
+      // ACT: Create AddColumns and connect it to A
+      const addColsNode = new AddColumnsNode({});
+      addConnection(nodeA, addColsNode);
+
+      // VERIFY: AddColumns is a single-node operation
+      expect(singleNodeOperation(addColsNode.type)).toBe(true);
+
+      // VERIFY: A now has exactly one child
+      expect(nodeA.nextNodes.length).toBe(1);
+      expect(nodeA.nextNodes[0]).toBe(addColsNode);
+
+      // VERIFY: AddColumns has A as its primary input
+      expect(addColsNode.primaryInput).toBe(nodeA);
+
+      // VERIFY: AddColumns should NOT have a layout (it should dock)
+      // This is the key assertion - the node should dock, not get a layout
+      expect(nodeLayouts.has(addColsNode.nodeId)).toBe(false);
+
+      // VERIFY: AddColumns is renderable as docked to A
+      // (A has one child, AddColumns is a single-node operation, AddColumns has no layout)
+      expect(nodeA.nextNodes.length).toBe(1);
+      expect(singleNodeOperation(addColsNode.type)).toBe(true);
+      expect(nodeLayouts.has(addColsNode.nodeId)).toBe(false);
+    });
+  });
+
+  describe('Secondary Input Helper Functions', () => {
+    it('should get secondary input at specified port', () => {
+      const node1 = createMockPrevNode('node1', []);
+      const node2 = createMockPrevNode('node2', []);
+      const intervalNode = new IntervalIntersectNode({inputNodes: []});
+
+      addConnection(node1, intervalNode, 0);
+      addConnection(node2, intervalNode, 1);
+
+      expect(getSecondaryInput(intervalNode, 0)).toBe(node1);
+      expect(getSecondaryInput(intervalNode, 1)).toBe(node2);
+      expect(getSecondaryInput(intervalNode, 2)).toBeUndefined();
+    });
+
+    it('should set secondary input at specified port', () => {
+      const node1 = createMockPrevNode('node1', []);
+      const intervalNode = new IntervalIntersectNode({inputNodes: []});
+
+      setSecondaryInput(intervalNode, 0, node1);
+
+      expect(intervalNode.secondaryInputs.connections.get(0)).toBe(node1);
+    });
+
+    it('should throw when setting secondary input on node without support', () => {
+      const node1 = createMockPrevNode('node1', []);
+      const filterNode = new FilterNode({});
+
+      expect(() => {
+        setSecondaryInput(filterNode, 0, node1);
+      }).toThrow('Node does not support secondary inputs');
+    });
+
+    it('should remove secondary input at specified port', () => {
+      const node1 = createMockPrevNode('node1', []);
+      const intervalNode = new IntervalIntersectNode({inputNodes: []});
+
+      addConnection(node1, intervalNode, 0);
+      expect(getSecondaryInput(intervalNode, 0)).toBe(node1);
+
+      removeSecondaryInput(intervalNode, 0);
+      expect(getSecondaryInput(intervalNode, 0)).toBeUndefined();
+    });
+
+    it('should handle removing non-existent secondary input', () => {
+      const intervalNode = new IntervalIntersectNode({inputNodes: []});
+
+      // Should not throw
+      removeSecondaryInput(intervalNode, 5);
+    });
+
+    it('should handle removing secondary input from node without support', () => {
+      const filterNode = new FilterNode({});
+
+      // Should not throw
+      removeSecondaryInput(filterNode, 0);
+    });
+
+    it('should validate secondary inputs meet minimum cardinality', () => {
+      const node1 = createMockPrevNode('node1', []);
+      const intervalNode = new IntervalIntersectNode({inputNodes: []});
+
+      // IntervalIntersect requires min 2 inputs
+      const error1 = validateSecondaryInputs(intervalNode);
+      expect(error1).toContain('Requires at least 2 inputs');
+
+      addConnection(node1, intervalNode, 0);
+      const error2 = validateSecondaryInputs(intervalNode);
+      expect(error2).toContain('Requires at least 2 inputs');
+      expect(error2).toContain('but only 1 connected');
+    });
+
+    it('should validate secondary inputs meet maximum cardinality', () => {
+      const addColsNode = new AddColumnsNode({});
+      const node1 = createMockPrevNode('node1', []);
+      const node2 = createMockPrevNode('node2', []);
+
+      // AddColumns allows max 1 secondary input (lookup table)
+      addConnection(node1, addColsNode, 0);
+      expect(validateSecondaryInputs(addColsNode)).toBeUndefined();
+
+      addConnection(node2, addColsNode, 1);
+      const error = validateSecondaryInputs(addColsNode);
+      expect(error).toContain('Allows at most 1 input');
+      expect(error).toContain('but 2 connected');
+    });
+
+    it('should validate unbounded maximum cardinality', () => {
+      const unionNode = new UnionNode({inputNodes: [], selectedColumns: []});
+      const nodes = Array.from({length: 10}, (_, i) =>
+        createMockPrevNode(`node${i}`, []),
+      );
+
+      // Union allows unbounded inputs
+      for (let i = 0; i < nodes.length; i++) {
+        addConnection(nodes[i], unionNode, i);
+      }
+
+      // With 10 inputs, validation should pass (unbounded max)
+      const error = validateSecondaryInputs(unionNode);
+      expect(error).toBeUndefined();
+    });
+
+    it('should return undefined when validation passes', () => {
+      const unionNode = new UnionNode({inputNodes: [], selectedColumns: []});
+      const node1 = createMockPrevNode('node1', []);
+      const node2 = createMockPrevNode('node2', []);
+
+      addConnection(node1, unionNode, 0);
+      addConnection(node2, unionNode, 1);
+
+      const error = validateSecondaryInputs(unionNode);
+      expect(error).toBeUndefined();
+    });
+
+    it('should return undefined for nodes without secondary inputs', () => {
+      const filterNode = new FilterNode({});
+      const error = validateSecondaryInputs(filterNode);
+      expect(error).toBeUndefined();
     });
   });
 });

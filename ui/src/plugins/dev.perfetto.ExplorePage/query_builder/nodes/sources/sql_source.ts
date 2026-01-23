@@ -14,23 +14,16 @@
 
 import m from 'mithril';
 import {
-  createSelectColumnsProto,
   QueryNode,
   QueryNodeState,
   NodeType,
-  createFinalColumns,
   nextNodeId,
-  notifyNextNodes,
 } from '../../../query_node';
-import {columnInfoFromName} from '../../column_info';
+import {notifyNextNodes} from '../../graph_utils';
+import {columnInfoFromName, newColumnInfoList} from '../../column_info';
 import protos from '../../../../../protos';
 import {Editor} from '../../../../../widgets/editor';
 import {StructuredQueryBuilder} from '../../structured_query_builder';
-
-import {
-  QueryHistoryComponent,
-  queryHistoryStorage,
-} from '../../../../../components/widgets/query_history';
 import {Trace} from '../../../../../public/trace';
 
 import {ColumnInfo} from '../../column_info';
@@ -39,6 +32,8 @@ import {NodeDetailsAttrs} from '../../node_explorer_types';
 import {findRef, toHTMLElement} from '../../../../../base/dom_utils';
 import {assertExists} from '../../../../../base/logging';
 import {ResizeHandle} from '../../../../../widgets/resize_handle';
+import {loadNodeDoc} from '../../node_doc_loader';
+import {NodeTitle} from '../../node_styling_widgets';
 
 export interface SqlSourceSerializedState {
   sql?: string;
@@ -100,7 +95,7 @@ export class SqlSourceNode implements QueryNode {
       // SQL source nodes require manual execution since users write SQL
       autoExecute: attrs.autoExecute ?? false,
     };
-    this.finalCols = createFinalColumns([]);
+    this.finalCols = [];
     this.nextNodes = [];
   }
 
@@ -109,8 +104,9 @@ export class SqlSourceNode implements QueryNode {
   }
 
   setSourceColumns(columns: string[]) {
-    this.finalCols = createFinalColumns(
+    this.finalCols = newColumnInfoList(
       columns.map((c) => columnInfoFromName(c)),
+      true,
     );
     m.redraw();
   }
@@ -152,7 +148,7 @@ export class SqlSourceNode implements QueryNode {
 
   nodeDetails(): NodeDetailsAttrs {
     return {
-      content: m('.pf-exp-node-title', this.getTitle()),
+      content: NodeTitle(this.getTitle()),
     };
   }
 
@@ -169,9 +165,10 @@ export class SqlSourceNode implements QueryNode {
       query: protos.PerfettoSqlStructuredQuery | undefined;
     }> = [];
 
-    // Pass empty array for column names - the engine will discover them when analyzing the query
-    // Using this.finalCols here would pass stale columns from the previous execution
-    const columnNames: string[] = [];
+    // Use columns from the last successful execution. These are populated
+    // by onQueryExecuted() and are cleared when SQL changes (to prevent
+    // stale columns from being used with a different query).
+    const columnNames: string[] = this.finalCols.map((c) => c.column.name);
 
     const sq = StructuredQueryBuilder.fromSql(
       this.state.sql || '',
@@ -180,39 +177,25 @@ export class SqlSourceNode implements QueryNode {
       this.nodeId,
     );
 
-    const selectedColumns = createSelectColumnsProto(this);
-    if (selectedColumns) sq.selectColumns = selectedColumns;
+    StructuredQueryBuilder.applyNodeColumnSelection(sq, this);
     return sq;
   }
 
   nodeSpecificModify(): m.Child {
-    const runQuery = (sql: string) => {
-      this.state.sql = sql.trim();
-      m.redraw();
-    };
-
     return m(
       '.sql-source-node',
       m(SqlEditor, {
         sql: this.state.sql ?? '',
         onUpdate: (text: string) => {
           this.state.sql = text;
+          // Clear columns when SQL changes to prevent stale column usage
+          this.finalCols = [];
           m.redraw();
         },
         onExecute: (text: string) => {
-          queryHistoryStorage.saveQuery(text);
           this.state.sql = text.trim();
-          // Note: Execution is now handled by the Run button in DataExplorer
-          // This callback only saves to query history and updates the SQL text
-          m.redraw();
-        },
-      }),
-      m(QueryHistoryComponent, {
-        className: '.pf-query-history-container',
-        trace: this.state.trace,
-        runQuery,
-        setQuery: (q: string) => {
-          this.state.sql = q;
+          // Clear columns when SQL changes to prevent stale column usage
+          this.finalCols = [];
           m.redraw();
         },
       }),
@@ -220,27 +203,7 @@ export class SqlSourceNode implements QueryNode {
   }
 
   nodeInfo(): m.Children {
-    return m(
-      'div',
-      m(
-        'p',
-        'Write custom queries to access any data in the trace. Use ',
-        m('code', '$node_id'),
-        ' to reference other nodes in your query.',
-      ),
-      m(
-        'p',
-        'Most flexible option for complex logic or operations not available through other nodes.',
-      ),
-      m(
-        'p',
-        m('strong', 'Example:'),
-        ' Write ',
-        m('code', 'SELECT * FROM slice WHERE dur > 1000'),
-        ' or reference another node with ',
-        m('code', 'SELECT * FROM $other_node WHERE ...'),
-      ),
-    );
+    return loadNodeDoc('sql_source');
   }
 
   findDependencies(): string[] {
