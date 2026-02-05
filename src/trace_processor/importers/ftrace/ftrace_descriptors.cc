@@ -24,7 +24,7 @@ namespace perfetto {
 namespace trace_processor {
 namespace {
 
-std::array<FtraceMessageDescriptor, 602> descriptors{{
+std::array<FtraceMessageDescriptor, 603> descriptors{{
     {nullptr, 0, {}},
     {nullptr, 0, {}},
     {nullptr, 0, {}},
@@ -6714,6 +6714,15 @@ std::array<FtraceMessageDescriptor, 602> descriptors{{
             {},
             {"old_state", ProtoSchemaType::kInt32},
             {"new_state", ProtoSchemaType::kInt32},
+        },
+    },
+    {
+        "gram_collision",
+        2,
+        {
+            {},
+            {"panel_index", ProtoSchemaType::kInt32},
+            {"collision_cnt", ProtoSchemaType::kUint32},
         },
     },
 }};
