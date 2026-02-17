@@ -469,7 +469,7 @@ export default class SchedPlugin implements PerfettoPlugin {
     const activeCpuCountTitle = 'Active CPU count';
     ctx.tracks.registerTrack({
       uri: activeCpuCountUri,
-      renderer: new ActiveCPUCountTrack({trackUri: activeCpuCountUri}, ctx),
+      renderer: new ActiveCPUCountTrack(activeCpuCountUri, ctx),
     });
     const activeCpuCountTrackNode = new TrackNode({
       name: activeCpuCountTitle,
@@ -487,11 +487,7 @@ export default class SchedPlugin implements PerfettoPlugin {
       const activeCpuTypeCountTitle = `Active CPU count: ${cpuType}`;
       ctx.tracks.registerTrack({
         uri: activeCpuTypeCountUri,
-        renderer: new ActiveCPUCountTrack(
-          {trackUri: activeCpuTypeCountUri},
-          ctx,
-          cpuType,
-        ),
+        renderer: new ActiveCPUCountTrack(activeCpuTypeCountUri, ctx, cpuType),
       });
       const activeCpuTypeCountTrackNode = new TrackNode({
         name: activeCpuTypeCountTitle,
@@ -515,7 +511,7 @@ async function getSchedCpus(ctx: Trace): Promise<Cpu[]> {
   const queryRes = await ctx.engine.query(`
     SELECT DISTINCT
       ucpu,
-      IFNULL(cpu.machine_id, 0) AS machine_id,
+      cpu.machine_id AS machine_id,
       cpu.cpu AS cpu
     FROM sched
     JOIN cpu USING (ucpu)

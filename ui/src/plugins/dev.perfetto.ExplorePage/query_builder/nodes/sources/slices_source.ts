@@ -64,6 +64,7 @@ export class SlicesSourceNode implements QueryNode {
   clone(): QueryNode {
     const stateCopy: SlicesSourceState = {
       onchange: this.state.onchange,
+      trace: this.state.trace,
     };
     return new SlicesSourceNode(stateCopy);
   }
@@ -146,6 +147,12 @@ export function slicesSourceNodeColumns(checked: boolean): ColumnInfo[] {
       },
     },
     {
+      name: 'track_name',
+      type: {
+        kind: 'string',
+      },
+    },
+    {
       name: 'process_name',
       type: {
         kind: 'string',
@@ -162,6 +169,12 @@ export function slicesSourceNodeColumns(checked: boolean): ColumnInfo[] {
       },
     },
     {
+      name: 'pid',
+      type: {
+        kind: 'int',
+      },
+    },
+    {
       name: 'thread_name',
       type: {
         kind: 'string',
@@ -175,6 +188,12 @@ export function slicesSourceNodeColumns(checked: boolean): ColumnInfo[] {
           table: 'thread',
           column: 'id',
         },
+      },
+    },
+    {
+      name: 'tid',
+      type: {
+        kind: 'int',
       },
     },
     {

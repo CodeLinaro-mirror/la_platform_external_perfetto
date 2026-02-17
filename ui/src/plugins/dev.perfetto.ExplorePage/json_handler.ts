@@ -13,7 +13,12 @@
 // limitations under the License.
 
 import {ExplorePageState} from './explore_page';
-import {QueryNode, NodeType, singleNodeOperation} from './query_node';
+import {
+  QueryNode,
+  NodeType,
+  singleNodeOperation,
+  ensureCounterAbove,
+} from './query_node';
 import {getAllNodes as getAllNodesUtil} from './query_builder/graph_utils';
 import {
   TableSourceNode,
@@ -68,6 +73,10 @@ import {
   FilterDuringNode,
   FilterDuringNodeState,
 } from './query_builder/nodes/filter_during_node';
+import {
+  CounterToIntervalsNode,
+  CounterToIntervalsNodeState,
+} from './query_builder/nodes/counter_to_intervals_node';
 
 type SerializedNodeState =
   | TableSourceSerializedState
@@ -84,7 +93,8 @@ type SerializedNodeState =
   | JoinSerializedState
   | CreateSlicesSerializedState
   | UnionSerializedState
-  | FilterDuringNodeState;
+  | FilterDuringNodeState
+  | CounterToIntervalsNodeState;
 
 // Interfaces for the serialized JSON structure
 export interface SerializedNode {
@@ -132,6 +142,71 @@ function serializeNode(node: QueryNode): SerializedNode {
   return serialized;
 }
 
+interface LabelData {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  text: string;
+}
+
+/**
+ * Normalizes layout coordinates so that the top-left corner is at (minX, minY).
+ * This ensures consistent positioning when loading/exporting graphs.
+ */
+function normalizeLayoutCoordinates(
+  nodeLayouts: Map<string, {x: number; y: number}>,
+  labels: LabelData[],
+): {
+  nodeLayouts: Map<string, {x: number; y: number}>;
+  labels: LabelData[];
+} {
+  // Collect all x and y coordinates from node layouts and labels
+  const xCoords: number[] = [];
+  const yCoords: number[] = [];
+
+  for (const layout of nodeLayouts.values()) {
+    xCoords.push(layout.x);
+    yCoords.push(layout.y);
+  }
+
+  for (const label of labels) {
+    xCoords.push(label.x);
+    yCoords.push(label.y);
+  }
+
+  // If there are no coordinates, return as-is
+  if (xCoords.length === 0) {
+    return {nodeLayouts, labels};
+  }
+
+  const minX = Math.min(...xCoords);
+  const minY = Math.min(...yCoords);
+
+  // If already normalized (minX and minY are 0), return as-is
+  if (minX === 0 && minY === 0) {
+    return {nodeLayouts, labels};
+  }
+
+  // Create new normalized layouts
+  const normalizedLayouts = new Map<string, {x: number; y: number}>();
+  for (const [nodeId, layout] of nodeLayouts) {
+    normalizedLayouts.set(nodeId, {
+      x: layout.x - minX,
+      y: layout.y - minY,
+    });
+  }
+
+  // Normalize labels
+  const normalizedLabels = labels.map((label) => ({
+    ...label,
+    x: label.x - minX,
+    y: label.y - minY,
+  }));
+
+  return {nodeLayouts: normalizedLayouts, labels: normalizedLabels};
+}
+
 export function serializeState(state: ExplorePageState): string {
   // Use utility function to get all nodes (bidirectional traversal)
   const allNodesArray = getAllNodesUtil(state.rootNodes);
@@ -142,12 +217,24 @@ export function serializeState(state: ExplorePageState): string {
 
   const serializedNodes = Array.from(allNodes.values()).map(serializeNode);
 
+  // Normalize coordinates so top-left corner is at (0, 0) when exporting
+  const normalized = normalizeLayoutCoordinates(
+    state.nodeLayouts,
+    state.labels,
+  );
+
+  // For backward compatibility, save the first selected node ID if any nodes are selected
+  const firstSelectedNodeId =
+    state.selectedNodes.size > 0
+      ? state.selectedNodes.values().next().value
+      : undefined;
+
   const serializedGraph: SerializedGraph = {
     nodes: serializedNodes,
     rootNodeIds: state.rootNodes.map((n) => n.nodeId),
-    selectedNodeId: state.selectedNode?.nodeId,
-    nodeLayouts: Object.fromEntries(state.nodeLayouts),
-    labels: state.labels,
+    selectedNodeId: firstSelectedNodeId,
+    nodeLayouts: Object.fromEntries(normalized.nodeLayouts),
+    labels: normalized.labels,
     isExplorerCollapsed: state.isExplorerCollapsed,
     sidebarWidth: state.sidebarWidth,
   };
@@ -199,7 +286,7 @@ function createNodeInstance(
         ),
       );
     case NodeType.kSimpleSlices:
-      return new SlicesSourceNode({});
+      return new SlicesSourceNode({trace, sqlModules});
     case NodeType.kSqlSource:
       return new SqlSourceNode({
         ...(state as SqlSourceSerializedState),
@@ -213,51 +300,79 @@ function createNodeInstance(
         ),
       );
     case NodeType.kAggregation:
-      return new AggregationNode(
-        AggregationNode.deserializeState(state as AggregationSerializedState),
-      );
+      return new AggregationNode({
+        ...AggregationNode.deserializeState(
+          state as AggregationSerializedState,
+        ),
+        sqlModules,
+      });
     case NodeType.kModifyColumns:
       return new ModifyColumnsNode(
         ModifyColumnsNode.deserializeState(
+          sqlModules,
           state as ModifyColumnsSerializedState,
         ),
       );
     case NodeType.kAddColumns:
       return new AddColumnsNode(
-        AddColumnsNode.deserializeState(state as AddColumnsNodeState),
-      );
-    case NodeType.kLimitAndOffset:
-      return new LimitAndOffsetNode(
-        LimitAndOffsetNode.deserializeState(state as LimitAndOffsetNodeState),
-      );
-    case NodeType.kSort:
-      return new SortNode(SortNode.deserializeState(state as SortNodeState));
-    case NodeType.kFilter:
-      return new FilterNode(
-        FilterNode.deserializeState(state as FilterNodeState),
-      );
-    case NodeType.kIntervalIntersect:
-      return new IntervalIntersectNode(
-        IntervalIntersectNode.deserializeState(
-          state as IntervalIntersectSerializedState,
+        AddColumnsNode.deserializeState(
+          sqlModules,
+          state as AddColumnsNodeState,
         ),
       );
+    case NodeType.kLimitAndOffset:
+      return new LimitAndOffsetNode({
+        ...LimitAndOffsetNode.deserializeState(
+          state as LimitAndOffsetNodeState,
+        ),
+        sqlModules,
+      });
+    case NodeType.kSort:
+      return new SortNode({
+        ...SortNode.deserializeState(state as SortNodeState),
+        sqlModules,
+      });
+    case NodeType.kFilter:
+      return new FilterNode({
+        ...FilterNode.deserializeState(state as FilterNodeState),
+        sqlModules,
+      });
+    case NodeType.kIntervalIntersect:
+      return new IntervalIntersectNode({
+        ...IntervalIntersectNode.deserializeState(
+          state as IntervalIntersectSerializedState,
+        ),
+        sqlModules,
+      });
     case NodeType.kJoin:
-      return new JoinNode(
-        JoinNode.deserializeState(state as JoinSerializedState),
-      );
+      return new JoinNode({
+        ...JoinNode.deserializeState(state as JoinSerializedState),
+        sqlModules,
+      });
     case NodeType.kCreateSlices:
-      return new CreateSlicesNode(
-        CreateSlicesNode.deserializeState(state as CreateSlicesSerializedState),
-      );
+      return new CreateSlicesNode({
+        ...CreateSlicesNode.deserializeState(
+          state as CreateSlicesSerializedState,
+        ),
+        sqlModules,
+      });
     case NodeType.kUnion:
-      return new UnionNode(
-        UnionNode.deserializeState(state as UnionSerializedState),
-      );
+      return new UnionNode({
+        ...UnionNode.deserializeState(state as UnionSerializedState),
+        sqlModules,
+      });
     case NodeType.kFilterDuring:
-      return new FilterDuringNode(
-        FilterDuringNode.deserializeState(state as FilterDuringNodeState),
-      );
+      return new FilterDuringNode({
+        ...FilterDuringNode.deserializeState(state as FilterDuringNodeState),
+        sqlModules,
+      });
+    case NodeType.kCounterToIntervals:
+      return new CounterToIntervalsNode({
+        ...CounterToIntervalsNode.deserializeState(
+          state as CounterToIntervalsNodeState,
+        ),
+        sqlModules,
+      });
     default:
       throw new Error(`Unknown node type: ${serializedNode.type}`);
   }
@@ -301,6 +416,9 @@ export function deserializeState(
     (node as {nodeId: string}).nodeId = serializedNode.nodeId;
     nodes.set(serializedNode.nodeId, node);
   }
+
+  // Ensure the global node counter is above all loaded IDs to prevent collisions
+  ensureCounterAbove(serializedGraph.nodes.map((n) => n.nodeId));
 
   // Second pass: set forward links (nextNodes)
   for (const serializedNode of serializedGraph.nodes) {
@@ -442,6 +560,21 @@ export function deserializeState(
         );
       }
     }
+    if (serializedNode.type === NodeType.kSqlSource) {
+      const sqlSourceNode = node as SqlSourceNode;
+      const serializedState = serializedNode.state as SqlSourceSerializedState;
+      const deserializedConnections = SqlSourceNode.deserializeConnections(
+        nodes,
+        serializedState,
+      );
+      sqlSourceNode.secondaryInputs.connections.clear();
+      for (let i = 0; i < deserializedConnections.inputNodes.length; i++) {
+        sqlSourceNode.secondaryInputs.connections.set(
+          i,
+          deserializedConnections.inputNodes[i],
+        );
+      }
+    }
   }
 
   // Third pass: resolve columns
@@ -454,6 +587,21 @@ export function deserializeState(
     }
   }
 
+  // Fourth pass: call onPrevNodesUpdated on specific node types that need it
+  // JoinNode needs special handling because:
+  // 1. Its constructor calls updateColumnArrays() which needs connected nodes
+  // 2. During deserialization, connections don't exist yet (restored above in third pass)
+  // 3. So updateColumnArrays() runs with no connections, creating empty arrays
+  // 4. We need to call it again now that connections are restored
+  // We DON'T call this on all nodes because some nodes (like AddColumnsNode) have
+  // onPrevNodesUpdated() implementations that can reset/modify state inappropriately
+  // during deserialization (e.g., clearing selectedColumns).
+  for (const node of nodes.values()) {
+    if (node.type === NodeType.kJoin) {
+      (node as JoinNode).onPrevNodesUpdated();
+    }
+  }
+
   const rootNodes = serializedGraph.rootNodeIds.map((id) => {
     const rootNode = nodes.get(id)!;
     if (rootNode == null) {
@@ -461,21 +609,28 @@ export function deserializeState(
     }
     return rootNode;
   });
+  // For backward compatibility, load selectedNodeId from saved state (if present)
   const selectedNode = serializedGraph.selectedNodeId
     ? nodes.get(serializedGraph.selectedNodeId)
     : undefined;
 
   // Use provided nodeLayouts if present, otherwise use empty map (will trigger auto-layout)
-  const nodeLayouts =
+  let nodeLayouts =
     serializedGraph.nodeLayouts != null
       ? new Map(Object.entries(serializedGraph.nodeLayouts))
       : new Map<string, {x: number; y: number}>();
 
+  // Normalize coordinates so top-left corner is at (minX, minY)
+  let labels = serializedGraph.labels ?? [];
+  const normalized = normalizeLayoutCoordinates(nodeLayouts, labels);
+  nodeLayouts = normalized.nodeLayouts;
+  labels = normalized.labels;
+
   return {
     rootNodes,
-    selectedNode,
+    selectedNodes: selectedNode ? new Set([selectedNode.nodeId]) : new Set(),
     nodeLayouts,
-    labels: serializedGraph.labels,
+    labels,
     isExplorerCollapsed: serializedGraph.isExplorerCollapsed,
     sidebarWidth: serializedGraph.sidebarWidth,
   };

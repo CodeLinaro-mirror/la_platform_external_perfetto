@@ -32,6 +32,8 @@ import {AggregateColumn, AggregateFunction} from './model';
 interface AddColumnMenuContext {
   readonly dataSource: DataSource;
   readonly parameterKeyColumns: Set<string>;
+  // Optional callback to check if a column can be added
+  readonly canAddColumnForField?: (field: string) => boolean;
 }
 
 /**
@@ -71,13 +73,15 @@ function buildAddColumnMenuFromSchema(
     const fullPath = pathPrefix ? `${pathPrefix}.${columnName}` : columnName;
 
     if (isColumnDef(entry)) {
-      // Leaf column - clicking adds it (disabled if already visible)
+      // Leaf column - clicking adds it (disabled if already visible or not allowed)
       const title = entry.title ?? columnName;
       const isAlreadyVisible = columns.includes(fullPath);
+      const canAdd = context.canAddColumnForField?.(fullPath) ?? true;
+      const isDisabled = isAlreadyVisible || !canAdd;
       menuItems.push(
         m(MenuItem, {
           label: title,
-          disabled: isAlreadyVisible,
+          disabled: isDisabled,
           onclick: () => onSelect(fullPath),
         }),
       );
@@ -289,6 +293,12 @@ interface ColumnMenuAttrs {
   readonly dataSource: DataSource;
   readonly parameterKeyColumns: Set<string>;
 
+  // Optional add column control - defaults to true
+  readonly canAdd?: boolean;
+
+  // Optional callback to check if a specific column can be added
+  readonly canAddColumnForField?: (field: string) => boolean;
+
   // Optional remove button - if not provided, only "Add" is shown
   readonly canRemove?: boolean;
   readonly onRemove?: () => void;
@@ -306,6 +316,8 @@ interface ColumnMenuAttrs {
 export class ColumnMenu implements m.ClassComponent<ColumnMenuAttrs> {
   view({attrs}: m.Vnode<ColumnMenuAttrs>): m.Children {
     const {
+      canAdd = true,
+      canAddColumnForField,
       canRemove,
       onRemove,
       schema,
@@ -325,17 +337,16 @@ export class ColumnMenu implements m.ClassComponent<ColumnMenuAttrs> {
       0,
       visibleColumns,
       onAddColumn,
-      {dataSource, parameterKeyColumns},
+      {dataSource, parameterKeyColumns, canAddColumnForField},
     );
 
-    const items: m.Children[] = [];
-
     return [
-      m(
-        MenuItem,
-        {label: addLabel, icon: Icons.AddColumnRight},
-        addColumnSubmenu,
-      ),
+      canAdd &&
+        m(
+          MenuItem,
+          {label: addLabel, icon: Icons.AddColumnRight},
+          addColumnSubmenu,
+        ),
       onRemove &&
         m(MenuItem, {
           label: removeLabel,
@@ -344,8 +355,6 @@ export class ColumnMenu implements m.ClassComponent<ColumnMenuAttrs> {
           onclick: onRemove,
         }),
     ];
-
-    return items;
   }
 }
 
@@ -364,14 +373,21 @@ const TEXT_SAFE_AGGREGATE_FUNCTIONS: AggregateFunction[] = ['ANY'];
  * Returns the available aggregate functions for a column based on its type.
  * Numeric aggregates (SUM, AVG, MIN, MAX) are only available for quantitative
  * and identifier columns. ANY is available for all column types.
+ * When the column type is unknown (undefined), all aggregates are allowed.
  */
 export function getAggregateFunctionsForColumnType(
   columnType: 'text' | 'quantitative' | 'identifier' | undefined,
 ): AggregateFunction[] {
-  if (columnType === 'quantitative' || columnType === 'identifier') {
+  // For unknown types (undefined), allow all aggregates since we can't
+  // determine restrictions
+  if (
+    columnType === undefined ||
+    columnType === 'quantitative' ||
+    columnType === 'identifier'
+  ) {
     return [...NUMERIC_AGGREGATE_FUNCTIONS, ...TEXT_SAFE_AGGREGATE_FUNCTIONS];
   }
-  // For 'text' columns or undefined, only text-safe aggregates
+  // For 'text' columns, only text-safe aggregates
   return TEXT_SAFE_AGGREGATE_FUNCTIONS;
 }
 

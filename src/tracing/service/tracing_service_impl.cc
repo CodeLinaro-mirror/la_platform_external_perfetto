@@ -16,16 +16,28 @@
 
 #include "src/tracing/service/tracing_service_impl.h"
 
+#include <fcntl.h>
 #include <limits.h>
 #include <string.h>
-
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cinttypes>
 #include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <limits>
+#include <map>
+#include <memory>
 #include <optional>
+#include <regex>
+#include <set>
 #include <string>
+#include <tuple>
+#include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #if !PERFETTO_BUILDFLAG(PERFETTO_OS_WIN) && \
     !PERFETTO_BUILDFLAG(PERFETTO_OS_NACL)
@@ -49,6 +61,8 @@
 #endif
 
 #include "perfetto/base/build_config.h"
+#include "perfetto/base/compiler.h"
+#include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
 #include "perfetto/base/task_runner.h"
 #include "perfetto/ext/base/android_utils.h"
@@ -56,9 +70,14 @@
 #include "perfetto/ext/base/file_utils.h"
 #include "perfetto/ext/base/flags.h"
 #include "perfetto/ext/base/flat_hash_map.h"
+#include "perfetto/ext/base/fnv_hash.h"
 #include "perfetto/ext/base/metatrace.h"
-#include "perfetto/ext/base/string_utils.h"
+#include "perfetto/ext/base/periodic_task.h"
+#include "perfetto/ext/base/scoped_file.h"
+#include "perfetto/ext/base/scoped_sched_boost.h"
+#include "perfetto/ext/base/string_utils.h"  // IWYU pragma: keep
 #include "perfetto/ext/base/sys_types.h"
+#include "perfetto/ext/base/thread_checker.h"
 #include "perfetto/ext/base/utils.h"
 #include "perfetto/ext/base/uuid.h"
 #include "perfetto/ext/base/version.h"
@@ -70,24 +89,37 @@
 #include "perfetto/ext/tracing/core/producer.h"
 #include "perfetto/ext/tracing/core/shared_memory.h"
 #include "perfetto/ext/tracing/core/shared_memory_abi.h"
+#include "perfetto/ext/tracing/core/slice.h"
 #include "perfetto/ext/tracing/core/trace_packet.h"
 #include "perfetto/ext/tracing/core/trace_writer.h"
+#include "perfetto/ext/tracing/core/tracing_service.h"
 #include "perfetto/protozero/scattered_heap_buffer.h"
 #include "perfetto/protozero/static_buffer.h"
-#include "perfetto/tracing/core/data_source_descriptor.h"
+#include "perfetto/tracing/core/flush_flags.h"
+#include "perfetto/tracing/core/forward_decls.h"
+#include "perfetto/tracing/core/trace_config.h"
+#include "protos/perfetto/config/trace_config.gen.h"
+#include "src/android_stats/perfetto_atoms.h"
 #include "src/android_stats/statsd_logging_helper.h"
 #include "src/protozero/filtering/message_filter.h"
 #include "src/protozero/filtering/string_filter.h"
 #include "src/tracing/core/shared_memory_arbiter_impl.h"
+#include "src/tracing/service/clock.h"
+#include "src/tracing/service/dependencies.h"
 #include "src/tracing/service/packet_stream_validator.h"
+#include "src/tracing/service/random.h"
 #include "src/tracing/service/trace_buffer.h"
 #include "src/tracing/service/trace_buffer_v1.h"
+#include "src/tracing/service/trace_buffer_v1_with_v2_shadow.h"
 #include "src/tracing/service/trace_buffer_v2.h"
+#include "src/tracing/service/tracing_service_endpoints_impl.h"
+#include "src/tracing/service/tracing_service_session.h"
+#include "src/tracing/service/tracing_service_structs.h"
 
 #include "protos/perfetto/common/builtin_clock.gen.h"
 #include "protos/perfetto/common/builtin_clock.pbzero.h"
 #include "protos/perfetto/common/system_info.pbzero.h"
-#include "protos/perfetto/common/trace_stats.pbzero.h"
+#include "protos/perfetto/common/trace_stats.pbzero.h"  // IWYU pragma: keep
 #include "protos/perfetto/config/trace_config.pbzero.h"
 #include "protos/perfetto/trace/clock_snapshot.pbzero.h"
 #include "protos/perfetto/trace/perfetto/tracing_service_event.pbzero.h"
@@ -322,6 +354,29 @@ std::optional<protozero::StringFilter::Policy> ConvertPolicy(
       return protozero::StringFilter::Policy::kAtraceRepeatedSearchRedactGroups;
   }
   return std::nullopt;
+}
+
+using StringFilterRule =
+    protos::gen::TraceConfig::TraceFilter::StringFilterRule;
+
+std::optional<protozero::StringFilter::SemanticTypeMask>
+ConvertSemanticTypeMask(const StringFilterRule& rule) {
+  // UNSPECIFIED (0) is treated as its own category - it only matches rules
+  // that explicitly include bit 0 in their mask. If no semantic types are
+  // specified, default to matching only UNSPECIFIED (bit 0).
+  if (rule.semantic_type().empty()) {
+    return protozero::StringFilter::SemanticTypeMask::Unspecified();
+  }
+
+  protozero::StringFilter::SemanticTypeMask mask;
+  for (const auto& type : rule.semantic_type()) {
+    auto semantic_type = static_cast<uint32_t>(type);
+    if (semantic_type >= protozero::StringFilter::SemanticTypeMask::kLimit) {
+      return std::nullopt;
+    }
+    mask.Set(semantic_type);
+  }
+  return mask;
 }
 
 }  // namespace
@@ -987,16 +1042,41 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
     trace_filter.reset(new protozero::MessageFilter());
 
     protozero::StringFilter& string_filter = trace_filter->string_filter();
-    for (const auto& rule : filt.string_filter_chain().rules()) {
-      auto opt_policy = ConvertPolicy(rule.policy());
-      if (!opt_policy.has_value()) {
+    auto add_rule = [&](const auto& rule) -> base::Status {
+      auto policy = ConvertPolicy(rule.policy());
+      if (!policy.has_value()) {
         MaybeLogUploadEvent(
             cfg, uuid, PerfettoStatsdAtom::kTracedEnableTracingInvalidFilter);
         return PERFETTO_SVC_ERR(
             "Trace filter has invalid string filtering rules, aborting");
       }
-      string_filter.AddRule(*opt_policy, rule.regex_pattern(),
-                            rule.atrace_payload_starts_with());
+      auto semantic_type = ConvertSemanticTypeMask(rule);
+      if (!semantic_type.has_value()) {
+        MaybeLogUploadEvent(
+            cfg, uuid, PerfettoStatsdAtom::kTracedEnableTracingInvalidFilter);
+        return PERFETTO_SVC_ERR(
+            "Trace filter has invalid semantic types in string filtering "
+            "rules, aborting");
+      }
+      string_filter.AddRule(*policy, rule.regex_pattern(),
+                            rule.atrace_payload_starts_with(), rule.name(),
+                            *semantic_type);
+      return base::OkStatus();
+    };
+
+    // Load base string filter chain.
+    for (const auto& rule : filt.string_filter_chain().rules()) {
+      auto status = add_rule(rule);
+      if (!status.ok())
+        return status;
+    }
+
+    // Load v54 string filter chain. Rules with matching names will replace
+    // existing rules; others will be appended.
+    for (const auto& rule : filt.string_filter_chain_v54().rules()) {
+      auto status = add_rule(rule);
+      if (!status.ok())
+        return status;
     }
 
     const std::string& bytecode_v1 = filt.bytecode();
@@ -1060,6 +1140,13 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
   if (priority_boost)
     tracing_session->priority_boost = std::move(priority_boost);
 
+  if (cfg.flush_period_ms() > 0) {
+    tracing_session->flush_strategy = TracingSession::FlushStrategy::kPeriodic;
+    tracing_session->periodic_flush_ms = cfg.flush_period_ms();
+  } else {
+    tracing_session->flush_strategy = TracingSession::FlushStrategy::kDisabled;
+  }
+
   if (cfg.write_into_file()) {
     if (!fd ^ !cfg.output_path().empty()) {
       MaybeLogUploadEvent(
@@ -1087,9 +1174,41 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
       write_period_ms = kDefaultWriteIntoFilePeriodMs;
     if (write_period_ms < kMinWriteIntoFilePeriodMs)
       write_period_ms = kMinWriteIntoFilePeriodMs;
+
+    auto flush_mode = cfg.write_flush_mode();
+    if (flush_mode == TraceConfig::WRITE_FLUSH_AUTO ||
+        flush_mode == TraceConfig::WRITE_FLUSH_UNSPECIFIED) {
+      if (write_period_ms <=
+          static_cast<uint32_t>(kDefaultWriteIntoFilePeriodMs)) {
+        tracing_session->flush_strategy =
+            TracingSession::FlushStrategy::kPeriodic;
+        tracing_session->periodic_flush_ms =
+            static_cast<uint32_t>(kDefaultWriteIntoFilePeriodMs);
+      } else {
+        tracing_session->flush_strategy =
+            TracingSession::FlushStrategy::kOnWrite;
+      }
+
+      if (cfg.flush_period_ms() > 0) {
+        PERFETTO_LOG(
+            "Warning: flush_period_ms is ignored because write_flush_mode is "
+            "in AUTO mode. Set write_flush_mode to WRITE_FLUSH_DISABLED to "
+            "use flush_period_ms.");
+      }
+    } else if (flush_mode == TraceConfig::WRITE_FLUSH_ENABLED) {
+      tracing_session->flush_strategy = TracingSession::FlushStrategy::kOnWrite;
+      if (cfg.flush_period_ms() > 0) {
+        PERFETTO_LOG(
+            "Warning: flush_period_ms is ignored because write_flush_mode is "
+            "in WRITE_FLUSH_ENABLED mode. Set write_flush_mode to "
+            "WRITE_FLUSH_DISABLED to use flush_period_ms.");
+      }
+    }
     tracing_session->write_period_ms = write_period_ms;
     tracing_session->max_file_size_bytes = cfg.max_file_size_bytes();
     tracing_session->bytes_written_into_file = 0;
+    tracing_session->fflush_post_write =
+        cfg.fflush_post_write() == TraceConfig::FFLUSH_ENABLED;
   }
 
   if (cfg.compression_type() == TraceConfig::COMPRESSION_TYPE_DEFLATE) {
@@ -1137,11 +1256,16 @@ base::Status TracingServiceImpl::EnableTracing(ConsumerEndpointImpl* consumer,
             ? TraceBuffer::kDiscard
             : TraceBuffer::kOverwrite;
     std::unique_ptr<TraceBuffer> new_buffer;
-    if (buffer_cfg.experimental_mode() ==
-        TraceConfig::BufferConfig::TRACE_BUFFER_V2) {
-      new_buffer = TraceBufferV2::Create(buf_size, policy);
-    } else {
-      new_buffer = TraceBufferV1::Create(buf_size, policy);
+    switch (buffer_cfg.experimental_mode()) {
+      case TraceConfig::BufferConfig::TRACE_BUFFER_V2:
+        new_buffer = TraceBufferV2::Create(buf_size, policy);
+        break;
+      case TraceConfig::BufferConfig::TRACE_BUFFER_V2_SHADOW_MODE:
+        new_buffer = TraceBufferV1WithV2Shadow::Create(buf_size, policy);
+        break;
+      case TraceConfig::BufferConfig::MODE_UNSPECIFIED:
+        new_buffer = TraceBufferV1::Create(buf_size, policy);
+        break;
     }
     auto it_and_inserted = buffers_.emplace(global_id, std::move(new_buffer));
     PERFETTO_DCHECK(it_and_inserted.second);  // buffers_.count(global_id) == 0.
@@ -1455,7 +1579,8 @@ void TracingServiceImpl::StartTracing(TracingSessionID tsid) {
   // Start the periodic drain tasks if we should to save the trace into a file.
   if (tracing_session->config.write_into_file()) {
     bool async_flush_buffers_before_read =
-        !tracing_session->config.no_flush_before_write_into_file();
+        tracing_session->flush_strategy ==
+        TracingSession::FlushStrategy::kOnWrite;
     weak_runner_.PostDelayedTask(
         [this, tsid, async_flush_buffers_before_read] {
           ReadBuffersIntoFile(tsid, async_flush_buffers_before_read);
@@ -1464,8 +1589,10 @@ void TracingServiceImpl::StartTracing(TracingSessionID tsid) {
   }
 
   // Start the periodic flush tasks if the config specified a flush period.
-  if (tracing_session->config.flush_period_ms())
+  if (tracing_session->flush_strategy ==
+      TracingSession::FlushStrategy::kPeriodic) {
     PeriodicFlushTask(tsid, /*post_next_only=*/true);
+  }
 
   // Start the periodic incremental state clear tasks if the config specified a
   // period.
@@ -1803,7 +1930,7 @@ void TracingServiceImpl::ActivateTriggers(
     PERFETTO_DLOG("Received ActivateTriggers request for \"%s\"",
                   trigger_name.c_str());
     android_stats::MaybeLogTriggerEvent(PerfettoTriggerAtom::kTracedTrigger,
-                                        trigger_name);
+                                        /* trace_uuid_lsb */ 0, trigger_name);
 
     base::FnvHasher hash;
     hash.Update(trigger_name.c_str(), trigger_name.size());
@@ -1847,7 +1974,7 @@ void TracingServiceImpl::ActivateTriggers(
       double trigger_rnd = random_->GetValue();
       PERFETTO_DCHECK(trigger_rnd >= 0 && trigger_rnd < 1);
       if (trigger_rnd < iter->skip_probability()) {
-        MaybeLogTriggerEvent(tracing_session.config,
+        MaybeLogTriggerEvent(tracing_session.config, tracing_session.trace_uuid,
                              PerfettoTriggerAtom::kTracedLimitProbability,
                              trigger_name);
         continue;
@@ -1856,7 +1983,7 @@ void TracingServiceImpl::ActivateTriggers(
       // If we already triggered more times than the limit, silently ignore
       // this trigger.
       if (iter->max_per_24_h() > 0 && count_in_window >= iter->max_per_24_h()) {
-        MaybeLogTriggerEvent(tracing_session.config,
+        MaybeLogTriggerEvent(tracing_session.config, tracing_session.trace_uuid,
                              PerfettoTriggerAtom::kTracedLimitMaxPer24h,
                              trigger_name);
         continue;
@@ -2342,7 +2469,9 @@ void TracingServiceImpl::PeriodicFlushTask(TracingSessionID tsid,
   if (!tracing_session || tracing_session->state != TracingSession::STARTED)
     return;
 
-  uint32_t flush_period_ms = tracing_session->config.flush_period_ms();
+  PERFETTO_CHECK(tracing_session->flush_strategy ==
+                 TracingSession::FlushStrategy::kPeriodic);
+  uint32_t flush_period_ms = tracing_session->periodic_flush_ms;
   weak_runner_.PostDelayedTask(
       [this, tsid] { PeriodicFlushTask(tsid, /*post_next_only=*/false); },
       flush_period_ms - static_cast<uint32_t>(clock_->GetWallTimeMs().count() %
@@ -2504,15 +2633,19 @@ bool TracingServiceImpl::ReadBuffersIntoFile(
               WriteIntoFile(tracing_session, std::move(packets));
         } while (has_more && !stop_writing_into_file);
 
-        // Ensure all data was written to the file.
-        base::FlushFile(tracing_session->write_into_file.get());
-
         if (stop_writing_into_file || tracing_session->write_period_ms == 0) {
+          // Ensure all data was written to the file before we close it.
+          base::FlushFile(tracing_session->write_into_file.get());
           tracing_session->write_into_file.reset();
           tracing_session->write_period_ms = 0;
           if (tracing_session->state == TracingSession::STARTED)
             DisableTracing(tsid);
           return;
+        }
+
+        if (tracing_session->fflush_post_write) {
+          // Ensure all data was written to the file.
+          base::FlushFile(tracing_session->write_into_file.get());
         }
 
         weak_runner_.PostDelayedTask(
@@ -2626,8 +2759,11 @@ std::vector<TracePacket> TracingServiceImpl::ReadBuffers(
 
   // In a multi-machine tracing session, emit clock synchronization messages for
   // remote machines.
-  if (!relay_clients_.empty())
+  if (!tracing_session->config.builtin_data_sources()
+           .disable_clock_snapshotting() &&
+      !relay_clients_.empty()) {
     MaybeEmitRemoteClockSync(tracing_session, &packets);
+  }
 
   size_t packets_bytes = 0;  // SUM(slice.size() for each slice in |packets|).
 
@@ -3580,6 +3716,10 @@ void TracingServiceImpl::UpdateMemoryGuardrail() {
   // Sum up all the trace buffers.
   for (const auto& id_to_buffer : buffers_) {
     total_buffer_bytes += id_to_buffer.second->size();
+    if (id_to_buffer.second->buf_type() == TraceBuffer::kV1WithV2Shadow) {
+      // kV1WithV2Shadow encapsulates both v1 and v2. Allow 2x budget.
+      total_buffer_bytes += id_to_buffer.second->size();
+    }
   }
 
   // Sum up all the cloned traced buffers.
@@ -3934,6 +4074,8 @@ void TracingServiceImpl::EmitSystemInfo(std::vector<TracePacket>* packets) {
 
   if (sys_info.page_size.has_value())
     info->set_page_size(*sys_info.page_size);
+  if (sys_info.system_ram_bytes.has_value())
+    info->set_system_ram_bytes(*sys_info.system_ram_bytes);
   if (sys_info.num_cpus.has_value())
     info->set_num_cpus(*sys_info.num_cpus);
 
@@ -4156,17 +4298,20 @@ void TracingServiceImpl::MaybeLogUploadEvent(const TraceConfig& cfg,
   if (!ShouldLogEvent(cfg))
     return;
 
-  PERFETTO_DCHECK(uuid);  // The UUID must be set at this point.
+  PERFETTO_CHECK(uuid);  // The UUID must be set at this point.
   android_stats::MaybeLogUploadEvent(atom, uuid.lsb(), uuid.msb(),
                                      trigger_name);
 }
 
 void TracingServiceImpl::MaybeLogTriggerEvent(const TraceConfig& cfg,
+                                              const base::Uuid& uuid,
                                               PerfettoTriggerAtom atom,
                                               const std::string& trigger_name) {
   if (!ShouldLogEvent(cfg))
     return;
-  android_stats::MaybeLogTriggerEvent(atom, trigger_name);
+
+  PERFETTO_CHECK(uuid);  // The UUID must be set at this point.
+  android_stats::MaybeLogTriggerEvent(atom, uuid.lsb(), trigger_name);
 }
 
 size_t TracingServiceImpl::PurgeExpiredAndCountTriggerInWindow(
@@ -4286,11 +4431,18 @@ base::Status TracingServiceImpl::FlushAndCloneSession(
     // Some leftover data was left in the buffer. Recreate it to empty it.
     const auto buf_policy = buf->overwrite_policy();
     const auto buf_size = buf->size();
+    const auto buf_type = buf->buf_type();
     std::unique_ptr<TraceBuffer> old_buf = std::move(buf);
-    if (old_buf->is_trace_buffer_v2()) {
-      buf = TraceBufferV2::Create(buf_size, buf_policy);
-    } else {
-      buf = TraceBufferV1::Create(buf_size, buf_policy);
+    switch (buf_type) {
+      case TraceBuffer::kV1:
+        buf = TraceBufferV1::Create(buf_size, buf_policy);
+        break;
+      case TraceBuffer::kV2:
+        buf = TraceBufferV2::Create(buf_size, buf_policy);
+        break;
+      case TraceBuffer::kV1WithV2Shadow:
+        buf = TraceBufferV1WithV2Shadow::Create(buf_size, buf_policy);
+        break;
     }
     if (!buf) {
       // This is extremely rare but could happen on 32-bit. If the new buffer
@@ -4462,12 +4614,18 @@ bool TracingServiceImpl::DoCloneBuffers(const TracingSession& src,
     if (src.config.buffers()[buf_idx].transfer_on_clone()) {
       const auto buf_policy = src_buf->overwrite_policy();
       const auto buf_size = src_buf->size();
-      const bool is_tbv2 = src_buf->is_trace_buffer_v2();
+      const auto buf_type = src_buf->buf_type();
       new_buf = std::move(src_buf);
-      if (is_tbv2) {
-        src_buf = TraceBufferV2::Create(buf_size, buf_policy);
-      } else {
-        src_buf = TraceBufferV1::Create(buf_size, buf_policy);
+      switch (buf_type) {
+        case TraceBuffer::kV1:
+          src_buf = TraceBufferV1::Create(buf_size, buf_policy);
+          break;
+        case TraceBuffer::kV2:
+          src_buf = TraceBufferV2::Create(buf_size, buf_policy);
+          break;
+        case TraceBuffer::kV1WithV2Shadow:
+          src_buf = TraceBufferV1WithV2Shadow::Create(buf_size, buf_policy);
+          break;
       }
       if (!src_buf) {
         // If the allocation fails put the buffer back and let the code below

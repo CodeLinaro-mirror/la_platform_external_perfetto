@@ -47,7 +47,6 @@ export interface TableSourceSerializedState {
 
 export interface TableSourceState extends QueryNodeState {
   readonly trace: Trace;
-  readonly sqlModules: SqlModules;
 
   sqlTable?: SqlTable;
   onchange?: () => void;
@@ -68,10 +67,12 @@ export function modalForTableSelection(
     const updateModal = () => {
       showModal({
         key: 'table-selection-modal',
+        vAlign: 'TOP',
+        className: 'pf-table-selection-modal',
         title:
           selectedTables.size > 0
             ? `Choose tables - ${selectedTables.size} selected`
-            : 'Choose a table - Ctrl+click for multiple selection',
+            : 'Choose a table',
         content: () => {
           return m(
             '.pf-exp-node-explorer-help',
@@ -176,7 +177,6 @@ export class TableSourceNode implements QueryNode {
   clone(): QueryNode {
     const stateCopy: TableSourceState = {
       trace: this.state.trace,
-      sqlModules: this.state.sqlModules,
       sqlTable: this.state.sqlTable,
       onchange: this.state.onchange,
     };
@@ -207,7 +207,7 @@ export class TableSourceNode implements QueryNode {
 
   nodeDetails(): NodeDetailsAttrs {
     return {
-      content: NodeTitle(this.state.sqlTable?.name ?? ''),
+      content: NodeTitle('Table ' + (this.state.sqlTable?.name ?? '')),
     };
   }
 
@@ -248,10 +248,7 @@ export class TableSourceNode implements QueryNode {
         m(
           '.pf-table-source-selected',
           m('h2', 'Selected Table'),
-          m(
-            '.pf-details-box',
-            m(TableDescription, {table: this.state.sqlTable}),
-          ),
+          m(TableDescription, {table: this.state.sqlTable}),
         ),
       );
     }
@@ -270,7 +267,6 @@ export class TableSourceNode implements QueryNode {
     return {
       ...state,
       trace,
-      sqlModules,
       sqlTable,
     };
   }

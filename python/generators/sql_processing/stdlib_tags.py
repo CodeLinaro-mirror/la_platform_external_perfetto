@@ -397,13 +397,14 @@ _validate_tags()
 #   'low': Specialized or advanced tables, less frequently needed
 #   None/absent: Normal importance (default)
 TABLE_IMPORTANCE = {
-    # HIGH IMPORTANCE - Core timestamped tables, fundamental for most analyses
+    # HIGH IMPORTANCE - Core tables, fundamental for most analyses
     'thread_state':
         'high',  # CPU scheduling: what threads ran when and for how long
     'sched': 'high',  # Kernel scheduling events table
     'thread': 'high',  # Thread metadata and information
     'process': 'high',  # Process metadata and information
     'counter': 'high',  # Time-series metrics: memory, battery, custom counters
+    'track': 'high',  # Tracks for organizing slices and counters
     'thread_or_process_slice':
         'high',  # Unified slice table for thread and process slices
 
@@ -436,11 +437,12 @@ TABLE_IMPORTANCE = {
     'chrome_graphics_pipeline_display_frame_steps':
         'mid',  # Graphics pipeline post-surface aggregation
 
-    # LOW IMPORTANCE - Raw/specialized tables, less frequently needed
-    'slices':
-        'low',  # Raw slice table, prefer thread_or_process_slice for most use cases
-    'sched_slice':
-        'low',  # Raw scheduling slice table, prefer thread_state for most use cases
+    # LOW IMPORTANCE - Deprecated table names, kept for backward compatibility
+    'slices': 'low',  # Raw slice table, prefer thread_or_process_slice
+    'sched_slice': 'low',  # Raw scheduling slice table, prefer thread_state
+    'counters': 'low',  # Raw counter table, prefer counter table
+    'raw': 'low',
+    'gpu_track': 'low',
 }
 
 

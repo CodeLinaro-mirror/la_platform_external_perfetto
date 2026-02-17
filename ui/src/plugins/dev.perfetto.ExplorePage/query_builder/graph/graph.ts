@@ -97,10 +97,13 @@ function shouldShowTopPort(node: QueryNode): boolean {
 
 export interface GraphAttrs {
   readonly rootNodes: QueryNode[];
-  readonly selectedNode?: QueryNode;
+  readonly selectedNodes: ReadonlySet<string>;
   readonly nodeLayouts: LayoutMap;
-  readonly labels?: ReadonlyArray<TextLabelData>;
+  readonly labels: ReadonlyArray<TextLabelData>;
+  readonly loadGeneration?: number;
   readonly onNodeSelected: (node: QueryNode) => void;
+  readonly onNodeAddToSelection: (node: QueryNode) => void;
+  readonly onNodeRemoveFromSelection: (nodeId: string) => void;
   readonly onDeselect: () => void;
   readonly onNodeLayoutChange: (nodeId: string, layout: Position) => void;
   readonly onLabelsChange?: (labels: TextLabelData[]) => void;
@@ -116,7 +119,6 @@ export interface GraphAttrs {
   ) => void;
   readonly onImport: () => void;
   readonly onExport: () => void;
-  readonly onRecenterReady?: (recenter: () => void) => void;
 }
 
 // ========================================
@@ -457,22 +459,6 @@ function hasPrimaryInputPort(node: QueryNode): boolean {
   return singleNodeOperation(node.type);
 }
 
-// Find which visual port a parent node is connected to
-function getInputPort(child: QueryNode, parent: QueryNode): number {
-  if (child.primaryInput === parent) {
-    return 0;
-  }
-  if (child.secondaryInputs) {
-    const offset = hasPrimaryInputPort(child) ? 1 : 0;
-    for (const [index, node] of child.secondaryInputs.connections) {
-      if (node === parent) {
-        return index + offset;
-      }
-    }
-  }
-  return 0;
-}
-
 // Convert visual port to secondary input index (undefined means primary input)
 function toSecondaryIndex(
   node: QueryNode,
@@ -508,12 +494,34 @@ function buildConnections(
         continue;
       }
 
-      connections.push({
-        fromNode: qnode.nodeId,
-        fromPort: 0,
-        toNode: child.nodeId,
-        toPort: getInputPort(child, qnode),
-      });
+      // Check if this parent is connected to multiple ports on the child
+      // (e.g., Union node with same parent connected to Input 0 and Input 1)
+      const connectedPorts: number[] = [];
+
+      // Check primary input
+      if (child.primaryInput === qnode) {
+        connectedPorts.push(0);
+      }
+
+      // Check secondary inputs
+      if (child.secondaryInputs) {
+        const offset = hasPrimaryInputPort(child) ? 1 : 0;
+        for (const [index, node] of child.secondaryInputs.connections) {
+          if (node === qnode) {
+            connectedPorts.push(index + offset);
+          }
+        }
+      }
+
+      // Create a separate connection for each port
+      for (const toPort of connectedPorts) {
+        connections.push({
+          fromNode: qnode.nodeId,
+          fromPort: 0,
+          toNode: child.nodeId,
+          toPort: toPort,
+        });
+      }
     }
   }
 
@@ -569,8 +577,11 @@ function handleConnectionRemove(
     }
   }
 
+  // Convert visual port to secondary index for removal
+  const secondaryIndex = toSecondaryIndex(toNode, conn.toPort);
+
   // Use the helper function to cleanly remove the connection
-  removeConnection(fromNode, toNode);
+  removeConnection(fromNode, toNode, secondaryIndex);
 
   // Call the parent callback for any additional cleanup (e.g., state management)
   onConnectionRemove(fromNode, toNode, isSecondaryInput);
@@ -606,17 +617,21 @@ export class Graph implements m.ClassComponent<GraphAttrs> {
   private labels: Label[] = [];
   private labelTexts: Map<string, string> = new Map();
   private editingLabels: Set<string> = new Set();
+  private previousLoadGeneration?: number;
 
   oninit(vnode: m.Vnode<GraphAttrs>) {
-    // Load initial labels from attrs if provided
-    if (vnode.attrs.labels) {
-      this.deserializeLabels(vnode.attrs.labels as TextLabelData[]);
-    }
+    // Load initial labels from attrs
+    this.deserializeLabels(vnode.attrs.labels as TextLabelData[]);
+  }
+
+  oncreate(vnode: m.VnodeDOM<GraphAttrs>) {
+    // Focus the graph container so WSAD keyboard controls work immediately
+    (vnode.dom as HTMLElement).focus();
   }
 
   onbeforeupdate(vnode: m.Vnode<GraphAttrs>, old: m.VnodeDOM<GraphAttrs>) {
     // Only update labels if the reference changed (indicating external state update)
-    if (vnode.attrs.labels !== old.attrs.labels && vnode.attrs.labels) {
+    if (vnode.attrs.labels !== old.attrs.labels) {
       this.deserializeLabels(vnode.attrs.labels as TextLabelData[]);
     }
     return true;
@@ -770,10 +785,29 @@ export class Graph implements m.ClassComponent<GraphAttrs> {
   }
 
   view({attrs}: m.CVnode<GraphAttrs>) {
-    const {rootNodes, selectedNode} = attrs;
+    const {rootNodes} = attrs;
 
     const nodes = renderNodes(rootNodes, attrs, this.nodeGraphApi);
     const connections = buildConnections(rootNodes, attrs.nodeLayouts);
+
+    // Detect if loadGeneration has changed (indicates a load operation occurred)
+    const loadGenerationChanged =
+      attrs.loadGeneration !== undefined &&
+      attrs.loadGeneration !== this.previousLoadGeneration;
+
+    if (loadGenerationChanged) {
+      // Always sync previousLoadGeneration to prevent repeated detection
+      // This is critical - if we only update when nodes.length > 0, then when
+      // nodeGraphApi is initially null (causing empty nodes), we'd miss the update.
+      // Later panning would then trigger a late recenter causing infinite redraws.
+      this.previousLoadGeneration = attrs.loadGeneration;
+
+      if (nodes.length > 0) {
+        // Content was loaded - defer recenter to onReady callback
+        // We can't recenter immediately because NodeGraph hasn't rendered the new nodes yet
+        this.recenterRequired = true;
+      }
+    }
 
     // Perform auto-layout if nodeLayouts is empty and API is available
     if (
@@ -804,14 +838,49 @@ export class Graph implements m.ClassComponent<GraphAttrs> {
       '.pf-exp-node-graph',
       {
         tabindex: 0,
+        onkeydown: (e: KeyboardEvent) => {
+          // Skip if user is typing in an input or textarea
+          const target = e.target as HTMLElement;
+          if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+            return;
+          }
+
+          // Shift+W/S for zoom in/out (matches Timeline behavior)
+          // Use KeyboardEvent.code for physical key position (layout-independent)
+          const ZOOM_STEP = 0.1;
+          if (e.shiftKey && this.nodeGraphApi !== null) {
+            if (e.code === 'KeyW') {
+              this.nodeGraphApi.zoomBy(ZOOM_STEP);
+              e.preventDefault();
+              return;
+            }
+            if (e.code === 'KeyS') {
+              this.nodeGraphApi.zoomBy(-ZOOM_STEP);
+              e.preventDefault();
+              return;
+            }
+          }
+
+          // WASD keyboard panning (only without Shift modifier)
+          const PAN_STEP = 50;
+          const panMap: Record<string, [number, number]> = {
+            KeyW: [0, PAN_STEP],
+            KeyA: [PAN_STEP, 0],
+            KeyS: [0, -PAN_STEP],
+            KeyD: [-PAN_STEP, 0],
+          };
+          const pan = panMap[e.code];
+          if (pan !== undefined && this.nodeGraphApi !== null) {
+            this.nodeGraphApi.panBy(pan[0], pan[1]);
+            e.preventDefault();
+          }
+        },
       },
       [
         m(NodeGraph, {
           nodes,
           connections,
-          selectedNodeIds: new Set(
-            selectedNode?.nodeId ? [selectedNode.nodeId] : [],
-          ),
+          selectedNodeIds: attrs.selectedNodes,
           hideControls: true,
           fillHeight: true,
           onReady: (api: NodeGraphApi) => {
@@ -822,20 +891,22 @@ export class Graph implements m.ClassComponent<GraphAttrs> {
               this.nodeGraphApi.recenter();
               this.recenterRequired = false;
             }
-
-            // Expose recenter function to parent component
-            attrs.onRecenterReady?.(() => {
-              if (this.nodeGraphApi) {
-                this.nodeGraphApi.recenter();
-              }
-            });
           },
-          multiselect: false,
+          multiselect: true,
           onNodeSelect: (nodeId: string) => {
             const qnode = findQueryNode(nodeId, rootNodes);
             if (qnode) {
               attrs.onNodeSelected(qnode);
             }
+          },
+          onNodeAddToSelection: (nodeId: string) => {
+            const qnode = findQueryNode(nodeId, rootNodes);
+            if (qnode) {
+              attrs.onNodeAddToSelection(qnode);
+            }
+          },
+          onNodeRemoveFromSelection: (nodeId: string) => {
+            attrs.onNodeRemoveFromSelection(nodeId);
           },
           onSelectionClear: () => {
             attrs.onDeselect();

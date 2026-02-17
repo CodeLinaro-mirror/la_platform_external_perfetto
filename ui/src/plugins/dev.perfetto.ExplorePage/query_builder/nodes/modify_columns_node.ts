@@ -22,7 +22,7 @@ import {
 import {Checkbox} from '../../../../widgets/checkbox';
 import {TextInput} from '../../../../widgets/text_input';
 import {ColumnInfo, newColumnInfoList} from '../column_info';
-import {SIMPLE_TYPE_KINDS} from '../../../../trace_processor/perfetto_sql_type';
+import {parsePerfettoSqlTypeFromString} from '../../../../trace_processor/perfetto_sql_type';
 import protos from '../../../../protos';
 import {NodeIssues} from '../node_issues';
 import {StructuredQueryBuilder, ColumnSpec} from '../structured_query_builder';
@@ -35,6 +35,7 @@ import {
 } from '../node_styling_widgets';
 import {loadNodeDoc} from '../node_doc_loader';
 import {renderTypeSelector} from './modify_columns_utils';
+import {SqlModules} from '../../../dev.perfetto.SqlModules/sql_modules';
 
 export interface ModifyColumnsSerializedState {
   primaryInputId?: string;
@@ -43,6 +44,7 @@ export interface ModifyColumnsSerializedState {
     type: string;
     checked: boolean;
     alias?: string;
+    typeUserModified?: boolean;
   }[];
   comment?: string;
 }
@@ -90,6 +92,7 @@ export class ModifyColumnsNode implements QueryNode {
     const newSelectedColumns = newColumnInfoList(sourceCols);
 
     // Preserve checked status and aliases for columns that still exist.
+    // Types are only preserved if the user explicitly modified them.
     for (const oldCol of this.state.selectedColumns) {
       const newCol = newSelectedColumns.find(
         (c) => c.column.name === oldCol.column.name,
@@ -97,6 +100,15 @@ export class ModifyColumnsNode implements QueryNode {
       if (newCol) {
         newCol.checked = oldCol.checked;
         newCol.alias = oldCol.alias;
+        // Only preserve type if user explicitly modified it
+        if (oldCol.typeUserModified) {
+          newCol.type = oldCol.type;
+          newCol.column = {
+            ...newCol.column,
+            type: oldCol.column.type,
+          };
+          newCol.typeUserModified = true;
+        }
       }
     }
 
@@ -107,22 +119,26 @@ export class ModifyColumnsNode implements QueryNode {
   }
 
   static deserializeState(
+    sqlModules: SqlModules,
     serializedState: ModifyColumnsSerializedState,
   ): ModifyColumnsState {
     return {
       ...serializedState,
+      sqlModules,
       selectedColumns: serializedState.selectedColumns.map((c) => ({
         name: c.name,
         type: c.type,
         checked: c.checked,
         column: {name: c.name},
         alias: c.alias,
+        typeUserModified: c.typeUserModified,
       })),
     };
   }
 
   resolveColumns() {
     // Recover full column information from primaryInput
+    // Note: We preserve user-modified types and only recover the base column object
     if (this.primaryInput === undefined) {
       return;
     }
@@ -131,8 +147,14 @@ export class ModifyColumnsNode implements QueryNode {
     this.state.selectedColumns.forEach((c) => {
       const sourceCol = sourceCols.find((s) => s.name === c.name);
       if (sourceCol) {
-        c.column = sourceCol.column;
-        c.type = sourceCol.type;
+        // Only update the column reference, NOT the type
+        // The type may have been modified by the user and is preserved in serialization
+        c.column = {
+          ...sourceCol.column,
+          // Keep the user-modified type if it exists
+          type: c.column.type ?? sourceCol.column.type,
+        };
+        // Do NOT update c.type - it's already set from deserialization
       }
     });
   }
@@ -203,7 +225,7 @@ export class ModifyColumnsNode implements QueryNode {
     const hasAlias = this.state.selectedColumns.some((c) => c.alias);
     if (!hasUnselected && !hasAlias) {
       return {
-        content: NodeDetailsMessage('Select all'),
+        content: NodeDetailsMessage('Select all columns'),
       };
     }
 
@@ -333,23 +355,19 @@ export class ModifyColumnsNode implements QueryNode {
 
     const handleTypeChange = (index: number, newType: string) => {
       const newSelectedColumns = [...this.state.selectedColumns];
-      const lowerType = newType.toLowerCase();
 
-      // Check if it's a simple type
-      const isSimple = SIMPLE_TYPE_KINDS.includes(
-        lowerType as (typeof SIMPLE_TYPE_KINDS)[number],
-      );
+      // Try to parse the type string (handles simple types, ID, and JOINID)
+      const parsedType = parsePerfettoSqlTypeFromString({type: newType});
 
-      const originalType = col.column.type;
       newSelectedColumns[index] = {
         ...newSelectedColumns[index],
         type: newType,
         column: {
           ...newSelectedColumns[index].column,
-          type: isSimple
-            ? {kind: lowerType as (typeof SIMPLE_TYPE_KINDS)[number]}
-            : originalType, // Keep original if it's an ID type
+          type: parsedType.ok ? parsedType.value : col.column.type,
         },
+        // Mark as user-modified so it's preserved when upstream changes
+        typeUserModified: true,
       };
       this.state.selectedColumns = newSelectedColumns;
       this.state.onchange?.();
@@ -389,7 +407,7 @@ export class ModifyColumnsNode implements QueryNode {
         placeholder: 'alias',
         value: col.alias ? col.alias : '',
       }),
-      renderTypeSelector(col, index, handleTypeChange),
+      renderTypeSelector(col, index, this.state.sqlModules, handleTypeChange),
     );
   }
 
@@ -398,17 +416,40 @@ export class ModifyColumnsNode implements QueryNode {
   }
 
   clone(): QueryNode {
+    // Deep copy selectedColumns preserving exact state (including aliases)
+    // Do NOT use newColumnInfoList here - that transforms columns for downstream
+    // propagation (applying aliases as new names), but cloning needs exact copy.
+    const clonedColumns: ColumnInfo[] = this.state.selectedColumns.map(
+      (col) => ({
+        ...col,
+        column: {...col.column},
+      }),
+    );
+
     const stateCopy: ModifyColumnsState = {
-      selectedColumns: newColumnInfoList(this.state.selectedColumns),
+      selectedColumns: clonedColumns,
       filters: this.state.filters?.map((f) => ({...f})),
       filterOperator: this.state.filterOperator,
       onchange: this.state.onchange,
+      sqlModules: this.state.sqlModules,
     };
     return new ModifyColumnsNode(stateCopy);
   }
 
   getStructuredQuery(): protos.PerfettoSqlStructuredQuery | undefined {
     if (this.primaryInput === undefined) return undefined;
+
+    // Check if any modification is needed:
+    // - A column is unchecked (hidden)
+    // - A column has an alias (renamed)
+    const hasModification = this.state.selectedColumns.some(
+      (col) => !col.checked || (col.alias && col.alias.trim() !== ''),
+    );
+
+    // If no modification, return passthrough to maintain reference chain
+    if (!hasModification) {
+      return StructuredQueryBuilder.passthrough(this.primaryInput, this.nodeId);
+    }
 
     // Build column specifications
     const columns: ColumnSpec[] = [];
@@ -438,6 +479,7 @@ export class ModifyColumnsNode implements QueryNode {
         type: c.type,
         checked: c.checked,
         alias: c.alias,
+        typeUserModified: c.typeUserModified,
       })),
     };
   }
