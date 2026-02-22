@@ -126,6 +126,7 @@ source_set("storage_minimal") {
   ]
   deps = [
     "../../gn:default_deps",
+    "../../protos/perfetto/common:zero",
     "../base",
     "../protozero",
     "containers",
@@ -142,6 +143,7 @@ source_set("storage_minimal") {
     "tables",
     "types",
     "util:blob",
+    "util:clock",
     "util:descriptors",
     "util:gzip",
     "util:proto_to_args_parser",

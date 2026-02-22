@@ -19,37 +19,148 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <vector>
+
 #include "perfetto/base/status.h"
+#include "perfetto/ext/base/flat_hash_map.h"
+#include "perfetto/ext/base/status_or.h"
+#include "perfetto/public/compiler.h"
 #include "src/trace_processor/storage/trace_storage.h"
+#include "src/trace_processor/types/trace_processor_context.h"
 #include "src/trace_processor/util/clock_synchronizer.h"
 
 namespace perfetto::trace_processor {
 
 class ClockTrackerTest;
-class TraceProcessorContext;
 
-class ClockSynchronizerListenerImpl {
+class ClockSynchronizerListenerImpl;
+
+// ClockTracker wraps ClockSynchronizer (the pure conversion engine) and adds
+// trace-time semantics: which clock domain is the "trace time", applying
+// remote-machine offsets, and writing metadata.
+class ClockTracker {
  public:
-  using ClockId = ClockSynchronizerBase::ClockId;
+  // Re-export types for callers that use ClockTracker::ClockId etc.
+  using ClockId = ::perfetto::trace_processor::ClockId;
+  using ClockTimestamp = ::perfetto::trace_processor::ClockTimestamp;
+  using Clock = ::perfetto::trace_processor::Clock;
 
+  // |primary_sync| is the primary trace's ClockSynchronizer. For the primary
+  // trace (first trace for a machine), snapshots are added directly to
+  // |primary_sync| and it is used for all conversions. For non-primary traces,
+  // |primary_sync| is used for conversions until the first AddSnapshot call,
+  // at which point the tracker switches to its own internal sync.
+  ClockTracker(TraceProcessorContext* context,
+               std::unique_ptr<ClockSynchronizerListenerImpl> listener,
+               ClockSynchronizer* primary_sync,
+               bool is_primary = true);
+
+  // --- Hot-path APIs (inlined) ---
+
+  // Converts a timestamp to the trace time domain. On the first call, also
+  // "locks" the trace time clock, preventing it from being changed later.
+  PERFETTO_ALWAYS_INLINE std::optional<int64_t> ToTraceTime(
+      ClockId clock_id,
+      int64_t timestamp,
+      std::optional<size_t> byte_offset = std::nullopt) {
+    auto* state = context_->trace_time_state.get();
+    if (PERFETTO_UNLIKELY(!state->used_for_conversion)) {
+      OnFirstTraceTimeUse();
+    }
+    ++num_conversions_;
+    auto ts = active_sync_->Convert(clock_id, timestamp, state->clock_id,
+                                    byte_offset);
+    return ts ? std::optional(ToHostTraceTime(*ts)) : ts;
+  }
+
+  // Converts a timestamp between two arbitrary clock domains.
+  PERFETTO_ALWAYS_INLINE std::optional<int64_t> Convert(
+      ClockId src,
+      int64_t ts,
+      ClockId target,
+      std::optional<size_t> byte_offset = {}) {
+    ++num_conversions_;
+    return active_sync_->Convert(src, ts, target, byte_offset);
+  }
+
+  static bool IsSequenceClock(uint32_t raw_clock_id) {
+    return ClockSynchronizer::IsSequenceClock(raw_clock_id);
+  }
+
+  static ClockId SequenceToGlobalClock(uint32_t tfi,
+                                       uint32_t seq,
+                                       uint32_t clk) {
+    return ClockSynchronizer::SequenceToGlobalClock(tfi, seq, clk);
+  }
+
+  // --- Slow-path public APIs ---
+
+  base::StatusOr<uint32_t> AddSnapshot(
+      const std::vector<ClockTimestamp>& clock_timestamps);
+
+  base::Status SetTraceTimeClock(ClockId clock_id);
+
+  std::optional<int64_t> ToTraceTimeFromSnapshot(
+      const std::vector<ClockTimestamp>& snapshot);
+
+  void SetRemoteClockOffset(ClockId clock_id, int64_t offset);
+  std::optional<int64_t> timezone_offset() const;
+  void set_timezone_offset(int64_t offset);
+
+  // --- Testing ---
+  void set_cache_lookups_disabled_for_testing(bool v);
+  const base::FlatHashMap<ClockId, int64_t>& remote_clock_offsets_for_testing();
+  uint32_t cache_hits_for_testing() const;
+
+ private:
+  friend class ClockTrackerTest;
+
+  PERFETTO_ALWAYS_INLINE int64_t ToHostTraceTime(int64_t timestamp) {
+    if (PERFETTO_LIKELY(context_->machine_id() ==
+                        MachineId(kDefaultMachineId))) {
+      return timestamp;
+    }
+    auto* state = context_->trace_time_state.get();
+    int64_t clock_offset = state->remote_clock_offsets[state->clock_id];
+    return timestamp - clock_offset;
+  }
+
+  void OnFirstTraceTimeUse();
+
+  TraceProcessorContext* context_;
+  ClockSynchronizer sync_;
+  // Points to the ClockSynchronizer used for conversions. Starts at
+  // |primary_sync_| and switches to |sync_| for non-primary traces
+  // on the first AddSnapshot call.
+  ClockSynchronizer* active_sync_;
+  // The primary trace's ClockSynchronizer. All traces add snapshots here
+  // so that traces without their own snapshots can still convert timestamps.
+  // Null when no primary sync is configured (e.g. in tests).
+  ClockSynchronizer* primary_sync_ = nullptr;
+  // Whether this is the primary trace for its machine (or a test). Non-primary
+  // traces start using primary_sync_ and switch to sync_ on first AddSnapshot.
+  bool is_primary_ = true;
+  // Total number of conversions performed. When a non-primary trace switches
+  // to its own sync, this value indicates how many conversions used the
+  // primary trace's clocks.
+  uint32_t num_conversions_ = 0;
+};
+
+class ClockSynchronizerListenerImpl : public ClockSynchronizerListener {
+ public:
   explicit ClockSynchronizerListenerImpl(TraceProcessorContext* context);
 
-  base::Status OnClockSyncCacheMiss();
+  base::Status OnClockSyncCacheMiss() override;
 
-  base::Status OnInvalidClockSnapshot();
+  base::Status OnInvalidClockSnapshot() override;
 
-  base::Status OnTraceTimeClockIdChanged(ClockId);
-
-  base::Status OnSetTraceTimeClock(ClockId);
-
-  void RecordConversionError(ClockSynchronizerBase::ErrorType,
+  void RecordConversionError(ClockSyncErrorType,
                              ClockId source_clock_id,
                              ClockId target_clock_id,
                              int64_t source_timestamp,
-                             std::optional<size_t>);
-
-  bool IsLocalHost();
+                             std::optional<size_t>) override;
 
  private:
   TraceProcessorContext* context_;
@@ -59,8 +170,6 @@ class ClockSynchronizerListenerImpl {
   StringId source_sequence_id_key_;
   StringId target_sequence_id_key_;
 };
-
-using ClockTracker = ClockSynchronizer<ClockSynchronizerListenerImpl>;
 
 }  // namespace perfetto::trace_processor
 
