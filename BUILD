@@ -285,14 +285,15 @@ perfetto_cc_binary(
         ":include_perfetto_base_base",
         ":include_perfetto_public_abi_base",
         ":include_perfetto_public_base",
+        ":src_proto_utils_txt_to_pb",
         ":src_protozero_filtering_bytecode_common",
         ":src_protozero_filtering_bytecode_generator",
         ":src_protozero_filtering_bytecode_parser",
         ":src_protozero_filtering_filter_util",
         ":src_protozero_filtering_message_filter",
         ":src_protozero_filtering_string_filter",
+        ":src_protozero_multifile_error_collector",
         ":src_protozero_text_to_proto_text_to_proto",
-        ":src_trace_config_utils_txt_to_pb",
         "src/tools/proto_filter/proto_filter.cc",
     ],
     deps = [
@@ -321,7 +322,7 @@ perfetto_cc_binary(
         ":protozero",
         ":src_base_base",
         ":src_base_version",
-        ":src_trace_config_utils_gen_cc_config_descriptor",
+        ":src_proto_utils_gen_cc_config_descriptor",
     ] + PERFETTO_CONFIG.deps.protobuf_full,
 )
 
@@ -329,6 +330,7 @@ perfetto_cc_binary(
 perfetto_cc_binary(
     name = "proto_merger",
     srcs = [
+        ":src_protozero_multifile_error_collector",
         "src/tools/proto_merger/allowlist.cc",
         "src/tools/proto_merger/allowlist.h",
         "src/tools/proto_merger/main.cc",
@@ -1613,6 +1615,7 @@ perfetto_cc_library(
         "src/base/ctrl_c_handler.cc",
         "src/base/event_fd.cc",
         "src/base/file_utils.cc",
+        "src/base/fixed_string_writer.cc",
         "src/base/getopt_compat.cc",
         "src/base/intrusive_list.cc",
         "src/base/intrusive_tree.cc",
@@ -1811,6 +1814,26 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/proto_utils:gen_cc_config_descriptor
+perfetto_cc_proto_descriptor(
+    name = "src_proto_utils_gen_cc_config_descriptor",
+    deps = [
+        ":protos_perfetto_config_descriptor",
+    ],
+    outs = [
+        "src/proto_utils/config.descriptor.h",
+    ],
+)
+
+# GN target: //src/proto_utils:txt_to_pb
+perfetto_filegroup(
+    name = "src_proto_utils_txt_to_pb",
+    srcs = [
+        "src/proto_utils/txt_to_pb.cc",
+        "src/proto_utils/txt_to_pb.h",
+    ],
+)
+
 # GN target: //src/protovm:protovm
 perfetto_filegroup(
     name = "src_protovm_protovm",
@@ -1927,6 +1950,15 @@ perfetto_filegroup(
     ],
 )
 
+# GN target: //src/protozero:multifile_error_collector
+perfetto_filegroup(
+    name = "src_protozero_multifile_error_collector",
+    srcs = [
+        "src/protozero/multifile_error_collector.cc",
+        "src/protozero/multifile_error_collector.h",
+    ],
+)
+
 # GN target: //src/protozero:proto_ring_buffer
 perfetto_filegroup(
     name = "src_protozero_proto_ring_buffer",
@@ -1984,26 +2016,6 @@ perfetto_filegroup(
         "src/shared_lib/stream_writer.h",
         "src/shared_lib/thread_utils.cc",
         "src/shared_lib/tracing_session.cc",
-    ],
-)
-
-# GN target: //src/trace_config_utils:gen_cc_config_descriptor
-perfetto_cc_proto_descriptor(
-    name = "src_trace_config_utils_gen_cc_config_descriptor",
-    deps = [
-        ":protos_perfetto_config_descriptor",
-    ],
-    outs = [
-        "src/trace_config_utils/config.descriptor.h",
-    ],
-)
-
-# GN target: //src/trace_config_utils:txt_to_pb
-perfetto_filegroup(
-    name = "src_trace_config_utils_txt_to_pb",
-    srcs = [
-        "src/trace_config_utils/txt_to_pb.cc",
-        "src/trace_config_utils/txt_to_pb.h",
     ],
 )
 
@@ -2802,6 +2814,8 @@ perfetto_filegroup(
         "src/trace_processor/importers/proto/app_wakelock_module.h",
         "src/trace_processor/importers/proto/args_parser.cc",
         "src/trace_processor/importers/proto/args_parser.h",
+        "src/trace_processor/importers/proto/blob_packet_writer.cc",
+        "src/trace_processor/importers/proto/blob_packet_writer.h",
         "src/trace_processor/importers/proto/chrome_string_lookup.cc",
         "src/trace_processor/importers/proto/chrome_string_lookup.h",
         "src/trace_processor/importers/proto/chrome_system_probes_module.cc",
@@ -3523,7 +3537,17 @@ perfetto_filegroup(
         "src/trace_processor/perfetto_sql/stdlib/android/memory/dmabuf.sql",
         "src/trace_processor/perfetto_sql/stdlib/android/memory/dmabuf_spans.sql",
         "src/trace_processor/perfetto_sql/stdlib/android/memory/lmk.sql",
+        "src/trace_processor/perfetto_sql/stdlib/android/memory/memory_breakdown.sql",
         "src/trace_processor/perfetto_sql/stdlib/android/memory/process.sql",
+    ],
+)
+
+# GN target: //src/trace_processor/perfetto_sql/stdlib/android/profiling_manager:profiling_manager
+perfetto_filegroup(
+    name = "src_trace_processor_perfetto_sql_stdlib_android_profiling_manager_profiling_manager",
+    srcs = [
+        "src/trace_processor/perfetto_sql/stdlib/android/profiling_manager/startup.sql",
+        "src/trace_processor/perfetto_sql/stdlib/android/profiling_manager/util.sql",
     ],
 )
 
@@ -3759,6 +3783,7 @@ perfetto_filegroup(
 perfetto_filegroup(
     name = "src_trace_processor_perfetto_sql_stdlib_prelude_before_eof_before_eof",
     srcs = [
+        "src/trace_processor/perfetto_sql/stdlib/prelude/before_eof/functions.sql",
         "src/trace_processor/perfetto_sql/stdlib/prelude/before_eof/metadata.sql",
         "src/trace_processor/perfetto_sql/stdlib/prelude/before_eof/tables.sql",
         "src/trace_processor/perfetto_sql/stdlib/prelude/before_eof/trace_bounds.sql",
@@ -3937,6 +3962,7 @@ perfetto_cc_amalgamated_sql(
         ":src_trace_processor_perfetto_sql_stdlib_android_memory_heap_graph_heap_graph",
         ":src_trace_processor_perfetto_sql_stdlib_android_memory_heap_profile_heap_profile",
         ":src_trace_processor_perfetto_sql_stdlib_android_memory_memory",
+        ":src_trace_processor_perfetto_sql_stdlib_android_profiling_manager_profiling_manager",
         ":src_trace_processor_perfetto_sql_stdlib_android_startup_startup",
         ":src_trace_processor_perfetto_sql_stdlib_android_winscope_winscope",
         ":src_trace_processor_perfetto_sql_stdlib_appleos_appleos",
@@ -4283,6 +4309,7 @@ perfetto_filegroup(
 perfetto_filegroup(
     name = "src_trace_processor_util_clock",
     srcs = [
+        "src/trace_processor/util/clock_synchronizer.cc",
         "src/trace_processor/util/clock_synchronizer.h",
     ],
 )
@@ -8363,8 +8390,8 @@ perfetto_cc_binary(
         ":src_perfetto_cmd_bugreport_path",
         ":src_perfetto_cmd_perfetto_cmd",
         ":src_perfetto_cmd_trigger_producer",
+        ":src_proto_utils_txt_to_pb",
         ":src_protozero_text_to_proto_text_to_proto",
-        ":src_trace_config_utils_txt_to_pb",
         ":src_tracing_common",
         ":src_tracing_core_core",
         ":src_tracing_ipc_common",
@@ -8444,7 +8471,7 @@ perfetto_cc_binary(
         ":src_base_base",
         ":src_base_version",
         ":src_perfetto_cmd_protos_cpp",
-        ":src_trace_config_utils_gen_cc_config_descriptor",
+        ":src_proto_utils_gen_cc_config_descriptor",
     ],
 )
 
