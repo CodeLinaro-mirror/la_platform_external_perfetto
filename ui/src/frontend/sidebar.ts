@@ -44,7 +44,7 @@ import {exists, getOrCreate} from '../base/utils';
 import {classNames} from '../base/classnames';
 import {formatHotkey} from '../base/hotkeys';
 import {assetSrc} from '../base/assets';
-import {assertExists} from '../base/logging';
+import {assertExists} from '../base/assert';
 import {Icon} from '../widgets/icon';
 import {Button} from '../widgets/button';
 
@@ -386,6 +386,21 @@ export class Sidebar implements m.ClassComponent {
       m(
         `header.pf-sidebar__channel--${getCurrentChannel()}`,
         m(`img[src=${assetSrc('assets/brand.png')}].pf-sidebar__brand`),
+        app.embedder.brandingBadge &&
+          m(
+            'span.pf-sidebar__branding-badge',
+            {style: {color: app.embedder.brandingBadge.color}},
+            app.embedder.brandingBadge.image
+              ? m('img.pf-sidebar__branding-badge-img', {
+                  src: app.embedder.brandingBadge.image,
+                })
+              : app.embedder.brandingBadge.icon &&
+                  m(Icon, {
+                    icon: app.embedder.brandingBadge.icon,
+                    className: 'pf-sidebar__branding-badge-icon',
+                  }),
+            app.embedder.brandingBadge.text,
+          ),
         m(Button, {
           icon: 'menu',
           className: 'pf-sidebar-button',

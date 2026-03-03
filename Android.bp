@@ -15755,12 +15755,14 @@ filegroup {
         "src/trace_processor/importers/proto/proto_trace_parser_impl.cc",
         "src/trace_processor/importers/proto/proto_trace_reader.cc",
         "src/trace_processor/importers/proto/proto_trace_tokenizer.cc",
+        "src/trace_processor/importers/proto/protovm_incremental_tracing.cc",
         "src/trace_processor/importers/proto/stack_profile_sequence_state.cc",
         "src/trace_processor/importers/proto/track_event_module.cc",
         "src/trace_processor/importers/proto/track_event_parser.cc",
         "src/trace_processor/importers/proto/track_event_sequence_state.cc",
         "src/trace_processor/importers/proto/track_event_tokenizer.cc",
         "src/trace_processor/importers/proto/track_event_tracker.cc",
+        "src/trace_processor/importers/proto/user_tracker.cc",
     ],
 }
 
@@ -16986,6 +16988,7 @@ cc_library_static {
         ":perfetto_src_base_version",
         ":perfetto_src_kernel_utils_kernel_wakelock_errors",
         ":perfetto_src_kernel_utils_syscall_table",
+        ":perfetto_src_protovm_protovm",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_protozero_text_to_proto_text_to_proto",
@@ -20339,6 +20342,7 @@ cc_library_static {
         ":perfetto_src_base_clock_snapshots",
         ":perfetto_src_kernel_utils_kernel_wakelock_errors",
         ":perfetto_src_kernel_utils_syscall_table",
+        ":perfetto_src_protovm_protovm",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_protozero_text_to_proto_text_to_proto",
         ":perfetto_src_trace_processor_containers_containers",
@@ -20870,6 +20874,7 @@ cc_binary_host {
         ":perfetto_src_base_version",
         ":perfetto_src_kernel_utils_kernel_wakelock_errors",
         ":perfetto_src_kernel_utils_syscall_table",
+        ":perfetto_src_protovm_protovm",
         ":perfetto_src_protozero_proto_ring_buffer",
         ":perfetto_src_protozero_protozero",
         ":perfetto_src_protozero_text_to_proto_text_to_proto",
@@ -21103,6 +21108,9 @@ cc_binary {
     ],
     defaults: [
         "perfetto_defaults",
+    ],
+    required: [
+        "etc_system_tracing_proto_descriptors",
     ],
     target: {
         android: {
@@ -21517,6 +21525,48 @@ cc_binary {
     ],
     defaults: [
         "perfetto_defaults",
+    ],
+}
+
+// GN: //src/tools:tracing_proto_extensions
+cc_binary_host {
+    name: "tracing_proto_extensions",
+    srcs: [
+        ":perfetto_base_default_platform",
+        ":perfetto_include_perfetto_base_base",
+        ":perfetto_include_perfetto_ext_base_base",
+        ":perfetto_include_perfetto_ext_base_version",
+        ":perfetto_include_perfetto_protozero_protozero",
+        ":perfetto_include_perfetto_public_abi_base",
+        ":perfetto_include_perfetto_public_base",
+        ":perfetto_include_perfetto_public_protozero",
+        ":perfetto_protos_perfetto_common_zero_gen",
+        ":perfetto_protos_perfetto_protovm_zero_gen",
+        ":perfetto_src_base_base",
+        ":perfetto_src_base_version",
+        ":perfetto_src_protozero_multifile_error_collector",
+        ":perfetto_src_protozero_protozero",
+        ":perfetto_src_tools_tracing_proto_extensions_lib",
+        ":perfetto_src_trace_processor_util_json_parser",
+        ":perfetto_src_trace_processor_util_simple_json_parser",
+        "src/tools/tracing_proto_extensions_main.cc",
+    ],
+    static_libs: [
+        "libprotobuf-cpp-full",
+        "libz",
+    ],
+    generated_headers: [
+        "perfetto_protos_perfetto_common_zero_gen_headers",
+        "perfetto_protos_perfetto_protovm_zero_gen_headers",
+        "perfetto_src_base_version_gen_h",
+    ],
+    defaults: [
+        "perfetto_defaults",
+    ],
+    cflags: [
+        "-DGOOGLE_PROTOBUF_NO_RTTI",
+        "-DGOOGLE_PROTOBUF_NO_STATIC_INITIALIZER",
+        "-DZLIB_IMPLEMENTATION",
     ],
 }
 
@@ -22023,3 +22073,20 @@ cc_aconfig_library {
     ],
     min_sdk_version: "30",
 }
+
+// This target groups the dependencies on the android-tree rules that generate
+// /etc/tracing_descriptors.gz and /vendor/etc/tracing_descriptors.gz
+// Those targets are defined in /system/core and TODO(primiano): /vendor.
+phony {
+    name: "etc_system_tracing_proto_descriptors",
+    target: {
+        android: {
+            required: [
+                // TODO(primiano): uncomment after ag/38422283 lands.
+                // "system_tracing_protos_descriptor",
+            ],
+        }
+    }
+}
+
+
