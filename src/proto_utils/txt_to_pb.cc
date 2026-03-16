@@ -21,15 +21,12 @@
 #include <vector>
 
 #include "perfetto/ext/base/status_or.h"
-#include "src/proto_utils/config.descriptor.h"
-#include "src/proto_utils/trace_summary.descriptor.h"
 #include "src/protozero/text_to_proto/text_to_proto.h"
+#include "src/proto_utils/config.descriptor.h"
 
 namespace perfetto {
 namespace {
 constexpr char kConfigProtoName[] = ".perfetto.protos.TraceConfig";
-constexpr char kTraceSummarySpecProtoName[] =
-    ".perfetto.protos.TraceSummarySpec";
 
 }  // namespace
 
@@ -39,14 +36,6 @@ base::StatusOr<std::vector<uint8_t>> TraceConfigTxtToPb(
   return protozero::TextToProto(kConfigDescriptor.data(),
                                 kConfigDescriptor.size(), kConfigProtoName,
                                 file_name, input);
-}
-
-base::StatusOr<std::vector<uint8_t>> TraceSummarySpecTxtToPb(
-    const std::string& input,
-    const std::string& file_name) {
-  return protozero::TextToProto(kTraceSummaryDescriptor.data(),
-                                kTraceSummaryDescriptor.size(),
-                                kTraceSummarySpecProtoName, file_name, input);
 }
 
 }  // namespace perfetto

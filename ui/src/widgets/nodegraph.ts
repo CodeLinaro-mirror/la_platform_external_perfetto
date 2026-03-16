@@ -53,8 +53,6 @@ import {Icon} from './icon';
 import {PopupMenu} from './menu';
 import {classNames} from '../base/classnames';
 import {Icons} from '../base/semantic_icons';
-import {assertExists} from '../base/assert';
-import {shortUuid} from '../base/uuid';
 
 // Default height estimate for labels (used for box selection calculations)
 const DEFAULT_LABEL_MIN_HEIGHT = 30;
@@ -367,12 +365,6 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
 
   let latestVnode: m.Vnode<NodeGraphAttrs> | null = null;
   let canvasElement: HTMLElement | null = null;
-
-  // Unique instance ID for SVG marker references. Multiple NodeGraph instances
-  // (e.g. in different tabs) each create <marker id="..."> elements. Without
-  // unique IDs, url(#arrowhead) resolves to the first matching marker in
-  // document order, which may be inside a hidden tab (display:none).
-  const instanceId = shortUuid();
 
   // Shared pan function used by both internal handlers and external API
   const panBy = (dx: number, dy: number) => {
@@ -827,11 +819,8 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
     // Cache all port positions at once for performance
     const portPositionCache = new Map<string, Position>();
 
-    // Query ports within this NodeGraph instance only (not globally).
-    // Using document.querySelectorAll would pick up ports from other
-    // NodeGraph instances (e.g. hidden tabs), causing incorrect positions.
-    const container = assertExists(canvasElement);
-    const allPorts = container.querySelectorAll('.pf-port[data-port]');
+    // Query all ports in one go and cache their positions
+    const allPorts = document.querySelectorAll('.pf-port[data-port]');
     allPorts.forEach((portElement) => {
       const portId = portElement.getAttribute('data-port');
       if (!portId) return;
@@ -994,7 +983,7 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
           m('path', {
             'd': pathData,
             'class': 'pf-connection',
-            'marker-end': `url(#arrowhead-${instanceId})`,
+            'marker-end': 'url(#arrowhead)',
             'style': {
               pointerEvents: 'none',
             },
@@ -1042,16 +1031,13 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
           toPortType,
           shortenLength,
         ),
-        'marker-end': `url(#arrowhead-${instanceId})`,
+        'marker-end': 'url(#arrowhead)',
       });
     }
 
-    // Render everything using mithril's render function.
-    // Use instance-unique marker ID to avoid conflicts when multiple
-    // NodeGraph instances exist in the document (e.g. tabs).
-    const markerId = `arrowhead-${instanceId}`;
+    // Render everything using mithril's render function
     m.render(svg, [
-      m('defs', [arrowheadMarker(markerId)]),
+      m('defs', [arrowheadMarker('arrowhead')]),
       m('g', connectionPaths),
       tempConnectionPath,
     ]);
@@ -1069,10 +1055,7 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
         ? `[data-node="${nodeId}"] .pf-port[data-port="${portType}-${portIndex}"]`
         : `[data-node="${nodeId}"] [data-port="${portType}-${portIndex}"] .pf-port`;
 
-    // Scope to this NodeGraph instance to avoid matching elements from other
-    // instances (e.g. hidden tabs with the same node IDs).
-    const scope = assertExists(canvasElement);
-    const portElement = scope.querySelector(selector);
+    const portElement = document.querySelector(selector);
 
     if (portElement) {
       const nodeElement = portElement.closest('.pf-node') as HTMLElement | null;
@@ -1188,8 +1171,7 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
   }
 
   function getNodeDimensions(nodeId: string): {width: number; height: number} {
-    const scope = assertExists(canvasElement);
-    const nodeElement = scope.querySelector(`[data-node="${nodeId}"]`);
+    const nodeElement = document.querySelector(`[data-node="${nodeId}"]`);
     if (nodeElement) {
       const rect = nodeElement.getBoundingClientRect();
       // Divide by zoom to get canvas content space dimensions
@@ -2020,12 +2002,7 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
       document.addEventListener('pointerup', handleMouseUp);
       canvasElement.addEventListener('wheel', handleWheel, {passive: false});
 
-      const {
-        connections = [],
-        nodes = [],
-        onConnectionRemove,
-        onReady,
-      } = vnode.attrs;
+      const {connections, nodes, onConnectionRemove, onReady} = vnode.attrs;
 
       // Render connections after DOM is ready
       const svg = vnode.dom.querySelector('svg');

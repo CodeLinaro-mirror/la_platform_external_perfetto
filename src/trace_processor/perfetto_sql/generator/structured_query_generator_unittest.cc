@@ -4150,12 +4150,24 @@ TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesBasic) {
     sq_2 AS (SELECT * FROM end_events),
     sq_1 AS (SELECT * FROM start_events),
     sq_0 AS (
-      SELECT * FROM (SELECT * FROM _interval_create!((SELECT ts AS ts FROM sq_1), (SELECT ts AS ts FROM sq_2)))
+      SELECT * FROM (
+        WITH starts AS (SELECT * FROM sq_1),
+             ends AS (SELECT * FROM sq_2),
+             matched AS (
+               SELECT
+                 starts.ts AS start_ts,
+                 (SELECT MIN(ends.ts) FROM ends WHERE ends.ts > starts.ts) AS end_ts
+               FROM starts
+             )
+        SELECT
+          start_ts AS ts,
+          end_ts - start_ts AS dur
+        FROM matched
+        WHERE end_ts IS NOT NULL
+      )
     )
     SELECT * FROM sq_0
   )"));
-  EXPECT_THAT(gen.ComputeReferencedModules(),
-              testing::Contains("intervals.create_intervals"));
 }
 
 TEST(StructuredQueryGeneratorTest,
@@ -4200,7 +4212,21 @@ TEST(StructuredQueryGeneratorTest,
     sq_2 AS (SELECT * FROM slice WHERE name GLOB '*_end'),
     sq_1 AS (SELECT * FROM slice WHERE name GLOB '*_begin'),
     sq_0 AS (
-      SELECT * FROM (SELECT * FROM _interval_create!((SELECT ts AS ts FROM sq_1), (SELECT ts AS ts FROM sq_2)))
+      SELECT * FROM (
+        WITH starts AS (SELECT * FROM sq_1),
+             ends AS (SELECT * FROM sq_2),
+             matched AS (
+               SELECT
+                 starts.ts AS start_ts,
+                 (SELECT MIN(ends.ts) FROM ends WHERE ends.ts > starts.ts) AS end_ts
+               FROM starts
+             )
+        SELECT
+          start_ts AS ts,
+          end_ts - start_ts AS dur
+        FROM matched
+        WHERE end_ts IS NOT NULL
+      )
     )
     SELECT * FROM sq_0
   )"));
@@ -4229,9 +4255,8 @@ TEST(StructuredQueryGeneratorTest,
   )");
   auto ret = gen.Generate(proto.data(), proto.size());
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
-  EXPECT_THAT(
-      res, testing::HasSubstr("_interval_create!((SELECT acquire_ts AS ts FROM "
-                              "sq_1), (SELECT release_ts AS ts FROM sq_2))"));
+  EXPECT_THAT(res, testing::HasSubstr("starts.acquire_ts AS start_ts"));
+  EXPECT_THAT(res, testing::HasSubstr("ends.release_ts"));
 }
 
 TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesWithFilters) {
@@ -4361,7 +4386,7 @@ TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesNestedInInnerQuery) {
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
   // Check that the create slices is nested and filters are applied on top
   EXPECT_THAT(res, testing::HasSubstr("dur > 1000"));
-  EXPECT_THAT(res, testing::HasSubstr("_interval_create!"));
+  EXPECT_THAT(res, testing::HasSubstr("start_ts AS ts"));
 }
 
 TEST(StructuredQueryGeneratorTest,
@@ -4398,7 +4423,7 @@ TEST(StructuredQueryGeneratorTest,
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
   // Check that create slices is used as base for interval intersect
   EXPECT_THAT(res, testing::HasSubstr("_interval_intersect"));
-  EXPECT_THAT(res, testing::HasSubstr("_interval_create!"));
+  EXPECT_THAT(res, testing::HasSubstr("start_ts AS ts"));
 }
 
 TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesWithSelectColumns) {
@@ -4496,8 +4521,7 @@ TEST(StructuredQueryGeneratorTest,
   auto ret = gen.Generate(proto.data(), proto.size());
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
   // Should default starts_ts_column to "ts"
-  EXPECT_THAT(res, testing::HasSubstr("_interval_create!((SELECT ts AS ts FROM "
-                                      "sq_1), (SELECT ts AS ts FROM sq_2))"));
+  EXPECT_THAT(res, testing::HasSubstr("starts.ts AS start_ts"));
 }
 
 TEST(StructuredQueryGeneratorTest,
@@ -4523,8 +4547,7 @@ TEST(StructuredQueryGeneratorTest,
   auto ret = gen.Generate(proto.data(), proto.size());
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
   // Should default ends_ts_column to "ts"
-  EXPECT_THAT(res, testing::HasSubstr("_interval_create!((SELECT ts AS ts FROM "
-                                      "sq_1), (SELECT ts AS ts FROM sq_2))"));
+  EXPECT_THAT(res, testing::HasSubstr("ends.ts"));
 }
 
 TEST(StructuredQueryGeneratorTest,
@@ -4554,7 +4577,21 @@ TEST(StructuredQueryGeneratorTest,
     sq_2 AS (SELECT * FROM end_events),
     sq_1 AS (SELECT * FROM start_events),
     sq_0 AS (
-      SELECT * FROM (SELECT * FROM _interval_create!((SELECT ts AS ts FROM sq_1), (SELECT ts AS ts FROM sq_2)))
+      SELECT * FROM (
+        WITH starts AS (SELECT * FROM sq_1),
+             ends AS (SELECT * FROM sq_2),
+             matched AS (
+               SELECT
+                 starts.ts AS start_ts,
+                 (SELECT MIN(ends.ts) FROM ends WHERE ends.ts > starts.ts) AS end_ts
+               FROM starts
+             )
+        SELECT
+          start_ts AS ts,
+          end_ts - start_ts AS dur
+        FROM matched
+        WHERE end_ts IS NOT NULL
+      )
     )
     SELECT * FROM sq_0
   )"));
@@ -4642,8 +4679,7 @@ TEST(StructuredQueryGeneratorTest,
   auto ret = gen.Generate(proto.data(), proto.size());
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
   // Empty string should default to "ts"
-  EXPECT_THAT(res, testing::HasSubstr("_interval_create!((SELECT ts AS ts FROM "
-                                      "sq_1), (SELECT ts AS ts FROM sq_2))"));
+  EXPECT_THAT(res, testing::HasSubstr("starts.ts AS start_ts"));
 }
 
 TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesEmptyEndsTsColumn) {
@@ -4669,8 +4705,7 @@ TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesEmptyEndsTsColumn) {
   auto ret = gen.Generate(proto.data(), proto.size());
   ASSERT_OK_AND_ASSIGN(std::string res, ret);
   // Empty string should default to "ts"
-  EXPECT_THAT(res, testing::HasSubstr("_interval_create!((SELECT ts AS ts FROM "
-                                      "sq_1), (SELECT ts AS ts FROM sq_2))"));
+  EXPECT_THAT(res, testing::HasSubstr("ends.ts"));
 }
 
 TEST(StructuredQueryGeneratorTest,
@@ -4714,7 +4749,21 @@ TEST(StructuredQueryGeneratorTest,
     sq_2 AS (SELECT * FROM end_events WHERE ts < 0),
     sq_1 AS (SELECT * FROM start_events WHERE ts < 0),
     sq_0 AS (
-      SELECT * FROM (SELECT * FROM _interval_create!((SELECT ts AS ts FROM sq_1), (SELECT ts AS ts FROM sq_2)))
+      SELECT * FROM (
+        WITH starts AS (SELECT * FROM sq_1),
+             ends AS (SELECT * FROM sq_2),
+             matched AS (
+               SELECT
+                 starts.ts AS start_ts,
+                 (SELECT MIN(ends.ts) FROM ends WHERE ends.ts > starts.ts) AS end_ts
+               FROM starts
+             )
+        SELECT
+          start_ts AS ts,
+          end_ts - start_ts AS dur
+        FROM matched
+        WHERE end_ts IS NOT NULL
+      )
     )
     SELECT * FROM sq_0
   )"));
@@ -4759,7 +4808,21 @@ TEST(StructuredQueryGeneratorTest, ExperimentalCreateSlicesNoMatchingEnds) {
     sq_2 AS (SELECT * FROM events WHERE ts > 10000),
     sq_1 AS (SELECT * FROM events WHERE ts < 1000),
     sq_0 AS (
-      SELECT * FROM (SELECT * FROM _interval_create!((SELECT ts AS ts FROM sq_1), (SELECT ts AS ts FROM sq_2)))
+      SELECT * FROM (
+        WITH starts AS (SELECT * FROM sq_1),
+             ends AS (SELECT * FROM sq_2),
+             matched AS (
+               SELECT
+                 starts.ts AS start_ts,
+                 (SELECT MIN(ends.ts) FROM ends WHERE ends.ts > starts.ts) AS end_ts
+               FROM starts
+             )
+        SELECT
+          start_ts AS ts,
+          end_ts - start_ts AS dur
+        FROM matched
+        WHERE end_ts IS NOT NULL
+      )
     )
     SELECT * FROM sq_0
   )"));

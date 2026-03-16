@@ -48,36 +48,33 @@ export function renderAddButton(attrs: NodeBoxAttrs): m.Child {
     return null;
   }
 
-  const addCb = (id: string) => onAddOperationNode(id, node);
   const multisourceMenuItems = buildMenuItems(
     'multisource',
-    addCb,
+    (id) => onAddOperationNode(id, node),
     allowedChildren,
   );
+
   const modificationMenuItems = buildMenuItems(
     'modification',
-    addCb,
+    (id) => onAddOperationNode(id, node),
     allowedChildren,
   );
-  const exportMenuItems = buildMenuItems('export', addCb, allowedChildren);
 
-  const sections: {title: string; items: m.Children[]}[] = [
-    {title: 'Modification nodes', items: modificationMenuItems},
-    {title: 'Operations', items: multisourceMenuItems},
-    {title: 'Export', items: exportMenuItems},
-  ].filter((s) => s.items.length > 0);
-
-  if (sections.length === 0) {
+  if (modificationMenuItems.length === 0 && multisourceMenuItems.length === 0) {
     return null;
   }
 
   const menuItems: m.Children[] = [];
-  for (let i = 0; i < sections.length; i++) {
-    if (i > 0) {
-      menuItems.push(m(MenuDivider));
-    }
-    menuItems.push(m(MenuTitle, {label: sections[i].title}));
-    menuItems.push(...sections[i].items);
+  if (modificationMenuItems.length > 0) {
+    menuItems.push(m(MenuTitle, {label: 'Modification nodes'}));
+    menuItems.push(...modificationMenuItems);
+  }
+  if (modificationMenuItems.length > 0 && multisourceMenuItems.length > 0) {
+    menuItems.push(m(MenuDivider));
+  }
+  if (multisourceMenuItems.length > 0) {
+    menuItems.push(m(MenuTitle, {label: 'Operations'}));
+    menuItems.push(...multisourceMenuItems);
   }
 
   return m(

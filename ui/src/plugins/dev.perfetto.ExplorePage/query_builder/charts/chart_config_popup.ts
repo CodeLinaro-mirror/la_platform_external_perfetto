@@ -49,7 +49,6 @@ export function renderChartConfigPopup(
   const chartableColumns = ctx.node.getChartableColumns(config.chartType);
   const allColumns = ctx.node.sourceCols;
   const numericColumns = ctx.node.getChartableColumns('histogram');
-  const hasNumericColumns = numericColumns.length > 0;
 
   // Bar shows measure column when aggregation is not COUNT.
   const showMeasureColumn =
@@ -161,25 +160,15 @@ export function renderChartConfigPopup(
               onchange: (e: Event) => {
                 const target = e.target as HTMLSelectElement;
                 const agg = target.value as ChartAggregation;
-                const updates: Partial<ChartConfig> = {aggregation: agg};
-                // Auto-select first numeric column when switching to a
-                // numeric aggregation and no measure column is set yet.
-                if (
-                  agg !== 'COUNT' &&
-                  !config.measureColumn &&
-                  numericColumns.length > 0
-                ) {
-                  updates.measureColumn = numericColumns[0].name;
-                }
-                ctx.node.updateChart(config.id, updates);
+                ctx.node.updateChart(config.id, {aggregation: agg});
               },
             },
             [
               m('option', {value: 'COUNT'}, 'Count'),
-              m('option', {value: 'SUM', disabled: !hasNumericColumns}, 'Sum'),
-              m('option', {value: 'AVG', disabled: !hasNumericColumns}, 'Avg'),
-              m('option', {value: 'MIN', disabled: !hasNumericColumns}, 'Min'),
-              m('option', {value: 'MAX', disabled: !hasNumericColumns}, 'Max'),
+              m('option', {value: 'SUM'}, 'Sum'),
+              m('option', {value: 'AVG'}, 'Avg'),
+              m('option', {value: 'MIN'}, 'Min'),
+              m('option', {value: 'MAX'}, 'Max'),
             ],
           ),
         ]),

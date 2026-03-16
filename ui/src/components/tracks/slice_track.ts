@@ -25,7 +25,6 @@ import {
 } from '../../base/query_slot';
 import {duration, Time, time} from '../../base/time';
 import {TimeScale} from '../../base/time_scale';
-import {clamp, floatEqual} from '../../base/math_utils';
 import {exists} from '../../base/utils';
 import {deferChunkedTask} from '../../base/chunked_task';
 import {TrackEventDetailsPanel} from '../../public/details_panel';
@@ -43,7 +42,6 @@ import {
   LONG,
   NUM,
   LONG_NULL,
-  NUM_NULL,
 } from '../../trace_processor/query_result';
 import {
   createPerfettoTable,
@@ -79,9 +77,9 @@ interface Slice<T> {
 }
 
 interface SliceBuffers<T> {
-  readonly starts: Float32Array;
-  readonly ends: Float32Array;
+  readonly xs: Float32Array;
   readonly ys: Float32Array;
+  readonly ws: Float32Array;
   readonly patterns: Uint8Array;
   readonly slices: readonly Slice<T>[];
   readonly count: number;
@@ -455,7 +453,7 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
     selectedId: number | undefined,
   ): void {
     const {ctx, renderer} = trackCtx;
-    const {starts, ends, ys, patterns, slices, count} = sliceBuffers;
+    const {xs, ys, ws, patterns, slices, count} = sliceBuffers;
 
     // Collect text labels to render in a second pass
     const textLabels: Array<{
@@ -491,13 +489,13 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
       }
 
       // Collect text labels
-      const w = ends[j] - starts[j];
+      const w = ws[j];
       const wPx = w * pxPerNs;
 
       // Skip slices that are too narrow to show text
       if (wPx < SLICE_MIN_WIDTH_FOR_TEXT_PX) continue;
 
-      const x = starts[j];
+      const x = xs[j];
       const xPx = x * pxPerNs + baseOffsetPx;
 
       // Skip slices that are completely offscreen
@@ -538,9 +536,9 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
 
     renderer.drawRects(
       {
-        starts,
-        ends,
+        xs,
         ys,
+        ws,
         h: sliceHeight,
         colors,
         count,
@@ -548,27 +546,6 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
       },
       dataTransform,
     );
-
-    // Draw fill ratio light overlay on the unfilled portion of each slice
-    ctx.fillStyle = `#FFFFFF50`;
-    for (let j = 0; j < count; j++) {
-      const slice = slices[j];
-      const fillRatio = clamp(slice.fillRatio, 0, 1);
-      if (floatEqual(fillRatio, 1)) continue;
-      const left = Math.max(starts[j] * pxPerNs + baseOffsetPx, 0);
-      const right = Math.min(ends[j] * pxPerNs + baseOffsetPx, pxEnd);
-      const width = right - left;
-      const lightSectionDrawWidth = width * (1 - fillRatio);
-      if (lightSectionDrawWidth < 1) continue;
-      if (left + width <= 0 || left >= pxEnd) continue;
-      const y = ys[j] * dataTransform.scaleY + dataTransform.offsetY;
-      ctx.fillRect(
-        left + (width - lightSectionDrawWidth),
-        y,
-        lightSectionDrawWidth,
-        sliceHeight,
-      );
-    }
 
     // Draw text labels
     ctx.textAlign = 'center';
@@ -589,25 +566,14 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
 
     // Draw selection highlight
     if (selectedIdx !== -1) {
-      // Huge rects can be subject to flickering due to floating point precision
-      // issues, so we clamp the selection rect to a reasonable size offscreen.
-      const SEL_OFFSCREEN_MAX_PX = 20;
-      const selLeftRaw = starts[selectedIdx] * pxPerNs + baseOffsetPx;
-      const selLeft = Math.max(selLeftRaw, -SEL_OFFSCREEN_MAX_PX);
-      const selRightRaw = ends[selectedIdx] * pxPerNs + baseOffsetPx;
-      const selRight = Math.min(selRightRaw, pxEnd + SEL_OFFSCREEN_MAX_PX);
-      const selW = selRight - selLeft;
+      const selX = xs[selectedIdx] * pxPerNs + baseOffsetPx;
+      const selW = ws[selectedIdx] * pxPerNs;
       const selY =
         ys[selectedIdx] * dataTransform.scaleY + dataTransform.offsetY;
       const THICKNESS = 3;
       ctx.strokeStyle = trackCtx.colors.COLOR_TIMELINE_OVERLAY;
       ctx.lineWidth = THICKNESS;
-      ctx.strokeRect(
-        selLeft,
-        selY - THICKNESS / 2,
-        selW,
-        sliceHeight + THICKNESS,
-      );
+      ctx.strokeRect(selX, selY - THICKNESS / 2, selW, sliceHeight + THICKNESS);
     }
   }
 
@@ -938,8 +904,8 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
     const sliceQueryRes = await engine.query(`
       -- Complete slices
       SELECT
-        ((z.ts / ${resolution}) * ${resolution}) - ${start} as __start,
-        (((z.ts + z.dur + ${resolution - 1n}) / ${resolution}) * ${resolution}) - ${start} as __end,
+        ((z.ts / ${resolution}) * ${resolution}) - ${start} as __ts,
+        ((z.dur + ${resolution - 1n}) / ${resolution}) * ${resolution} as __dur,
         s.id as __id,
         z.count as __count,
         s.depth as __depth,
@@ -956,8 +922,8 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
 
       -- Incomplete slices
       SELECT
-        i.ts - ${start} as __start,
-        i.next_ts - ${start} as __end,
+        MAX(i.ts, ${start}) - ${start} as __ts,
+        MIN(IFNULL(i.next_ts, ${end}), ${end}) - MAX(i.ts, ${start}) as __dur,
         s.id as __id,
         1 as __count,
         i.depth as __depth,
@@ -972,16 +938,16 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
     const task = await this.deferChunkedTask();
 
     const count = sliceQueryRes.numRows();
-    const starts = new Float32Array(count);
-    const ends = new Float32Array(count);
+    const xs = new Float32Array(count);
     const ys = new Float32Array(count);
+    const ws = new Float32Array(count);
     const patterns = new Uint8Array(count);
     const slices = new Array<Slice<T>>(count);
 
     const it = sliceQueryRes.iter({
       __id: NUM,
-      __start: NUM,
-      __end: NUM_NULL,
+      __ts: NUM,
+      __dur: NUM,
       __count: NUM,
       __depth: NUM,
       __incomplete: NUM,
@@ -996,8 +962,8 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
 
       const count = it.__count;
       const id = it.__id;
-      const start = it.__start;
-      const end = it.__end;
+      const ts = it.__ts;
+      const dur = it.__dur;
       const depth = it.__depth;
       const title = this.getTitle(it);
       const subtitle = this.getSubtitle(it);
@@ -1005,10 +971,9 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
       const isIncomplete = it.__incomplete === 1;
       const row = this.extractKeys(it, dataset.schema);
 
-      starts[i] = start;
-      // Incomplete slices are assigned a +Infinity end
-      ends[i] = end === null ? Number.POSITIVE_INFINITY : end;
+      xs[i] = ts;
       ys[i] = depth;
+      ws[i] = dur;
       patterns[i] = isIncomplete
         ? RECT_PATTERN_FADE_RIGHT
         : this.attrs.slicePattern?.(it) ?? 0;
@@ -1024,9 +989,9 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
     }
 
     return {
-      starts,
-      ends,
+      xs,
       ys,
+      ws,
       patterns,
       slices,
       count,
@@ -1183,15 +1148,24 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
     const baseOffsetPx = timescale.timeToPx(this.currentDataFrame.start);
 
     if (y >= padding && y <= trackHeight - padding) {
-      // Check regular and incomplete slices
+      // Check slices
       const sliceBufs = this.currentDataFrame.slices;
       for (let i = 0; i < sliceBufs.count; i++) {
         if (sliceBufs.ys[i] !== depth) continue;
 
-        const startPx = sliceBufs.starts[i] * pxPerNs + baseOffsetPx;
-        const endPx = sliceBufs.ends[i] * pxPerNs + baseOffsetPx;
-        if (startPx <= x && x <= endPx) {
-          return sliceBufs.slices[i];
+        const sliceX = sliceBufs.xs[i] * pxPerNs + baseOffsetPx;
+        const sliceW = sliceBufs.ws[i];
+
+        if (sliceW === -1) {
+          // Incomplete slice extends to the end of the window
+          if (sliceX <= x) {
+            return sliceBufs.slices[i];
+          }
+        } else {
+          const sliceWPx = sliceW * pxPerNs;
+          if (sliceX <= x && x <= sliceX + sliceWPx) {
+            return sliceBufs.slices[i];
+          }
         }
       }
 
@@ -1283,14 +1257,16 @@ export class SliceTrack<T extends RowSchema> implements TrackRenderer {
     const frameStartNs = Number(this.currentDataFrame.start);
 
     // Check slices
-    const {starts, ends, count} = this.currentDataFrame.slices;
+    const {xs, ws, count} = this.currentDataFrame.slices;
     for (let i = 0; i < count; i++) {
       // Convert relative start to absolute time
-      const sliceStartNs = frameStartNs + starts[i];
+      const sliceStartNs = frameStartNs + xs[i];
       checkBoundary(sliceStartNs);
-
-      const sliceEndNs = frameStartNs + ends[i];
-      checkBoundary(sliceEndNs);
+      // Incomplete slices (dur <= 0) have no end to snap to
+      if (ws[i] > 0) {
+        const sliceEndNs = sliceStartNs + ws[i];
+        checkBoundary(sliceEndNs);
+      }
     }
 
     // Check instants

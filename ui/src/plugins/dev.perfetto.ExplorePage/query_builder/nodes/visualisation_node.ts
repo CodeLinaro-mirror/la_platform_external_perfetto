@@ -47,16 +47,7 @@ import {classNames} from '../../../../base/classnames';
 /**
  * Chart type options.
  */
-export type ChartType =
-  | 'bar'
-  | 'histogram'
-  | 'line'
-  | 'scatter'
-  | 'pie'
-  | 'treemap'
-  | 'boxplot'
-  | 'heatmap'
-  | 'cdf';
+export type ChartType = 'bar' | 'histogram';
 
 /**
  * Bar chart orientation options.
@@ -143,43 +134,6 @@ export function generateChartId(): string {
   return `chart-${crypto.randomUUID()}`;
 }
 
-/**
- * Generate a default display label for a chart config.
- * Used by both the node card and the chart view header.
- */
-export function getDefaultChartLabel(config: ChartConfig): string {
-  if (!config.column) return 'Not configured';
-  switch (config.chartType) {
-    case 'histogram':
-      return `Histogram: ${config.column}`;
-    case 'line':
-      return config.yColumn
-        ? `${config.yColumn} vs ${config.column}`
-        : `Line: ${config.column}`;
-    case 'scatter':
-      return config.yColumn
-        ? `${config.yColumn} vs ${config.column}`
-        : `Scatter: ${config.column}`;
-    case 'boxplot':
-      return config.measureColumn
-        ? `${config.measureColumn} by ${config.column}`
-        : `Boxplot: ${config.column}`;
-    case 'heatmap':
-      return config.yColumn
-        ? `${config.column} vs ${config.yColumn}`
-        : `Heatmap: ${config.column}`;
-    case 'cdf':
-      return `CDF: ${config.column}`;
-    case 'pie':
-    case 'treemap':
-    case 'bar': {
-      const agg = config.aggregation ?? 'COUNT';
-      if (agg === 'COUNT') return `Count by ${config.column}`;
-      return `${agg}(${config.measureColumn ?? config.column}) by ${config.column}`;
-    }
-  }
-}
-
 export interface VisualisationNodeState extends QueryNodeState {
   /** Array of chart configurations - multiple charts per node */
   chartConfigs: ChartConfig[];
@@ -225,12 +179,7 @@ export class VisualisationNode implements QueryNode {
    * axis; all other types accept any column.
    */
   getChartableColumns(chartType: ChartType): ColumnInfo[] {
-    if (
-      chartType === 'histogram' ||
-      chartType === 'line' ||
-      chartType === 'scatter' ||
-      chartType === 'cdf'
-    ) {
+    if (chartType === 'histogram') {
       return this.sourceCols.filter((col) => {
         const type = col.column.type;
         return type !== undefined && isQuantitativeType(type);
@@ -317,10 +266,11 @@ export class VisualisationNode implements QueryNode {
     const sections: NodeModifyAttrs['sections'] = [];
 
     // Chart cards container
-    const chartCards = this.state.chartConfigs.map((config) => {
+    const chartCards = this.state.chartConfigs.map((config, index) => {
       const chartTypeIcon =
         config.chartType === 'bar' ? 'bar_chart' : 'ssid_chart';
-      const defaultLabel = getDefaultChartLabel(config);
+      const chartTypeLabel = config.chartType === 'bar' ? 'Bar' : 'Histogram';
+      const columnLabel = config.column || 'Not configured';
 
       // Filters matching this chart's column
       const chartFilters = (this.state.chartFilters?.filter(
@@ -366,7 +316,9 @@ export class VisualisationNode implements QueryNode {
                 ? m('input.pf-chart-card__title-input', {
                     type: 'text',
                     value: config.name ?? '',
-                    placeholder: defaultLabel,
+                    placeholder: config.column
+                      ? `${chartTypeLabel}: ${columnLabel}`
+                      : `Chart ${index + 1}`,
                     oncreate: (vnode: m.VnodeDOM) => {
                       const input = vnode.dom as HTMLInputElement;
                       input.focus();
@@ -405,7 +357,10 @@ export class VisualisationNode implements QueryNode {
                       },
                       title: 'Click to rename',
                     },
-                    config.name ?? defaultLabel,
+                    config.name ??
+                      (config.column
+                        ? `${chartTypeLabel}: ${columnLabel}`
+                        : `Chart ${index + 1}`),
                   ),
             ]),
             // Actions

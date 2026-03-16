@@ -268,7 +268,6 @@ export class ChartSource {
     const groupByExprs = config.dimensions.map((d) => d.column);
     const direction = config.orderDirection ?? 'desc';
     const orderAlias = this.measureAlias(config.measures, 0);
-    const havingClause = this.buildHavingClause(config.measures);
     const limitClause =
       config.limit !== undefined ? `LIMIT ${config.limit}` : '';
 
@@ -278,7 +277,6 @@ SELECT
 FROM (${this.query})
 ${whereClause}
 GROUP BY ${groupByExprs.join(', ')}
-${havingClause}
 ORDER BY ${orderAlias} ${direction.toUpperCase()}
 ${limitClause}`.trim();
   }
@@ -323,7 +321,6 @@ WITH _agg AS (
   FROM (${this.query})
   ${whereClause}
   GROUP BY ${groupByExprs.join(', ')}
-  ${this.buildHavingClause(config.measures)}
   ORDER BY ${orderAlias} ${direction.toUpperCase()}
 ),
 _top AS (
@@ -368,7 +365,6 @@ WITH _agg AS (
   FROM (${this.query})
   ${whereClause}
   GROUP BY ${groupByExprs.join(', ')}
-  ${this.buildHavingClause(config.measures)}
 ),
 _ranked AS (
   SELECT
@@ -526,22 +522,6 @@ ORDER BY _bucket_idx`.trim();
     if (filters === undefined || filters.length === 0) return '';
     const conditions = filters.map((f) => `(${chartFilterToSql(f)})`);
     return `WHERE ${conditions.join(' AND ')}`;
-  }
-
-  /**
-   * Build a HAVING clause that excludes groups where any non-COUNT measure
-   * aggregated to NULL (i.e. all values in the group were NULL).
-   */
-  private buildHavingClause(measures: ReadonlyArray<MeasureSpec>): string {
-    const conditions: string[] = [];
-    for (const m of measures) {
-      if (m.aggregation === 'COUNT') continue;
-      conditions.push(
-        `${sqlAggregateExpr(m.aggregation, m.column)} IS NOT NULL`,
-      );
-    }
-    if (conditions.length === 0) return '';
-    return `HAVING ${conditions.join(' AND ')}`;
   }
 
   private dimAlias(dim: DimensionSpec, index: number): string {

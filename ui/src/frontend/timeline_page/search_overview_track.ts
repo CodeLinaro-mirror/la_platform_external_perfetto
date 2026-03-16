@@ -252,6 +252,8 @@ export class SearchOverviewTrack implements AsyncDisposable {
         ctx.closePath();
       }
     }
+
+    ctx.restore();
   }
 
   async [Symbol.asyncDispose](): Promise<void> {

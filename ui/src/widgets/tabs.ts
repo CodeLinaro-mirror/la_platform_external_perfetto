@@ -43,8 +43,6 @@ export interface TabsAttrs {
   onTabChange?(key: string): void;
   // Called when a tab's close button is clicked.
   onTabClose?(key: string): void;
-  // Called when a tab is double-clicked (e.g. for renaming).
-  onTabDblClick?(key: string): void;
   // Whether tabs can be reordered via drag and drop.
   readonly reorderable?: boolean;
   // Called when tabs are reordered. Receives the key of the dragged tab and
@@ -59,7 +57,6 @@ interface TabHandleAttrs {
   readonly hasCloseButton?: boolean;
   readonly onClose?: () => void;
   readonly onclick?: () => void;
-  readonly ondblclick?: () => void;
   readonly leftIcon?: string | m.Children;
   readonly tabKey?: string;
   readonly reorderable?: boolean;
@@ -77,7 +74,6 @@ class TabHandle implements m.ClassComponent<TabHandleAttrs> {
       hasCloseButton,
       onClose,
       onclick,
-      ondblclick,
       leftIcon,
       tabKey,
       reorderable,
@@ -104,7 +100,6 @@ class TabHandle implements m.ClassComponent<TabHandleAttrs> {
       {
         className: classNames(active && 'pf-tabs__tab--active'),
         onclick,
-        ondblclick,
         onauxclick: () => onClose?.(),
         draggable: reorderable,
         ondragstart: reorderable
@@ -175,7 +170,6 @@ export class Tabs implements m.ClassComponent<TabsAttrs> {
       activeTabKey,
       onTabChange,
       onTabClose,
-      onTabDblClick,
       reorderable,
       onTabReorder,
       className,
@@ -231,9 +225,6 @@ export class Tabs implements m.ClassComponent<TabsAttrs> {
                   this.internalActiveTab = tab.key;
                   onTabChange?.(tab.key);
                 },
-                ondblclick: onTabDblClick
-                  ? () => onTabDblClick(tab.key)
-                  : undefined,
                 onClose: () => onTabClose?.(tab.key),
                 onDragStart: (key) => {
                   this.draggedKey = key;

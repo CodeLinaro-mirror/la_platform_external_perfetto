@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {Card, CardStack} from '../../../widgets/card';
+import {Card} from '../../../widgets/card';
 import {Icon} from '../../../widgets/icon';
 import {QueryNode} from '../query_node';
 import {EXAMPLE_GRAPHS} from '../example_graphs';
@@ -29,7 +29,8 @@ function createKeyboardHandler(callback: () => void) {
   };
 }
 
-interface ActionCardAttrs {
+// Helper function to render template cards with consistent structure
+interface TemplateCardAttrs {
   readonly icon: string;
   readonly title: string;
   readonly description: string;
@@ -37,8 +38,7 @@ interface ActionCardAttrs {
   readonly onClick: () => void;
 }
 
-// Renders a prominent horizontal action card (for "New graph" / "Smart graph")
-function renderActionCard(attrs: ActionCardAttrs): m.Children {
+function renderTemplateCard(attrs: TemplateCardAttrs): m.Children {
   return m(
     Card,
     {
@@ -47,50 +47,16 @@ function renderActionCard(attrs: ActionCardAttrs): m.Children {
       'tabindex': 0,
       'role': 'button',
       'aria-label': attrs.ariaLabel,
-      'className': 'pf-nav-action-card',
+      'className': 'pf-template-card',
       'onkeydown': createKeyboardHandler(attrs.onClick),
     },
-    m('.pf-nav-action-card__icon', m(Icon, {icon: attrs.icon})),
     m(
-      '.pf-nav-action-card__text',
-      m('.pf-nav-action-card__title', attrs.title),
-      m('.pf-nav-action-card__desc', attrs.description),
+      '.pf-source-card-clickable',
+      m(Icon, {icon: attrs.icon}),
+      m('h3', attrs.title),
     ),
+    m('p', attrs.description),
   );
-}
-
-interface ListItemAttrs {
-  readonly icon: string;
-  readonly title: string;
-  readonly description: string;
-  readonly ariaLabel: string;
-  readonly onClick: () => void;
-}
-
-// Renders a compact horizontal list item (for tutorials/solutions)
-function renderListItem(attrs: ListItemAttrs): m.Children {
-  return m(
-    Card,
-    {
-      'interactive': true,
-      'onclick': attrs.onClick,
-      'tabindex': 0,
-      'role': 'button',
-      'aria-label': attrs.ariaLabel,
-      'className': 'pf-nav-list-item',
-      'onkeydown': createKeyboardHandler(attrs.onClick),
-    },
-    m('.pf-nav-list-item__icon', m(Icon, {icon: attrs.icon})),
-    m(
-      '.pf-nav-list-item__text',
-      m('.pf-nav-list-item__title', attrs.title),
-      m('.pf-nav-list-item__desc', attrs.description),
-    ),
-  );
-}
-
-function renderSectionHeader(title: string): m.Children {
-  return m('.pf-nav-section-header', m('span', title));
 }
 
 export interface NavigationSidePanelAttrs {
@@ -110,18 +76,18 @@ export class NavigationSidePanel
 
     // Show template buttons when nothing is selected
     if (!attrs.selectedNode) {
-      // Primary action cards
+      // Top two cards: Clear graph and Preloaded tables
       results.push(
         m(
-          '.pf-nav-actions',
-          renderActionCard({
+          '.pf-top-cards',
+          renderTemplateCard({
             icon: 'draft',
             title: 'New graph',
             description: 'Start with empty canvas',
             ariaLabel: 'New graph',
             onClick: () => attrs.onLoadEmptyTemplate?.(),
           }),
-          renderActionCard({
+          renderTemplateCard({
             icon: 'auto_fix_high',
             title: 'Smart graph',
             description: 'Tailored for your trace data',
@@ -133,72 +99,62 @@ export class NavigationSidePanel
 
       // Tutorials section
       results.push(
+        m('h4.pf-starting-section-title', 'Tutorials'),
         m(
-          '.pf-nav-section',
-          renderSectionHeader('Tutorials'),
-          m(
-            CardStack,
-            {className: 'pf-nav-list'},
-            renderListItem({
-              icon: 'school',
-              title: 'Graph 101',
-              description:
-                'Node docking, filtering, adding nodes, and multi-child workflows',
-              ariaLabel: 'Start Graph 101 tutorial',
-              onClick: () =>
-                attrs.onLoadExampleByPath?.(
-                  'assets/explore_page/examples/learning.json',
-                ),
-            }),
-            renderListItem({
-              icon: 'join_inner',
-              title: 'Joins',
-              description: 'Combine data from multiple sources using joins',
-              ariaLabel: 'Start Joins tutorial',
-              onClick: () =>
-                attrs.onLoadExampleByPath?.(
-                  'assets/explore_page/examples/joins_learning.json',
-                ),
-            }),
-            renderListItem({
-              icon: 'schedule',
-              title: 'Time',
-              description: 'Filter and analyze data using time-based queries',
-              ariaLabel: 'Start Time tutorial',
-              onClick: () =>
-                attrs.onLoadExampleByPath?.(
-                  'assets/explore_page/examples/time_learning.json',
-                ),
-            }),
-          ),
+          '.pf-tutorial-cards',
+          renderTemplateCard({
+            icon: 'school',
+            title: 'Graph 101',
+            description:
+              'Interactive tutorial covering node docking, filtering, adding nodes, and multi-child workflows',
+            ariaLabel: 'Start Graph 101 tutorial',
+            onClick: () =>
+              attrs.onLoadExampleByPath?.(
+                'assets/explore_page/examples/learning.json',
+              ),
+          }),
+          renderTemplateCard({
+            icon: 'join_inner',
+            title: 'Joins',
+            description:
+              'Learn how to combine data from multiple sources using joins',
+            ariaLabel: 'Start Joins tutorial',
+            onClick: () =>
+              attrs.onLoadExampleByPath?.(
+                'assets/explore_page/examples/joins_learning.json',
+              ),
+          }),
+          renderTemplateCard({
+            icon: 'schedule',
+            title: 'Time',
+            description:
+              'Learn how to filter and analyze data using time-based queries',
+            ariaLabel: 'Start Time tutorial',
+            onClick: () =>
+              attrs.onLoadExampleByPath?.(
+                'assets/explore_page/examples/time_learning.json',
+              ),
+          }),
         ),
       );
 
-      // Solutions section
+      // Solutions section - filter out the Learning example since it's now Graph 101
       const solutionExamples = EXAMPLE_GRAPHS.filter(
         (example) => example.name !== 'Learning',
       );
 
       if (solutionExamples.length > 0) {
-        results.push(
-          m(
-            '.pf-nav-section',
-            renderSectionHeader('Solutions'),
-            m(
-              CardStack,
-              {className: 'pf-nav-list'},
-              ...solutionExamples.map((example) =>
-                renderListItem({
-                  icon: 'auto_stories',
-                  title: example.name,
-                  description: example.description,
-                  ariaLabel: `Load ${example.name} example`,
-                  onClick: () => attrs.onLoadExampleByPath?.(example.jsonPath),
-                }),
-              ),
-            ),
-          ),
+        results.push(m('h4.pf-starting-section-title', 'Solutions'));
+        const solutionCards = solutionExamples.map((example) =>
+          renderTemplateCard({
+            icon: 'auto_stories',
+            title: example.name,
+            description: example.description,
+            ariaLabel: `Load ${example.name} example`,
+            onClick: () => attrs.onLoadExampleByPath?.(example.jsonPath),
+          }),
         );
+        results.push(m('.pf-solution-cards', ...solutionCards));
       }
 
       // Recent graphs section

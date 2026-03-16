@@ -72,7 +72,7 @@ interface Data {
   colorSchemes: ColorScheme[];
   // Relative timestamps for fast rendering (relative to data.start)
   startRelNs: Float32Array;
-  endRelNs: Float32Array;
+  durRelNs: Float32Array;
   // Pre-computed Y positions in screen pixels
   ys: Float32Array;
   // Working buffer for per-frame color computation (reused each frame)
@@ -381,7 +381,7 @@ export class GroupSummaryTrack implements TrackRenderer {
       colorSchemes: new Array(numRows),
       // Relative timestamps for fast rendering
       startRelNs: new Float32Array(numRows),
-      endRelNs: new Float32Array(numRows),
+      durRelNs: new Float32Array(numRows),
       // Pre-computed Y positions in screen pixels
       ys: new Float32Array(numRows),
       // Working buffer for per-frame color computation
@@ -423,7 +423,7 @@ export class GroupSummaryTrack implements TrackRenderer {
 
       // Store relative timestamps as floats for fast rendering
       slices.startRelNs[row] = Number(ts - start);
-      slices.endRelNs[row] = Number(endTs - start);
+      slices.durRelNs[row] = Number(dur);
 
       // Pre-compute Y position in screen pixels
       const lane = it.lane;
@@ -624,16 +624,16 @@ export class GroupSummaryTrack implements TrackRenderer {
     }
 
     // Draw all rects in one batch call
-    // starts and ends are in data space (nanoseconds relative to data.start)
-    // dataTransform converts: screenPos = dataPos * scaleX + offsetX
+    // xs and ws are in data space (nanoseconds relative to data.start)
+    // dataTransform converts: screenX = xs * scaleX + offsetX
     const pxPerNs = timescale.durationToPx(1n);
     const baseOffsetPx = timescale.timeToPx(data.start);
 
     renderer.drawRects(
       {
-        starts: data.startRelNs,
-        ends: data.endRelNs,
+        xs: data.startRelNs,
         ys: data.ys,
+        ws: data.durRelNs,
         h: laneHeight,
         colors: renderColors,
         patterns: data.patterns,

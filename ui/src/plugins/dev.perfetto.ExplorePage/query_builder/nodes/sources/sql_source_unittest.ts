@@ -529,10 +529,11 @@ describe('SqlSourceNode', () => {
 
       const result = node.nodeSpecificModify();
 
-      // Verify it returns a vnode with the SqlEditor component
+      // Verify it returns a vnode with the expected structure
+      // In Mithril, m('.class') creates a div with that class
       expect(result).toBeDefined();
       expect(typeof result).toBe('object');
-      expect(typeof (result as {tag: unknown}).tag).toBe('function');
+      expect((result as {tag: string}).tag).toBe('div');
     });
   });
 });

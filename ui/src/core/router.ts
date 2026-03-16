@@ -124,10 +124,6 @@ export class Router {
     this.onRouteChanged(newRoute);
   }
 
-  static getCurrentRoute(): Route {
-    return Router.parseUrl(window.location.href);
-  }
-
   static navigate(newHash: string) {
     assertTrue(newHash.startsWith(ROUTE_PREFIX));
     window.location.hash = newHash;

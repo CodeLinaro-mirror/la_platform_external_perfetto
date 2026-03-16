@@ -15,6 +15,7 @@
 import {defineConfig} from '@playwright/test';
 import * as os from 'os';
 
+const isMac = os.platform() === 'darwin';
 const isCi = Boolean(process.env.CI);
 const outDir = process.env.OUT_DIR ?? '../out/ui';
 
@@ -39,8 +40,9 @@ export default defineConfig({
   expect: {
     timeout: 5000,
     toHaveScreenshot: {
-      // Allow for very small differences between rasterizers on different platforms.
-      maxDiffPixels: 1,
+      // Rendering is not 100% identical on Mac. Be more tolerant.
+      // Otherwise, allow for small differences between rasterizers on different platforms.
+      maxDiffPixelRatio: isMac ? 0.05 : undefined,
     },
   },
 

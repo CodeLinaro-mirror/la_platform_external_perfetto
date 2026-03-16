@@ -87,8 +87,7 @@ jobs:
 
               // Get commit info for the new entry
               const commitSha = context.sha.substring(0, 7);
-              const d = new Date();
-              const commitDate = d.toISOString().replace('T', ' ').substring(0, 16) + ' UTC';
+              const commitDate = new Date().toISOString().split('T')[0];
               const newEntry = `- **${commitSha}** (${commitDate}): ${uiBuildUrl}`;
 
               // Get existing comments

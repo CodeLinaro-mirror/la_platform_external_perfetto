@@ -175,36 +175,36 @@ describe('clipboard_operations', () => {
   });
 
   describe('pasteClipboardNodes', () => {
-    it('should return undefined when clipboard is undefined', () => {
-      const result = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        undefined,
-      );
+    it('should return undefined when clipboard is empty', () => {
+      const result = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes: undefined,
+      });
       expect(result).toBeUndefined();
     });
 
     it('should return undefined when clipboard has zero entries', () => {
-      const result = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        {clipboardNodes: [], clipboardConnections: []},
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes: [],
+      });
       expect(result).toBeUndefined();
     });
 
     it('should append cloned nodes to rootNodes', () => {
       const existing = createMockNode({nodeId: 'existing'});
       const clipNode = createMockNode({nodeId: 'clip'});
-      const clipboard = {
-        clipboardNodes: [
-          {node: clipNode, relativeX: 0, relativeY: 0, isDocked: false},
-        ] as ClipboardEntry[],
-        clipboardConnections: [] as ClipboardConnection[],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: clipNode, relativeX: 0, relativeY: 0, isDocked: false},
+      ];
 
-      const result = pasteClipboardNodes(
-        {rootNodes: [existing], nodeLayouts: new Map()},
-        clipboard,
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [existing],
+        nodeLayouts: new Map(),
+        clipboardNodes,
+      });
 
       expect(result).toBeDefined();
       // Original node + pasted node
@@ -216,17 +216,15 @@ describe('clipboard_operations', () => {
 
     it('should select only the newly pasted nodes', () => {
       const clipNode = createMockNode({nodeId: 'clip'});
-      const clipboard = {
-        clipboardNodes: [
-          {node: clipNode, relativeX: 0, relativeY: 0, isDocked: false},
-        ] as ClipboardEntry[],
-        clipboardConnections: [] as ClipboardConnection[],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: clipNode, relativeX: 0, relativeY: 0, isDocked: false},
+      ];
 
-      const result = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        clipboard,
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes,
+      });
 
       expect(result).toBeDefined();
       expect(result?.selectedNodes.size).toBe(1);
@@ -237,17 +235,15 @@ describe('clipboard_operations', () => {
 
     it('should add layout positions for undocked nodes with offset', () => {
       const clipNode = createMockNode({nodeId: 'clip'});
-      const clipboard = {
-        clipboardNodes: [
-          {node: clipNode, relativeX: 100, relativeY: 200, isDocked: false},
-        ] as ClipboardEntry[],
-        clipboardConnections: [] as ClipboardConnection[],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: clipNode, relativeX: 100, relativeY: 200, isDocked: false},
+      ];
 
-      const result = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        clipboard,
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes,
+      });
 
       expect(result).toBeDefined();
       const pastedNodeId = result?.rootNodes[0].nodeId ?? '';
@@ -260,17 +256,15 @@ describe('clipboard_operations', () => {
 
     it('should not add layout for docked nodes', () => {
       const clipNode = createMockNode({nodeId: 'clip'});
-      const clipboard = {
-        clipboardNodes: [
-          {node: clipNode, relativeX: 0, relativeY: 0, isDocked: true},
-        ] as ClipboardEntry[],
-        clipboardConnections: [] as ClipboardConnection[],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: clipNode, relativeX: 0, relativeY: 0, isDocked: true},
+      ];
 
-      const result = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        clipboard,
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes,
+      });
 
       expect(result).toBeDefined();
       const pastedNodeId = result?.rootNodes[0].nodeId ?? '';
@@ -289,25 +283,21 @@ describe('clipboard_operations', () => {
         sqlModules: mockSqlModules,
       });
 
-      const clipboard = {
-        clipboardNodes: [
-          {node: realNode, relativeX: 0, relativeY: 0, isDocked: false},
-        ] as ClipboardEntry[],
-        clipboardConnections: [] as ClipboardConnection[],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: realNode, relativeX: 0, relativeY: 0, isDocked: false},
+      ];
 
-      const result1 = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        clipboard,
-      );
+      const result1 = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes,
+      });
 
-      const result2 = pasteClipboardNodes(
-        {
-          rootNodes: result1?.rootNodes ?? [],
-          nodeLayouts: result1?.nodeLayouts ?? new Map(),
-        },
-        clipboard,
-      );
+      const result2 = pasteClipboardNodes({
+        rootNodes: result1?.rootNodes ?? [],
+        nodeLayouts: result1?.nodeLayouts ?? new Map(),
+        clipboardNodes,
+      });
 
       expect(result2).toBeDefined();
       expect(result2?.rootNodes).toHaveLength(2);
@@ -320,18 +310,20 @@ describe('clipboard_operations', () => {
     it('should restore connections between pasted nodes', () => {
       const parent = createMockNode({nodeId: 'p', type: NodeType.kTable});
       const child = createMockNode({nodeId: 'c', type: NodeType.kFilter});
-      const clipboard = {
-        clipboardNodes: [
-          {node: parent, relativeX: 0, relativeY: 0, isDocked: false},
-          {node: child, relativeX: 0, relativeY: 100, isDocked: false},
-        ] as ClipboardEntry[],
-        clipboardConnections: [{fromIndex: 0, toIndex: 1}],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: parent, relativeX: 0, relativeY: 0, isDocked: false},
+        {node: child, relativeX: 0, relativeY: 100, isDocked: false},
+      ];
+      const clipboardConnections: ClipboardConnection[] = [
+        {fromIndex: 0, toIndex: 1},
+      ];
 
-      const result = pasteClipboardNodes(
-        {rootNodes: [], nodeLayouts: new Map()},
-        clipboard,
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [],
+        nodeLayouts: new Map(),
+        clipboardNodes,
+        clipboardConnections,
+      });
 
       expect(result).toBeDefined();
       expect(result?.rootNodes).toHaveLength(2);
@@ -345,17 +337,15 @@ describe('clipboard_operations', () => {
       const existing = createMockNode({nodeId: 'existing'});
       const clipNode = createMockNode({nodeId: 'clip'});
       const existingLayouts = new Map([['existing', {x: 500, y: 600}]]);
-      const clipboard = {
-        clipboardNodes: [
-          {node: clipNode, relativeX: 0, relativeY: 0, isDocked: false},
-        ] as ClipboardEntry[],
-        clipboardConnections: [] as ClipboardConnection[],
-      };
+      const clipboardNodes: ClipboardEntry[] = [
+        {node: clipNode, relativeX: 0, relativeY: 0, isDocked: false},
+      ];
 
-      const result = pasteClipboardNodes(
-        {rootNodes: [existing], nodeLayouts: existingLayouts},
-        clipboard,
-      );
+      const result = pasteClipboardNodes({
+        rootNodes: [existing],
+        nodeLayouts: existingLayouts,
+        clipboardNodes,
+      });
 
       expect(result).toBeDefined();
       expect(result?.nodeLayouts.get('existing')).toEqual({x: 500, y: 600});
