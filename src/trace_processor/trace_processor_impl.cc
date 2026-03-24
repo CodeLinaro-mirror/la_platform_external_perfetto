@@ -71,6 +71,7 @@
 #include "src/trace_processor/importers/perf/spe_record_parser.h"
 #include "src/trace_processor/importers/perf_text/perf_text_trace_tokenizer.h"
 #include "src/trace_processor/importers/pprof/pprof_trace_reader.h"
+#include "src/trace_processor/importers/primes/primes_trace_tokenizer.h"
 #include "src/trace_processor/importers/proto/additional_modules.h"
 #include "src/trace_processor/importers/proto/deobfuscation_tracker.h"
 #include "src/trace_processor/importers/proto/heap_graph_tracker.h"
@@ -152,7 +153,6 @@
 #include "src/trace_processor/util/gzip_utils.h"
 #include "src/trace_processor/util/protozero_to_json.h"
 #include "src/trace_processor/util/protozero_to_text.h"
-#include "src/trace_processor/util/regex.h"
 #include "src/trace_processor/util/sql_modules.h"
 #include "src/trace_processor/util/trace_type.h"
 
@@ -558,6 +558,8 @@ TraceProcessorImpl::TraceProcessorImpl(const Config& cfg)
           kSimpleperfProtoTraceType);
   context()->reader_registry->RegisterTraceReader<TarTraceReader>(
       kTarTraceType);
+  context()->reader_registry->RegisterTraceReader<primes::PrimesTraceTokenizer>(
+      kPrimesTraceType);
 
   // Force initialization of heap graph tracker.
   //
@@ -1249,10 +1251,9 @@ std::unique_ptr<PerfettoSqlEngine> TraceProcessorImpl::InitPerfettoSqlEngine(
       engine.get(),
       std::make_unique<PerfCounterForSampleFunction::Context>(storage));
 
-  if constexpr (regex::IsRegexSupported()) {
-    RegisterFunction<Regexp>(engine.get());
-    RegisterFunction<RegexpExtract>(engine.get());
-  }
+  RegisterFunction<Regexp>(engine.get());
+  RegisterFunction<RegexpExtract>(engine.get());
+  RegisterFunction<RegexpReplaceSimple>(engine.get());
 
   RegisterFunction<UnHex>(engine.get());
 
