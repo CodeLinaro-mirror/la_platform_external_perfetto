@@ -18,8 +18,6 @@ import {Gate} from '../base/mithril_utils';
 import {Button} from './button';
 import {Icon} from './icon';
 import {Icons} from '../base/semantic_icons';
-import {PopupMenu} from './menu';
-import {PopupPosition} from './popup';
 import {maybeUndefined} from '../base/utils';
 
 export interface TabsTab {
@@ -33,9 +31,6 @@ export interface TabsTab {
   readonly closeButton?: boolean;
   // Icon to display on the left side of the tab title.
   readonly leftIcon?: string | m.Children;
-  // Optional menu items to show in a dropdown menu on the tab.
-  // When provided, a menu button appears on hover.
-  readonly menuItems?: m.Children;
 }
 
 export interface TabsAttrs {
@@ -48,22 +43,13 @@ export interface TabsAttrs {
   onTabChange?(key: string): void;
   // Called when a tab's close button is clicked.
   onTabClose?(key: string): void;
-  // Called when a tab's title is renamed via inline editing. When set, tabs
-  // with a string title become renamable on double-click (tabs with non-string
-  // titles are not affected). If the input is cleared (empty after trim) or
-  // Escape is pressed, the rename is cancelled and this callback is not fired.
-  onTabRename?(key: string, newTitle: string): void;
+  // Called when a tab is double-clicked (e.g. for renaming).
+  onTabDblClick?(key: string): void;
   // Whether tabs can be reordered via drag and drop.
   readonly reorderable?: boolean;
   // Called when tabs are reordered. Receives the key of the dragged tab and
   // the key of the tab it was dropped before (or undefined if dropped at end).
   onTabReorder?(draggedKey: string, beforeKey: string | undefined): void;
-  // Called when the "new tab" button is clicked. When set, a "+" button is
-  // shown at the end of the tab bar.
-  onNewTab?(): void;
-  // Custom content to render in place of the default "+" button. When set,
-  // onNewTab is ignored and this content is rendered instead.
-  readonly newTabContent?: m.Children;
   // Additional class name for the container.
   readonly className?: string;
 }
@@ -72,22 +58,16 @@ interface TabHandleAttrs {
   readonly active?: boolean;
   readonly hasCloseButton?: boolean;
   readonly onClose?: () => void;
-  readonly onpointerdown?: () => void;
+  readonly onclick?: () => void;
   readonly ondblclick?: () => void;
   readonly leftIcon?: string | m.Children;
   readonly tabKey?: string;
   readonly reorderable?: boolean;
-  readonly renaming?: boolean;
-  readonly renameValue?: string;
-  readonly onRenameInput?: (value: string) => void;
-  readonly onRenameCommit?: () => void;
-  readonly onRenameCancel?: () => void;
   readonly onDragStart?: (key: string) => void;
   readonly onDragEnd?: () => void;
   readonly onDragOver?: (key: string, position: 'before' | 'after') => void;
   readonly onDragLeave?: () => void;
   readonly onDrop?: (key: string) => void;
-  readonly menuItems?: m.Children;
 }
 
 class TabHandle implements m.ClassComponent<TabHandleAttrs> {
@@ -96,39 +76,34 @@ class TabHandle implements m.ClassComponent<TabHandleAttrs> {
       active,
       hasCloseButton,
       onClose,
-      onpointerdown,
+      onclick,
       ondblclick,
       leftIcon,
       tabKey,
       reorderable,
-      renaming,
-      renameValue,
-      onRenameInput,
-      onRenameCommit,
-      onRenameCancel,
       onDragStart,
       onDragEnd,
       onDragOver,
       onDragLeave,
       onDrop,
-      menuItems,
     } = attrs;
 
     const renderLeftIcon = () => {
       if (leftIcon === undefined) {
         return undefined;
       }
+      const style = {alignSelf: 'center'};
       if (typeof leftIcon === 'string') {
-        return m(Icon, {icon: leftIcon, className: 'pf-tabs__tab-icon'});
+        return m(Icon, {icon: leftIcon, className: 'pf-tabs__tab-icon', style});
       }
-      return m('.pf-tabs__tab-icon', leftIcon);
+      return m('.pf-tabs__tab-icon', {style}, leftIcon);
     };
 
     return m(
       '.pf-tabs__tab',
       {
         className: classNames(active && 'pf-tabs__tab--active'),
-        onpointerdown,
+        onclick,
         ondblclick,
         onauxclick: () => onClose?.(),
         draggable: reorderable,
@@ -172,45 +147,7 @@ class TabHandle implements m.ClassComponent<TabHandleAttrs> {
           : undefined,
       },
       renderLeftIcon(),
-      renaming
-        ? m('input.pf-tabs__tab-rename-input', {
-            value: renameValue,
-            oncreate: (vnode: m.VnodeDOM) => {
-              const el = vnode.dom as HTMLInputElement;
-              el.focus();
-              el.select();
-            },
-            oninput: (e: InputEvent) => {
-              const target = e.target as HTMLInputElement;
-              onRenameInput?.(target.value);
-            },
-            onkeydown: (e: KeyboardEvent) => {
-              if (e.key === 'Enter') {
-                onRenameCommit?.();
-                e.preventDefault();
-              } else if (e.key === 'Escape') {
-                onRenameCancel?.();
-                e.preventDefault();
-              }
-              e.stopPropagation();
-            },
-            onblur: () => onRenameCommit?.(),
-            onclick: (e: Event) => e.stopPropagation(),
-          })
-        : m('.pf-tabs__tab-title', children),
-      menuItems !== undefined &&
-        m(
-          PopupMenu,
-          {
-            trigger: m(Button, {
-              compact: true,
-              icon: Icons.ContextMenuAlt,
-              className: 'pf-tabs__tab-menu-btn',
-            }),
-            position: PopupPosition.Bottom,
-          },
-          menuItems,
-        ),
+      m('.pf-tabs__tab-title', children),
       hasCloseButton &&
         m(Button, {
           compact: true,
@@ -231,10 +168,6 @@ export class Tabs implements m.ClassComponent<TabsAttrs> {
   private draggedKey?: string;
   private dropTargetKey?: string;
   private dropPosition?: 'before' | 'after';
-  // Rename state.
-  private renamingTabKey?: string;
-  private renameInputValue = '';
-  private renameCancelled = false;
 
   view({attrs}: m.CVnode<TabsAttrs>): m.Children {
     const {
@@ -242,11 +175,9 @@ export class Tabs implements m.ClassComponent<TabsAttrs> {
       activeTabKey,
       onTabChange,
       onTabClose,
-      onTabRename,
+      onTabDblClick,
       reorderable,
       onTabReorder,
-      onNewTab,
-      newTabContent,
       className,
     } = attrs;
 
@@ -294,41 +225,15 @@ export class Tabs implements m.ClassComponent<TabsAttrs> {
                 active: tab.key === activeKey,
                 hasCloseButton: tab.closeButton,
                 leftIcon: tab.leftIcon,
-                menuItems: tab.menuItems,
                 tabKey: tab.key,
                 reorderable,
-                onpointerdown: () => {
+                onclick: () => {
                   this.internalActiveTab = tab.key;
                   onTabChange?.(tab.key);
                 },
-                ondblclick: onTabRename
-                  ? () => {
-                      if (typeof tab.title === 'string') {
-                        this.renameInputValue = tab.title;
-                        this.renamingTabKey = tab.key;
-                        this.renameCancelled = false;
-                      }
-                    }
+                ondblclick: onTabDblClick
+                  ? () => onTabDblClick(tab.key)
                   : undefined,
-                ...(this.renamingTabKey === tab.key && {
-                  renaming: true,
-                  renameValue: this.renameInputValue,
-                  onRenameInput: (value: string) => {
-                    this.renameInputValue = value;
-                  },
-                  onRenameCommit: () => {
-                    if (this.renameCancelled) return;
-                    const newName = this.renameInputValue.trim();
-                    if (newName) {
-                      onTabRename?.(tab.key, newName);
-                    }
-                    this.renamingTabKey = undefined;
-                  },
-                  onRenameCancel: () => {
-                    this.renameCancelled = true;
-                    this.renamingTabKey = undefined;
-                  },
-                }),
                 onClose: () => onTabClose?.(tab.key),
                 onDragStart: (key) => {
                   this.draggedKey = key;
@@ -374,13 +279,6 @@ export class Tabs implements m.ClassComponent<TabsAttrs> {
             ),
           );
         }),
-        newTabContent ??
-          (onNewTab &&
-            m(Button, {
-              icon: Icons.Add,
-              className: 'pf-tabs__new-tab-btn',
-              onclick: () => onNewTab(),
-            })),
       ),
       m(
         '.pf-tabs__content',

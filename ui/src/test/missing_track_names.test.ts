@@ -27,7 +27,5 @@ test.beforeAll(async ({browser}, _testInfo) => {
 });
 
 test('trace loaded', async () => {
-  await pth.waitForIdleAndScreenshot('trace_loaded.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('trace_loaded.png');
 });

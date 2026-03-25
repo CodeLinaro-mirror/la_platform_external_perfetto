@@ -716,8 +716,7 @@ message TraceConfig {
     //  - any field in both the overlay and bytecode_v2 takes the value in the
     //    overlay, the bytecode_v2 value is ignored.
     //
-    // Note: despite the name, this was broken in v54 (the overlay was not
-    // passed through to the bytecode parser). Only works in v55+.
+    // Introduced in: Perfetto v54.
     optional bytes bytecode_overlay_v54 = 4;
 
     // String filter chain for Perfetto v54+. Rules in this chain either

@@ -51,10 +51,11 @@ export async function createVisualizedArgsTrack({
         thread_dur: LONG_NULL,
       },
       src: `
-        select s.id, s.ts, s.dur, args.display_value as name, s.track_id, s.thread_dur
-        from slice s
-        join args using (arg_set_id)
-        where args.key = '${argName}'
+        select id, ts, dur, name, track_id, thread_dur
+        from slice
+        where arg_set_id in (
+          select arg_set_id from args where key = '${argName}'
+        )
       `,
       filter: {
         col: 'track_id',

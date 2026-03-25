@@ -51,7 +51,5 @@ test('kernel trackevent tracks', async () => {
   await ThreadGrp.scrollIntoViewIfNeeded();
   await pth.toggleTrackGroup(ThreadGrp);
 
-  await pth.waitForIdleAndScreenshot('ftrace_kernel_trackevent.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('ftrace_kernel_trackevent.png');
 });

@@ -17,39 +17,37 @@ import {
   QueryResponse,
   runQueryForQueryTable,
 } from '../../components/query_table/queries';
-import {DataSource} from '../../components/widgets/datagrid/data_source';
-import {InMemoryDataSource} from '../../components/widgets/datagrid/in_memory_data_source';
+import {QueryResultsTable} from './query_table';
 import {Trace} from '../../public/trace';
 import {Tab} from '../../public/tab';
-import {DetailsShell} from '../../widgets/details_shell';
-import {ResultsData, ResultsTable} from './results_table';
 
 interface QueryResultTabConfig {
   readonly query: string;
   readonly title: string;
+  // Optional data to display in this tab instead of fetching it again
+  // (e.g. when duplicating an existing tab which already has the data).
+  readonly prefetchedResponse?: QueryResponse;
 }
 
-export class QueryResultsTab implements Tab {
+export class QueryResultTab implements Tab {
   private queryResponse?: QueryResponse;
-  private dataSource?: DataSource;
 
   constructor(
     private readonly trace: Trace,
     private readonly args: QueryResultTabConfig,
   ) {
-    // Run the query and load data when the tab is created
-    this.loadData();
+    this.initTrack();
   }
 
-  private async loadData() {
-    const result = await runQueryForQueryTable(
-      this.args.query,
-      this.trace.engine,
-    );
-    this.queryResponse = result;
-
-    if (result.error === undefined) {
-      this.dataSource = new InMemoryDataSource(this.queryResponse.rows);
+  private async initTrack() {
+    if (this.args.prefetchedResponse !== undefined) {
+      this.queryResponse = this.args.prefetchedResponse;
+    } else {
+      const result = await runQueryForQueryTable(
+        this.args.query,
+        this.trace.engine,
+      );
+      this.queryResponse = result;
     }
   }
 
@@ -61,44 +59,11 @@ export class QueryResultsTab implements Tab {
   }
 
   render(): m.Children {
-    const resp = this.queryResponse;
-
-    return m(
-      DetailsShell,
-      {
-        title: this.args.title,
-        description: resp ? this.args.query : 'Loading...',
-      },
-      resp && this.renderResponse(resp),
-    );
-  }
-
-  private renderResponse(resp: QueryResponse): m.Children {
-    const data: ResultsData = resp.error
-      ? {kind: 'error', errorMessage: resp.error}
-      : {
-          kind: 'success',
-          columns: resp.columns,
-          rows: resp.rows,
-          dataSource: this.dataSource!,
-          rowCount: resp.totalRowCount,
-          queryTimeMs: resp.durationMs,
-          query: this.args.query,
-          lastStatementSql: resp.lastStatementSql,
-          statementCount: resp.statementCount,
-          statementWithOutputCount: resp.statementWithOutputCount,
-        };
-
-    return m(ResultsTable, {
-      data,
-      fillHeight: true,
+    return m(QueryResultsTable, {
+      isLoading: this.isLoading(),
       trace: this.trace,
-      onIdClick: (sqlTable, id, doubleClick) => {
-        this.trace.selection.selectSqlEvent(sqlTable, id, {
-          switchToCurrentSelectionTab: doubleClick,
-          scrollToSelection: true,
-        });
-      },
+      resp: this.queryResponse,
+      fillHeight: true,
     });
   }
 

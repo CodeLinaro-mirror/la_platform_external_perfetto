@@ -40,9 +40,7 @@ test('cpu funcgraph', async () => {
     funcgraphGrp,
   );
   await funcgraph.scrollIntoViewIfNeeded();
-  await pth.waitForIdleAndScreenshot('cpu_funcgraph.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('cpu_funcgraph.png');
 });
 
 test('thread funcgraph', async () => {
@@ -54,7 +52,5 @@ test('thread funcgraph', async () => {
     grp,
   );
   await funcgraph.scrollIntoViewIfNeeded();
-  await pth.waitForIdleAndScreenshot('thread_funcgraph.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('thread_funcgraph.png');
 });

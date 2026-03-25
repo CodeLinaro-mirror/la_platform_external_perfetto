@@ -17,40 +17,16 @@
 .pf-segmented-buttons {
   display: inline-flex;
   flex-direction: row;
-  align-items: baseline;
-  gap: 2px;
-  padding: 2px;
-  border-radius: $border-radius-large;
-  background: color-mix(
-    in srgb,
-    transparent,
-    var(--pf-color-interactive-base) 10%
-  );
-
-  &--fill-width {
-    display: flex;
-
-    .pf-button {
-      flex: 1;
-    }
-  }
 
   .pf-button {
-    border-radius: $border-radius;
-    background: transparent;
-    color: var(--pf-color-text-muted);
+    border-radius: 0;
 
-    &:hover {
-      background: color-mix(
-        in srgb,
-        transparent,
-        var(--pf-color-interactive-base) 10%
-      );
+    &:first-child {
+      border-radius: $border-radius 0 0 $border-radius;
     }
 
-    &.pf-active {
-      background: var(--pf-color-background);
-      color: var(--pf-color-text);
+    &:last-child {
+      border-radius: 0 $border-radius $border-radius 0;
     }
   }
 }

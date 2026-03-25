@@ -27,16 +27,15 @@ export function renderSwitch(): m.Children {
       ),
     ),
     renderWidgetShowcase({
-      renderWidget: ({label, labelLeft, showInlineText, ...opts}) => {
-        const switchWidget = m(Switch, {
-          label: label ? 'Switch' : undefined,
-          labelLeft: labelLeft ? 'Switch' : undefined,
+      renderWidget: ({label, labelLeft, showInlineText, ...opts}) => [
+        showInlineText && 'Before',
+        m(Switch, {
+          label: label ? 'Checkbox' : undefined,
+          labelLeft: labelLeft ? 'Checkbox' : undefined,
           ...opts,
-        });
-        return showInlineText
-          ? m('span', 'Inline ', switchWidget, ' text')
-          : switchWidget;
-      },
+        }),
+        showInlineText && 'after',
+      ],
       initialOpts: {
         label: true,
         labelLeft: false,

@@ -280,7 +280,11 @@ void SurfaceFlingerLayersParser::ParseDisplay(
             ->InternString(display_decoder.name());
   }
 
-  display.is_on = display_decoder.layer_stack() != INVALID_LAYER_STACK;
+  if (display_decoder.has_layer_stack()) {
+    display.is_on = display_decoder.layer_stack() != INVALID_LAYER_STACK;
+  } else {
+    display.is_on = false;
+  }
   display.display_id = static_cast<int64_t>(display_decoder.id());
 
   const auto& rect_id =

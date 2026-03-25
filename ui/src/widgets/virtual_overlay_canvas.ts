@@ -48,9 +48,6 @@ export interface VirtualOverlayCanvasDrawContext {
   // Canvas rendering context.
   readonly ctx: CanvasRenderingContext2D;
 
-  // The virtual canvas DOM element.
-  readonly dom: Element;
-
   // The size of the virtual canvas element.
   readonly virtualCanvasSize: Size2D;
 
@@ -130,7 +127,6 @@ export class VirtualOverlayCanvas
   private attrs?: VirtualOverlayCanvasAttrs;
   private webglCanvas?: HTMLCanvasElement;
   private webglRenderer?: WebGLRenderer;
-  private dom?: Element;
 
   view({attrs, children}: m.CVnode<VirtualOverlayCanvasAttrs>) {
     this.attrs = attrs;
@@ -166,7 +162,6 @@ export class VirtualOverlayCanvas
   }
 
   oncreate({attrs, dom}: m.CVnodeDOM<VirtualOverlayCanvasAttrs>) {
-    this.dom = dom;
     const canvasContainerElement = toHTMLElement(
       assertExists(findRef(dom, CANVAS_CONTAINER_REF)),
     );
@@ -276,8 +271,6 @@ export class VirtualOverlayCanvas
   private redrawCanvas() {
     const ctx = assertExists(this.ctx);
     const virtualCanvas = assertExists(this.virtualCanvas);
-    const attrs = assertExists(this.attrs);
-    const containerElement = assertExists(this.dom);
 
     // Create the appropriate renderer: WebGLRenderer if available, otherwise
     // Canvas2DRenderer as fallback.
@@ -299,8 +292,7 @@ export class VirtualOverlayCanvas
     });
 
     // Call the user-provided draw callback to render into the canvas
-    attrs.onCanvasRedraw?.({
-      dom: containerElement,
+    assertExists(this.attrs).onCanvasRedraw?.({
       ctx,
       virtualCanvasSize: virtualCanvas.size,
       canvasRect: virtualCanvas.canvasRect,

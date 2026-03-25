@@ -16,26 +16,18 @@ import m from 'mithril';
 import {SegmentedButtons} from '../../../widgets/segmented_buttons';
 import {renderWidgetShowcase} from '../widgets_page_utils';
 
-interface DemoAttrs {
-  disabled: boolean;
-  fillWidth: boolean;
-  showInlineText: boolean;
-}
-
 function SegmentedButtonsDemo() {
   let selectedIdx = 0;
   return {
-    view: ({attrs}: m.Vnode<DemoAttrs>) => {
-      const {showInlineText, ...rest} = attrs;
-      const buttons = m(SegmentedButtons, {
-        ...rest,
+    view: ({attrs}: m.Vnode<{disabled: boolean}>) => {
+      return m(SegmentedButtons, {
+        ...attrs,
         options: [{label: 'Yes'}, {label: 'Maybe'}, {label: 'No'}],
         selectedOption: selectedIdx,
         onOptionSelected: (num) => {
           selectedIdx = num;
         },
       });
-      return showInlineText ? m('span', 'Inline ', buttons, ' text') : buttons;
     },
   };
 }
@@ -57,8 +49,6 @@ export function segmentedButtons(): m.Children {
       },
       initialOpts: {
         disabled: false,
-        fillWidth: false,
-        showInlineText: false,
       },
     }),
   ];

@@ -25,6 +25,13 @@ import {assertExists} from '../base/assert';
 import {Size2D} from '../base/geom';
 import {AppImpl} from '../core/app_impl';
 
+// Define the locators for elements you always want to mask.
+const GLOBAL_MASKS: ((page: Page) => Locator)[] = [
+  // Hide the footer when running integration tests, as the version code and the
+  // tiny text with pending queries can fail the screenshot diff test.
+  (page) => page.locator('.pf-sidebar__footer'),
+];
+
 export class PerfettoTestHelper {
   private cachedSidebarSize?: Size2D;
 
@@ -78,9 +85,6 @@ export class PerfettoTestHelper {
           -webkit-font-smoothing: antialiased !important;
           font-kerning: none !important;
         }
-        .pf-test-volatile {
-          visibility: hidden !important;
-        }
       `,
     });
   }
@@ -100,18 +104,23 @@ export class PerfettoTestHelper {
 
   async waitForIdleAndScreenshot(
     screenshotName: string,
-    opts?: PageAssertionsToHaveScreenshotOptions & {locator?: Locator},
+    opts?: PageAssertionsToHaveScreenshotOptions,
   ) {
     await this.page.mouse.move(0, 0); // Move mouse out of the way.
     await this.waitForPerfettoIdle();
 
-    const {locator, ...screenshotOpts} = opts ?? {};
-    const target = locator ?? this.page;
+    // Get instances of the global locators for the current page.
+    const globalMaskLocators = GLOBAL_MASKS.map((getLocator) =>
+      getLocator(this.page),
+    );
+
+    // Combine global masks with any masks specific to this test call.
+    const allMasks = [...globalMaskLocators, ...(opts?.mask || [])];
 
     // Call the original expect with the combined masks.
-    await expect.soft(target).toHaveScreenshot(screenshotName, {
-      ...screenshotOpts,
-      mask: opts?.mask,
+    await expect.soft(this.page).toHaveScreenshot(screenshotName, {
+      ...opts,
+      mask: allMasks,
     });
   }
 

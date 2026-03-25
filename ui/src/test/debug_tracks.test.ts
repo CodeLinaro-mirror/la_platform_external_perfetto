@@ -42,22 +42,18 @@ test('debug tracks', async () => {
 
   await page.getByRole('button', {name: 'Add debug track'}).click();
   await pth.waitForPerfettoIdle();
-  await pth.waitForIdleAndScreenshot('debug track menu.png', {
-    locator: page.locator('.pf-add-debug-track-menu'),
-  });
-
   await page.keyboard.type('debug track'); // The track name
   await page.keyboard.press('Enter');
   await pth.waitForPerfettoIdle();
   await pth.waitForIdleAndScreenshot('debug track added.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
+    mask: [page.locator('.pf-query-table .pf-header-bar')],
   });
 
   // Click on a slice on the debug track.
   await page.mouse.click(590, 180);
   await pth.waitForPerfettoIdle();
   await pth.waitForIdleAndScreenshot('debug slice clicked.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
+    mask: [page.locator('.pf-query-table .pf-header-bar')],
   });
 
   // Close the debug track.
@@ -66,7 +62,7 @@ test('debug tracks', async () => {
   await track.getByText('close').first().click();
   await pth.waitForPerfettoIdle();
   await pth.waitForIdleAndScreenshot('debug track removed.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
+    mask: [page.locator('.pf-query-table .pf-header-bar')],
   });
 });
 
@@ -87,6 +83,12 @@ test('debug tracks pivot', async () => {
   await page.keyboard.press('Enter');
   await pth.waitForPerfettoIdle();
   await pth.waitForIdleAndScreenshot('debug track pivot.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
+    mask: [page.locator('.pf-query-table .pf-header-bar')],
+    clip: {
+      x: (await pth.sidebarSize()).width,
+      y: 180,
+      width: 1920,
+      height: 600,
+    },
   });
 });

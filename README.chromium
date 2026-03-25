@@ -1,8 +1,7 @@
 Name: Perfetto
 URL: https://github.com/google/perfetto/
-Version: N/A
+Version: unknown
 Revision: DEPS
-Update Mechanism: Manual
 License: blessing, BSD-3-Clause, Apache-2.0
 License File: LICENSE
 Security Critical: yes

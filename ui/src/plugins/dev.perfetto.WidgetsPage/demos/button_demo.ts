@@ -64,19 +64,18 @@ export function renderButtonDemo(): m.Children {
                 });
               }),
             )
-          : (() => {
-              const button = m(Button, {
+          : m('', [
+              showInlineWithText && 'Inline ',
+              m(Button, {
                 icon: icon ? 'send' : undefined,
                 rightIcon: rightIcon ? 'arrow_forward' : undefined,
                 label: (label ? 'Button' : undefined) as string,
                 onclick: () => console.log('button pressed'),
                 tooltip: tooltip ? 'Tooltip text' : undefined,
                 ...rest,
-              });
-              return showInlineWithText
-                ? m('span', 'Inline ', button, ' text')
-                : button;
-            })(),
+              }),
+              showInlineWithText && ' text',
+            ]),
       initialOpts: {
         label: true,
         icon: true,

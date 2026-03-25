@@ -43,8 +43,7 @@ SELECT AndroidWattsonTimePeriodMetric(
         'period_id', period_id,
         'period_dur', period_dur,
         'cpu_subsystem', cpu_proto,
-        'gpu_subsystem', gpu_proto,
-        'tpu_subsystem', tpu_proto
+        'gpu_subsystem', gpu_proto
       )
     )
     FROM _estimate_subsystems_sum

@@ -86,12 +86,7 @@ struct Dfs : public sqlite::AggregateFunction<Dfs> {
     }
     PERFETTO_DCHECK(!start_ids->empty());
 
-    uint32_t graph_size = static_cast<uint32_t>(graph->size());
-    uint32_t max_id = graph_size;
-    for (int64_t x : *start_ids) {
-      max_id = std::max(max_id, static_cast<uint32_t>(x) + 1);
-    }
-    std::vector<bool> visited(max_id);
+    std::vector<bool> visited(graph->size());
     std::vector<State> stack;
     for (int64_t x : *start_ids) {
       stack.emplace_back(State{static_cast<uint32_t>(x), std::nullopt});
@@ -100,16 +95,14 @@ struct Dfs : public sqlite::AggregateFunction<Dfs> {
       State state = stack.back();
       stack.pop_back();
 
+      auto& node = (*graph)[state.id];
       if (visited[state.id]) {
         continue;
       }
       table->Insert({state.id, state.parent_id});
       visited[state.id] = true;
 
-      if (state.id >= graph_size) {
-        continue;
-      }
-      const auto& children = (*graph)[state.id].outgoing_edges;
+      const auto& children = node.outgoing_edges;
       for (auto it = children.rbegin(); it != children.rend(); ++it) {
         stack.emplace_back(State{*it, state.id});
       }
@@ -158,16 +151,11 @@ struct Bfs : public sqlite::AggregateFunction<Bfs> {
     }
     PERFETTO_DCHECK(!start_ids->empty());
 
-    uint32_t graph_size = static_cast<uint32_t>(graph->size());
-    uint32_t max_id = graph_size;
-    for (int64_t raw_id : *start_ids) {
-      max_id = std::max(max_id, static_cast<uint32_t>(raw_id) + 1);
-    }
-    std::vector<bool> visited(max_id);
+    std::vector<bool> visited(graph->size());
     base::CircularQueue<State> queue;
     for (int64_t raw_id : *start_ids) {
       auto id = static_cast<uint32_t>(raw_id);
-      if (visited[id]) {
+      if (id >= graph->size() || visited[id]) {
         continue;
       }
       visited[id] = true;
@@ -178,9 +166,6 @@ struct Bfs : public sqlite::AggregateFunction<Bfs> {
       queue.pop_front();
       data.Insert({state.id, state.parent_id});
 
-      if (state.id >= graph_size) {
-        continue;
-      }
       auto& node = (*graph)[state.id];
       for (uint32_t n : node.outgoing_edges) {
         if (visited[n]) {

@@ -291,7 +291,7 @@ class TraceProcessor:
       parsed = p.netloc if p.netloc else p.path
       return TraceProcessorHttp(parsed, protos=self.protos)
 
-    url, self.subprocess, self._tp_stdout, self._tp_stderr = load_shell(
+    url, self.subprocess = load_shell(
         self.config.bin_path,
         self.config.unique_port,
         self.config.verbose,
@@ -345,12 +345,6 @@ class TraceProcessor:
       self.subprocess.wait()
       # Set to None so __del__ doesn't call this again.
       self.subprocess = None
-      if hasattr(self, '_tp_stdout') and self._tp_stdout:
-        self._tp_stdout.close()
-        self._tp_stdout = None
-      if hasattr(self, '_tp_stderr') and self._tp_stderr:
-        self._tp_stderr.close()
-        self._tp_stderr = None
 
     if hasattr(self, 'http'):
       self.http.conn.close()

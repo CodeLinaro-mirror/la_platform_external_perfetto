@@ -15,7 +15,6 @@
 import m from 'mithril';
 import {Icon} from './icon';
 
-/** @deprecated Use {@link TabsTab} from `./tabs` instead. */
 export interface TabOption {
   readonly key: string;
   readonly title: string;
@@ -23,7 +22,6 @@ export interface TabOption {
   readonly rightIcon?: string | m.Children;
 }
 
-/** @deprecated Use {@link TabsAttrs} from `./tabs` instead. */
 export interface TabStripAttrs {
   readonly className?: string;
   readonly tabs: ReadonlyArray<TabOption>;
@@ -31,7 +29,6 @@ export interface TabStripAttrs {
   onTabChange(key: string): void;
 }
 
-/** @deprecated Use {@link Tabs} from `./tabs` instead. */
 export class TabStrip implements m.ClassComponent<TabStripAttrs> {
   view({attrs}: m.CVnode<TabStripAttrs>) {
     const {tabs, currentTabKey, onTabChange, className} = attrs;

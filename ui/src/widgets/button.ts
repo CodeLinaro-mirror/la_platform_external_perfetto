@@ -105,7 +105,6 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
       shrink,
       loading,
       tooltip,
-      type = 'button', // Default to 'buton' to avoid submitting forms unintentionally.
       ...htmlAttrs
     } = attrs;
 
@@ -130,7 +129,6 @@ export class Button implements m.ClassComponent<ButtonAttrs> {
       {
         ...htmlAttrs,
         className: classes,
-        type,
       },
       this.renderIcon(attrs),
       m('span', {className: 'pf-button__label'}, label),

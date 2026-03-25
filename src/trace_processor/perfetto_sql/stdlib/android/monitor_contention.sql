@@ -137,8 +137,7 @@ WHERE
 GROUP BY
   slice.id;
 
--- Contains parsed Java monitor contention slices, detailing the blocking and blocked
--- threads, methods involved, and the duration of the contention.
+-- Contains parsed monitor contention slices.
 CREATE PERFETTO TABLE android_monitor_contention (
   -- Name of the method holding the lock.
   blocking_method STRING,
@@ -193,51 +192,8 @@ CREATE PERFETTO TABLE android_monitor_contention (
   -- Tid of binder reply slice if lock contention was part of a binder txn.
   binder_reply_tid LONG,
   -- Pid of process experiencing lock contention.
-  pid LONG,
-  -- Extracted lock name from surrounding slices.
-  lock_name STRING
+  pid LONG
 ) AS
-WITH
-  all_slices_on_contention_tracks AS (
-    SELECT
-      s.id,
-      s.track_id,
-      s.ts,
-      s.name,
-      lag(s.name) OVER (PARTITION BY s.track_id ORDER BY s.ts) AS prev_name,
-      lead(s.name) OVER (PARTITION BY s.track_id ORDER BY s.ts) AS next_name
-    FROM slice AS s
-    WHERE
-      s.track_id IN (
-        SELECT DISTINCT
-          track_id
-        FROM slice
-        WHERE
-          id IN (
-            SELECT
-              *
-            FROM _valid_android_monitor_contention
-          )
-      )
-  ),
-  contention_lock_names AS (
-    SELECT
-      id,
-      CASE
-        WHEN prev_name GLOB '*_lock_acquire'
-        AND next_name GLOB '*_lock_held'
-        AND replace(prev_name, '_lock_acquire', '') = replace(next_name, '_lock_held', '')
-        THEN replace(prev_name, '_lock_acquire', '')
-        ELSE NULL
-      END AS lock_name
-    FROM all_slices_on_contention_tracks
-    WHERE
-      id IN (
-        SELECT
-          *
-        FROM _valid_android_monitor_contention
-      )
-  )
 SELECT
   android_extract_android_monitor_contention_blocking_method(slice.name) AS blocking_method,
   android_extract_android_monitor_contention_blocked_method(slice.name) AS blocked_method,
@@ -265,8 +221,7 @@ SELECT
   binder_reply.id AS binder_reply_id,
   binder_reply.ts AS binder_reply_ts,
   binder_reply_thread.tid AS binder_reply_tid,
-  process.pid,
-  cln.lock_name
+  process.pid
 FROM slice
 JOIN thread_track
   ON thread_track.id = slice.track_id
@@ -286,8 +241,6 @@ LEFT JOIN thread AS blocking_thread
   ON blocking_thread.tid = blocking_tid AND blocking_thread.upid = thread.upid
 JOIN _valid_android_monitor_contention
   ON _valid_android_monitor_contention.id = slice.id
-LEFT JOIN contention_lock_names AS cln
-  ON slice.id = cln.id
 WHERE
   slice.name GLOB 'monitor contention*'
   AND slice.dur != -1
@@ -408,9 +361,7 @@ CREATE PERFETTO TABLE android_monitor_contention_chain (
   -- Pid of process experiencing lock contention.
   pid LONG,
   -- Id of monitor contention slice blocked by this contention.
-  child_id LONG,
-  -- Extracted lock name from surrounding slices.
-  lock_name STRING
+  child_id LONG
 ) AS
 SELECT
   NULL AS parent_id,

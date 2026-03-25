@@ -27,9 +27,7 @@ test.beforeAll(async ({browser}, _testInfo) => {
 });
 
 test('load trace with sort_index metadata', async () => {
-  await pth.waitForIdleAndScreenshot('loaded.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('loaded.png');
 });
 
 test('verify process sort order', async () => {
@@ -40,9 +38,7 @@ test('verify process sort order', async () => {
 
   const highPriorityProcess = pth.locateTrack('HighPriorityProcess 100');
   await highPriorityProcess.scrollIntoViewIfNeeded();
-  await pth.waitForIdleAndScreenshot('process_order.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('process_order.png');
 });
 
 test('verify thread sort order within process', async () => {
@@ -56,7 +52,5 @@ test('verify thread sort order within process', async () => {
   // MediumPriorityThread (102, sort_index=50)
   // LowPriorityThread (103, sort_index=10)
 
-  await pth.waitForIdleAndScreenshot('thread_order.png', {
-    locator: page.locator('.pf-timeline-page__timeline'),
-  });
+  await pth.waitForIdleAndScreenshot('thread_order.png');
 });

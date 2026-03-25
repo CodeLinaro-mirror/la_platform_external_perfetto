@@ -16,10 +16,7 @@
 
 #include "src/trace_processor/shell/subcommand.h"
 
-#include <string>
-#include <string_view>
-#include <unordered_set>
-#include <vector>
+#include <cstring>
 
 namespace perfetto::trace_processor::shell {
 
@@ -29,20 +26,25 @@ FindSubcommandResult FindSubcommandInArgs(
     int argc,
     char** argv,
     const std::vector<Subcommand*>& subcommands,
-    const std::unordered_set<std::string>& flags_with_arg) {
+    const std::vector<std::string>& flags_with_arg) {
   for (int i = 1; i < argc; ++i) {
-    std::string_view arg(argv[i]);
+    const char* arg = argv[i];
 
     // Skip flags.
     if (arg[0] == '-') {
-      if (flags_with_arg.count(std::string(arg)))
-        ++i;  // Skip the flag's argument.
+      // Check if this flag consumes the next argument.
+      for (const auto& f : flags_with_arg) {
+        if (f == arg) {
+          ++i;  // Skip the flag's argument.
+          break;
+        }
+      }
       continue;
     }
 
     // Positional argument: check if it matches a subcommand.
     for (auto* sc : subcommands) {
-      if (arg == sc->name()) {
+      if (strcmp(sc->name(), arg) == 0) {
         return {sc, i};
       }
     }

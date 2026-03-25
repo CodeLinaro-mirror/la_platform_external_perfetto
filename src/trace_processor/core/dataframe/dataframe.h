@@ -38,10 +38,6 @@
 #include "src/trace_processor/core/dataframe/types.h"
 #include "src/trace_processor/core/util/bit_vector.h"
 
-namespace perfetto::trace_processor::core::tree {
-class TreeTransformer;
-}  // namespace perfetto::trace_processor::core::tree
-
 namespace perfetto::trace_processor::core::dataframe {
 
 struct QueryPlanImpl;
@@ -415,7 +411,6 @@ class Dataframe {
   friend class TypedCursor;
   friend class QueryPlanBuilder;
   friend struct QueryPlanImpl;
-  friend class tree::TreeTransformer;
 
   // TODO(lalitm): remove this once we have a proper static builder for
   // dataframe.

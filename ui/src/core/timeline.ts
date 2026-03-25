@@ -304,18 +304,20 @@ export class TimelineImpl implements Timeline {
     }
   }
 
-  moveStart(start: HighPrecisionTime) {
-    const endTime = this._visibleWindow.end;
-    const newDur = endTime.sub(start).toNumber();
-    this._visibleWindow = new HighPrecisionTimeSpan(start, newDur);
+  moveStart(delta: number) {
+    this._visibleWindow = new HighPrecisionTimeSpan(
+      this._visibleWindow.start.addNumber(delta),
+      this._visibleWindow.duration - delta,
+    );
 
     raf.scheduleCanvasRedraw();
   }
 
-  moveEnd(end: HighPrecisionTime) {
-    const startTime = this._visibleWindow.start;
-    const newDuration = end.sub(startTime).toNumber();
-    this._visibleWindow = new HighPrecisionTimeSpan(startTime, newDuration);
+  moveEnd(delta: number) {
+    this._visibleWindow = new HighPrecisionTimeSpan(
+      this._visibleWindow.start,
+      this._visibleWindow.duration + delta,
+    );
 
     raf.scheduleCanvasRedraw();
   }

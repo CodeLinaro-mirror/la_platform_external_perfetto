@@ -22,6 +22,7 @@ interface CommandTestCase {
   traceFile?: string;
   before?: () => Promise<void>;
   after?: () => Promise<void>;
+  maskQueryDetails?: boolean;
   testName?: string; // Optional custom test name for unique identification
 }
 
@@ -88,6 +89,7 @@ const COMMAND_TEST_CASES: CommandTestCase[] = [
       'Test Debug Slice Track',
     ],
     traceFile: 'api34_startup_cold.perfetto-trace', // Chrome trace with rich slice data
+    maskQueryDetails: true,
   },
   {
     id: 'dev.perfetto.AddDebugSliceTrackWithPivot',
@@ -97,6 +99,7 @@ const COMMAND_TEST_CASES: CommandTestCase[] = [
       'Test Debug Slice Track with Pivot',
     ],
     traceFile: 'api34_startup_cold.perfetto-trace', // Chrome trace with categorized slices
+    maskQueryDetails: true,
   },
   {
     id: 'dev.perfetto.AddDebugCounterTrack',
@@ -105,6 +108,7 @@ const COMMAND_TEST_CASES: CommandTestCase[] = [
       'Test Debug Counter Track',
     ],
     traceFile: 'api34_startup_cold.perfetto-trace', // Android trace with counter data
+    maskQueryDetails: true,
   },
   {
     id: 'dev.perfetto.AddDebugCounterTrackWithPivot',
@@ -114,6 +118,7 @@ const COMMAND_TEST_CASES: CommandTestCase[] = [
       'Test Debug Counter Track with Pivot',
     ],
     traceFile: 'api34_startup_cold.perfetto-trace', // Android trace with named counter tracks
+    maskQueryDetails: true,
   },
 
   // Workspace commands
@@ -228,6 +233,7 @@ const COMMAND_TEST_CASES: CommandTestCase[] = [
     id: 'dev.perfetto.RunQuery',
     args: ['CREATE TABLE test_command_execution AS SELECT 42 as test_value'],
     traceFile: 'chrome_rendering_desktop.pftrace', // Chrome trace for creating test table
+    maskQueryDetails: true,
     after: async () => {
       const trace = self.app.trace;
       if (!trace) throw new Error('No trace loaded');
@@ -252,11 +258,13 @@ const COMMAND_TEST_CASES: CommandTestCase[] = [
     id: 'dev.perfetto.RunQueryAndShowTab',
     args: ['select ts, dur, name from slice limit 50'],
     traceFile: 'chrome_rendering_desktop.pftrace', // Chrome trace with rich slice data for queries
+    maskQueryDetails: true,
   },
   {
     id: 'dev.perfetto.RunQueryAndShowTab',
     args: ['select ts, dur, name from slice limit 10', 'My Custom Query'],
     traceFile: 'chrome_rendering_desktop.pftrace',
+    maskQueryDetails: true,
     testName: 'dev.perfetto.RunQueryAndShowTab with custom name',
   },
 
@@ -341,6 +349,9 @@ for (const testCase of COMMAND_TEST_CASES) {
     await pth.scheduleFullRedraw();
 
     // Take after screenshot with masking if specified
-    await pth.waitForIdleAndScreenshot(`after.png`);
+    const screenshotOptions = testCase.maskQueryDetails
+      ? {mask: [page.locator('.pf-query-table .pf-header-bar')]}
+      : {};
+    await pth.waitForIdleAndScreenshot(`after.png`, screenshotOptions);
   });
 }
