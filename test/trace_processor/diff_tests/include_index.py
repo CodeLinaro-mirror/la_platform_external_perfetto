@@ -26,6 +26,7 @@ TRACE_PROCESSOR_TEST_DIR = os.path.dirname(
 sys.path.append(TRACE_PROCESSOR_TEST_DIR)
 
 from diff_tests.metrics.android.tests import AndroidMetrics
+from diff_tests.parser.primes.tests import PrimesTraceParser
 from diff_tests.metrics.camera.tests import Camera
 from diff_tests.metrics.chrome.tests import ChromeMetrics
 from diff_tests.metrics.chrome.tests_args import ChromeArgs
@@ -56,6 +57,7 @@ from diff_tests.parser.android.tests_inputmethod_clients import InputMethodClien
 from diff_tests.parser.android.tests_inputmethod_manager_service import InputMethodManagerService
 from diff_tests.parser.android.tests_inputmethod_service import InputMethodService
 from diff_tests.parser.android.tests_protolog import ProtoLog
+from diff_tests.parser.android.tests_protovm_incremental_tracing import ProtoVmIncrementalTracing
 from diff_tests.parser.android.tests_shell_transitions import ShellTransitions
 from diff_tests.parser.android.tests_surfaceflinger_layers import SurfaceFlingerLayers
 from diff_tests.parser.android.tests_surfaceflinger_transactions import SurfaceFlingerTransactions
@@ -156,6 +158,7 @@ from diff_tests.stdlib.prelude.math_functions_tests import PreludeMathFunctions
 from diff_tests.stdlib.prelude.package_lookup_tests import PackageLookup
 from diff_tests.stdlib.prelude.pprof_functions_tests import PreludePprofFunctions
 from diff_tests.stdlib.prelude.regexp_extract import RegexpExtract
+from diff_tests.stdlib.prelude.regexp_replace_simple import RegexpReplaceSimple
 from diff_tests.stdlib.prelude.slices_tests import PreludeSlices
 from diff_tests.stdlib.prelude.window_functions_tests import PreludeWindowFunctions
 from diff_tests.stdlib.sched.tests import StdlibSched
@@ -247,6 +250,7 @@ def fetch_all_diff_tests(
       SurfaceFlingerTransactions,
       ShellTransitions,
       ProtoLog,
+      ProtoVmIncrementalTracing,
       ViewCapture,
       WindowManager,
       TrackEvent,
@@ -271,6 +275,7 @@ def fetch_all_diff_tests(
       PerfTextParser,
       PprofParser,
       CollapsedStackParser,
+      PrimesTraceParser,
   ]
 
   metrics_tests = [
@@ -327,6 +332,7 @@ def fetch_all_diff_tests(
       PreludePprofFunctions,
       PreludeWindowFunctions,
       RegexpExtract,
+      RegexpReplaceSimple,
       Pkvm,
       PreludeSlices,
       StdlibSmoke,
