@@ -42,8 +42,6 @@ base::StatusOr<AuxDataStream*> DummyAuxDataTokenizer::InitializeAuxDataStream(
   return &stream_;
 }
 
-void DummyAuxDataTokenizer::OnEventsFullyExtracted() {}
-
 DummyAuxDataStream::DummyAuxDataStream(TraceProcessorContext* context)
     : context_(context) {}
 void DummyAuxDataStream::OnDataLoss(uint64_t size) {

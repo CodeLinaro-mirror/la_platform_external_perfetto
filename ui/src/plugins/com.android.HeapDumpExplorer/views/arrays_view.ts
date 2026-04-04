@@ -29,7 +29,6 @@ import {
   shortClassName,
   RowCounter,
 } from '../components';
-import {clearNavParam} from '../nav_state';
 
 const QUERY = `
   SELECT
@@ -108,28 +107,21 @@ interface ArraysViewAttrs {
 function ArraysView(): m.Component<ArraysViewAttrs> {
   let dataSource: SQLDataSource | null = null;
   const counter = new RowCounter();
-  let filters: Filter[] = [];
-
-  function applyNavFilter(ah: string | undefined) {
-    if (!ah) return;
-    filters = [{field: 'array_hash', op: '=' as const, value: ah}];
-    counter.onFiltersChanged(filters);
-    clearNavParam('arrayHash');
-  }
 
   return {
     oninit(vnode) {
-      const {engine} = vnode.attrs;
+      const {engine, initialArrayHash} = vnode.attrs;
       dataSource = new SQLDataSource({
         engine,
         sqlSchema: createSimpleSchema(QUERY),
         rootSchemaName: 'query',
       });
       counter.init(engine, QUERY);
-      applyNavFilter(vnode.attrs.initialArrayHash);
-    },
-    onupdate(vnode) {
-      applyNavFilter(vnode.attrs.initialArrayHash);
+      if (initialArrayHash) {
+        counter.onFiltersChanged([
+          {field: 'array_hash', op: '=' as const, value: initialArrayHash},
+        ]);
+      }
     },
     view(vnode) {
       const {navigate} = vnode.attrs;
@@ -143,6 +135,16 @@ function ArraysView(): m.Component<ArraysViewAttrs> {
 
       if (!dataSource) return null;
 
+      const hashFilter: Filter[] = vnode.attrs.initialArrayHash
+        ? [
+            {
+              field: 'array_hash',
+              op: '=' as const,
+              value: vnode.attrs.initialArrayHash,
+            },
+          ]
+        : [];
+
       return m('div', {class: 'ah-view-content'}, [
         m('h2', {class: 'ah-view-heading'}, counter.heading('Arrays')),
         m(DataGrid, {
@@ -151,19 +153,16 @@ function ArraysView(): m.Component<ArraysViewAttrs> {
           data: dataSource,
           fillHeight: true,
           initialColumns: [
-            {id: 'id', field: 'id'},
-            {id: 'cls', field: 'cls'},
             {id: 'self_size', field: 'self_size'},
             {id: 'native_size', field: 'native_size'},
             {id: 'element_count', field: 'element_count'},
+            {id: 'cls', field: 'cls'},
             {id: 'heap', field: 'heap'},
+            {id: 'id', field: 'id'},
           ],
-          filters,
+          ...(hashFilter.length > 0 ? {initialFilters: hashFilter} : {}),
           showExportButton: true,
-          onFiltersChanged: (f) => {
-            filters = [...f];
-            counter.onFiltersChanged(f);
-          },
+          onFiltersChanged: counter.onFiltersChanged,
         }),
       ]);
     },

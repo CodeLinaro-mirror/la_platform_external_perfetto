@@ -19,7 +19,7 @@ import {extensions} from '../../components/extensions';
 import {App} from '../../public/app';
 import {PerfettoPlugin} from '../../public/plugin';
 import {Trace} from '../../public/trace';
-import {SqlModules, isTableEffectivelyDisabled} from './sql_modules';
+import {SqlModules} from './sql_modules';
 import {
   SQL_MODULES_DOCS_SCHEMA,
   SqlModulesDocsSchema,
@@ -58,9 +58,10 @@ export default class SqlModulesPlugin implements PerfettoPlugin {
 
         const tables = this.sqlModules.listTablesNames();
 
-        // Annotate disabled tables in the prompt
+        // Annotate disabled modules in the prompt
         const annotatedTables = tables.map((tableName) => {
-          if (isTableEffectivelyDisabled(this.sqlModules!, tableName)) {
+          const module = this.sqlModules!.getModuleForTable(tableName);
+          if (module && this.sqlModules!.isModuleDisabled(module.includeKey)) {
             return `${tableName} (no data)`;
           }
           return tableName;
@@ -81,10 +82,10 @@ export default class SqlModulesPlugin implements PerfettoPlugin {
           return;
         }
 
-        // Warn if opening a disabled table
-        if (isTableEffectivelyDisabled(this.sqlModules, actualTableName)) {
+        // Warn if opening a disabled module
+        if (this.sqlModules.isModuleDisabled(module.includeKey)) {
           const proceed = window.confirm(
-            `Warning: The table "${actualTableName}" may not have data in this trace. ` +
+            `Warning: The module "${module.includeKey}" may not have data in this trace. ` +
               `The table might be empty. Continue anyway?`,
           );
           if (!proceed) {

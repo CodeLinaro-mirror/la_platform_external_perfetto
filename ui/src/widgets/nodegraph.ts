@@ -106,7 +106,6 @@ export interface Node {
   readonly canDockBottom?: boolean;
   readonly contextMenuItems?: m.Children;
   readonly invalid?: boolean; // Whether this node is in an invalid state
-  readonly className?: string; // Extra CSS class(es) on the .pf-node element
 }
 
 export interface Label {
@@ -1548,7 +1547,6 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
       accentBar,
       contextMenuItems,
       invalid,
-      className: nodeClassName,
     } = node;
     const {
       isDockedChild,
@@ -1573,7 +1571,6 @@ export function NodeGraph(): m.Component<NodeGraphAttrs> {
       isDockTarget && 'pf-dock-target',
       accentBar && 'pf-node--has-accent-bar',
       invalid && 'pf-invalid',
-      nodeClassName,
     );
 
     // Helper to render a port

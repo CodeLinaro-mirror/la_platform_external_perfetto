@@ -19,18 +19,14 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
-#include <string_view>
 #include <vector>
 
 #include "perfetto/base/status.h"
 #include "perfetto/ext/base/status_or.h"
 #include "perfetto/trace_processor/basic_types.h"
 #include "src/trace_processor/containers/string_pool.h"
-#include "src/trace_processor/core/common/storage_types.h"
 #include "src/trace_processor/core/dataframe/dataframe.h"
 #include "src/trace_processor/core/dataframe/specs.h"
-#include "src/trace_processor/core/tree/tree_columns.h"
 
 namespace perfetto::trace_processor::core::interpreter {
 class BytecodeBuilder;
@@ -38,32 +34,27 @@ class BytecodeBuilder;
 
 namespace perfetto::trace_processor::core::tree {
 
-// Transforms a tree-structured dataset via composable operations (filtering,
-// propagation) producing a dataframe.
+// Transforms a tree-structured dataframe via operations (currently filtering)
+// producing another dataframe.
 //
-// Takes ownership of TreeColumns in the constructor. Bytecodes are emitted
-// incrementally as methods are called. ToDataframe() finalizes the bytecode,
-// executes it, and builds the output.
+// The tree structure is represented by the first two columns of the dataframe:
+// - Column 0: node ID
+// - Column 1: parent ID
+//
+// Bytecodes are emitted incrementally as methods are called. ToDataframe()
+// finalizes the bytecode, executes it, and returns the result.
 //
 // Usage:
-//   TreeTransformer t(std::move(cols), pool);
+//   TreeTransformer t(df, pool);
 //   RETURN_IF_ERROR(t.FilterTree(specs, values));
 //   ASSIGN_OR_RETURN(auto result, std::move(t).ToDataframe());
 class TreeTransformer {
  public:
-  TreeTransformer(TreeColumns cols, StringPool* pool);
+  TreeTransformer(dataframe::Dataframe df, StringPool* pool);
   ~TreeTransformer();
 
   TreeTransformer(TreeTransformer&&) noexcept;
   TreeTransformer& operator=(TreeTransformer&&) noexcept;
-
-  // Resolves a column name to its index in the owned column storage.
-  std::optional<uint32_t> ResolveColumn(std::string_view name) const;
-
-  // Returns the storage type for a column at the given index.
-  StorageType column_type(uint32_t col) const {
-    return cols_.columns[col].type;
-  }
 
   // Applies a filter to the tree. Nodes matching the filter are kept;
   // filtered-out nodes have their children reparented to the closest
@@ -71,6 +62,8 @@ class TreeTransformer {
   // emitted immediately.
   base::Status FilterTree(std::vector<dataframe::FilterSpec> specs,
                           std::vector<SqlValue> values);
+
+  const dataframe::Dataframe& df() const { return df_; }
 
   // Finalizes bytecode, executes it, and returns the resulting dataframe.
   base::StatusOr<dataframe::Dataframe> ToDataframe() &&;
@@ -80,13 +73,14 @@ class TreeTransformer {
     enum Kind : uint8_t { kStorage, kNullBv };
     Kind kind;
     uint32_t reg;
-    uint32_t col;  // index into cols_.columns
+    uint32_t col;
   };
 
-  TreeColumns cols_;
+  dataframe::Dataframe df_;
   StringPool* pool_;
 
   // Bytecode builder — accumulates bytecodes as methods are called.
+  // Heap-allocated so the header doesn't need to include bytecode_builder.h.
   std::unique_ptr<interpreter::BytecodeBuilder> builder_;
 
   // Register indices (allocated in constructor, shared across calls).
@@ -100,8 +94,8 @@ class TreeTransformer {
   std::vector<SqlValue> filter_values_;
   uint32_t filter_value_count_ = 0;
 
-  // Whether any bytecodes have been emitted.
-  bool has_operations_ = false;
+  // Whether any filter bytecodes have been emitted.
+  bool has_filters_ = false;
 };
 
 }  // namespace perfetto::trace_processor::core::tree

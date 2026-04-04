@@ -38,10 +38,7 @@ interface FlamegraphObjectsViewAttrs {
   isDominator?: boolean;
 }
 
-export function flamegraphQuery(
-  pathHashes: string,
-  isDominator: boolean,
-): string {
+function flamegraphQuery(pathHashes: string, isDominator: boolean): string {
   const hashTable = isDominator
     ? '_heap_graph_dominator_path_hashes'
     : '_heap_graph_path_hashes';
@@ -248,8 +245,6 @@ function FlamegraphObjectsView(): m.Component<FlamegraphObjectsViewAttrs> {
           data: dataSource,
           fillHeight: true,
           initialColumns: [
-            {id: 'id', field: 'id'},
-            {id: 'cls', field: 'cls'},
             {id: 'self_size', field: 'self_size'},
             {id: 'native_size', field: 'native_size'},
             {id: 'retained', field: 'retained'},
@@ -259,6 +254,8 @@ function FlamegraphObjectsView(): m.Component<FlamegraphObjectsViewAttrs> {
             {id: 'reachable_native', field: 'reachable_native'},
             {id: 'reachable_count', field: 'reachable_count'},
             {id: 'heap', field: 'heap'},
+            {id: 'cls', field: 'cls'},
+            {id: 'id', field: 'id'},
           ],
           showExportButton: true,
           onFiltersChanged: counter.onFiltersChanged,

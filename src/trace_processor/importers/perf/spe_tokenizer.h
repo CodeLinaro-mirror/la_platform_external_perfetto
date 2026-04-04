@@ -28,20 +28,21 @@
 namespace perfetto::trace_processor {
 class TraceProcessorContext;
 }
+namespace perfetto::trace_processor::etm {
+class EtmTracker;
+}
 
 namespace perfetto::trace_processor::perf_importer {
 
 class SpeTokenizer : public AuxDataTokenizer {
  public:
-  static base::StatusOr<std::unique_ptr<AuxDataTokenizer>> Create(
-      TraceProcessorContext* context,
-      AuxtraceInfoRecord) {
+  static base::StatusOr<std::unique_ptr<AuxDataTokenizer>>
+  Create(TraceProcessorContext* context, etm::EtmTracker*, AuxtraceInfoRecord) {
     return std::unique_ptr<AuxDataTokenizer>(new SpeTokenizer(context));
   }
   ~SpeTokenizer() override;
   base::StatusOr<AuxDataStream*> InitializeAuxDataStream(
       AuxStream* stream) override;
-  void OnEventsFullyExtracted() override;
 
  private:
   explicit SpeTokenizer(TraceProcessorContext* context) : context_(context) {}

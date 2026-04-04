@@ -19,7 +19,7 @@
  * columns, and assertions used across all node unit tests.
  */
 
-import {QueryNode, NodeType, SecondaryInputSpec} from '../../query_node';
+import {QueryNode, NodeType} from '../../query_node';
 import {ColumnInfo} from '../column_info';
 import {NodeDetailsAttrs} from '../../node_types';
 import {NodeIssues} from '../node_issues';
@@ -52,8 +52,6 @@ export interface MockNodeOptions {
   getStructuredQuery?: () => protos.PerfettoSqlStructuredQuery | undefined;
   /** Custom state to merge with default state */
   state?: Partial<QueryNode['state']>;
-  /** Secondary inputs spec (default: undefined) */
-  secondaryInputs?: SecondaryInputSpec;
 }
 
 /** Options for creating a column info */
@@ -104,7 +102,6 @@ export function createMockNode(options: MockNodeOptions = {}): QueryNode {
     getTitle = () => 'Mock Node',
     getStructuredQuery = () => undefined,
     state = {},
-    secondaryInputs,
   } = options;
 
   const node: QueryNode = {
@@ -113,7 +110,6 @@ export function createMockNode(options: MockNodeOptions = {}): QueryNode {
     nextNodes: [],
     finalCols: columns,
     state: {...state},
-    secondaryInputs,
     validate,
     getTitle,
     nodeSpecificModify: () => null,
@@ -268,19 +264,6 @@ export function SLICE_COLUMNS(): ColumnInfo[] {
 // ============================================================================
 // NODE CONNECTION HELPERS
 // ============================================================================
-
-/**
- * Creates a SecondaryInputSpec with unbounded ports.
- * Use this to initialize secondaryInputs on mock nodes.
- */
-export function createUnboundedSecondaryInputs(): SecondaryInputSpec {
-  return {
-    connections: new Map(),
-    min: 0,
-    max: 'unbounded',
-    portNames: (i: number) => `Port ${i}`,
-  };
-}
 
 /**
  * Connects a source node to a target node's primary input.

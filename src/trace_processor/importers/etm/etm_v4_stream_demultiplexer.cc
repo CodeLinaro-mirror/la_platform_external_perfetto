@@ -255,12 +255,10 @@ base::StatusOr<PerCpuConfiguration> ParseAuxtraceInfo(
 //      store it in `TraceStorage`.
 class EtmV4StreamDemultiplexer : public perf_importer::AuxDataTokenizer {
  public:
-  explicit EtmV4StreamDemultiplexer(TraceProcessorContext* context)
-      : context_(context),
-        etm_tracker_(std::make_unique<EtmTracker>(context)) {}
+  explicit EtmV4StreamDemultiplexer(TraceProcessorContext* context,
+                                    EtmTracker* etm_tracker)
+      : context_(context), etm_tracker_(etm_tracker) {}
   ~EtmV4StreamDemultiplexer() override = default;
-
-  void OnEventsFullyExtracted() override { etm_tracker_->Finalize(); }
 
   base::StatusOr<perf_importer::AuxDataStream*> InitializeAuxDataStream(
       perf_importer::AuxStream* stream) override {
@@ -302,7 +300,7 @@ class EtmV4StreamDemultiplexer : public perf_importer::AuxDataTokenizer {
   }
 
   TraceProcessorContext* const context_;
-  std::unique_ptr<EtmTracker> etm_tracker_;
+  EtmTracker* const etm_tracker_;
 
   FrameDecoder decoder_;
   base::FlatHashMap<uint32_t, std::unique_ptr<EtmV4Stream>> streams_;
@@ -313,9 +311,10 @@ class EtmV4StreamDemultiplexer : public perf_importer::AuxDataTokenizer {
 // static
 base::StatusOr<std::unique_ptr<perf_importer::AuxDataTokenizer>>
 CreateEtmV4StreamDemultiplexer(TraceProcessorContext* context,
+                               EtmTracker* etm_tracker,
                                perf_importer::AuxtraceInfoRecord info) {
   std::unique_ptr<EtmV4StreamDemultiplexer> tokenizer(
-      new EtmV4StreamDemultiplexer(context));
+      new EtmV4StreamDemultiplexer(context, etm_tracker));
 
   RETURN_IF_ERROR(tokenizer->Init(std::move(info)));
 

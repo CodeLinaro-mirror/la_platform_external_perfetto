@@ -39,11 +39,6 @@ export interface SqlModules {
   // Returns true if the module is disabled due to missing data in the trace.
   isModuleDisabled(moduleName: string): boolean;
 
-  // Returns whether a specific table passed its own data availability check.
-  // Returns undefined if no per-table check exists for this table.
-  // When undefined, callers fall back to isModuleDisabled.
-  tablePassedDataCheck?(tableName: string): boolean | undefined;
-
   // Returns the set of all disabled module names.
   getDisabledModules(): ReadonlySet<string>;
 
@@ -97,7 +92,6 @@ export interface SqlTable {
   readonly description: string;
   readonly type: string;
   readonly importance?: 'core' | 'high' | 'mid' | 'low';
-  readonly dataCheckSql?: string;
   readonly columns: SqlColumn[];
 
   // Returns all columns as TableColumns.
@@ -149,18 +143,4 @@ export interface TableAndColumn {
   column: string;
 
   isEqual(o: TableAndColumn): boolean;
-}
-
-// Returns true if a table should be considered disabled (no data).
-// Uses table-level availability when known, falls back to module-level.
-export function isTableEffectivelyDisabled(
-  sqlModules: SqlModules,
-  tableName: string,
-): boolean {
-  const availability = sqlModules.tablePassedDataCheck?.(tableName);
-  if (availability !== undefined) {
-    return !availability;
-  }
-  const module = sqlModules.getModuleForTable(tableName);
-  return module !== undefined && sqlModules.isModuleDisabled(module.includeKey);
 }

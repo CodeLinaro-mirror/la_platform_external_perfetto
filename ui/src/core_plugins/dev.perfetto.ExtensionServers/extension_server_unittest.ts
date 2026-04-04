@@ -85,7 +85,7 @@ function testExtServer(
     enabledModules: overrides.enabledModules ?? ['default'],
     enabled: overrides.enabled ?? true,
     auth: {type: 'none'},
-    origin: 'user_added',
+    locked: false,
   };
 }
 

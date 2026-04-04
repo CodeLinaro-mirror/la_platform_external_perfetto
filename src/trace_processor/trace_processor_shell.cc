@@ -53,7 +53,6 @@
 #include "src/trace_processor/rpc/rpc.h"
 #include "src/trace_processor/rpc/stdiod.h"
 #include "src/trace_processor/shell/common_flags.h"
-#include "src/trace_processor/shell/convert_subcommand.h"
 #include "src/trace_processor/shell/export_subcommand.h"
 #include "src/trace_processor/shell/interactive_subcommand.h"
 #include "src/trace_processor/shell/metatrace.h"
@@ -156,7 +155,6 @@ Commands:
   summarize     Compute a trace summary from specs and/or built-in metrics.
   export        Export a trace to a database file.
   metrics       Run v1 metrics (deprecated; use 'summarize --metrics-v2').
-  convert       Convert trace format.
 
 Common flags (apply to all commands):
   -h, --help                  Show help (per-command if after a command).
@@ -174,7 +172,6 @@ Examples:
   tp query -f queries.sql trace.pb                  Run queries from file.
   tp server http                                    Start HTTP server.
   tp summarize --metrics-v2 all trace.pb            Summarize a trace.
-  tp convert json trace.pb out.json                 Convert to JSON.
 
 Classic interface:
   The previous flat-flag interface (-q, --httpd, --summary, -e, etc.) is
@@ -775,11 +772,9 @@ base::Status TraceProcessorShell::Run(int argc, char** argv) {
     shell::SummarizeSubcommand summarize_subcommand;
     shell::ExportSubcommand export_subcommand;
     shell::MetricsSubcommand metrics_subcommand;
-    shell::ConvertSubcommand convert_subcommand;
     std::vector<shell::Subcommand*> subcommands = {
         &query_subcommand,     &interactive_subcommand, &server_subcommand,
         &summarize_subcommand, &export_subcommand,      &metrics_subcommand,
-        &convert_subcommand,
     };
 
     // Handle "help" pseudo-subcommand: `tp help <command>` or bare `tp help`.

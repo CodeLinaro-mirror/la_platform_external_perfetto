@@ -32,6 +32,7 @@ namespace etm {
 
 base::StatusOr<std::unique_ptr<perf_importer::AuxDataTokenizer>>
 CreateEtmV4StreamDemultiplexer(TraceProcessorContext* context,
+                               EtmTracker* etm_tracker,
                                perf_importer::AuxtraceInfoRecord info);
 
 }  // namespace etm

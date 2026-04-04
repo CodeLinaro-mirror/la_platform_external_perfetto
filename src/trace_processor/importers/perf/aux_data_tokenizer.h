@@ -57,7 +57,6 @@ class AuxDataTokenizer {
   virtual ~AuxDataTokenizer();
   virtual base::StatusOr<AuxDataStream*> InitializeAuxDataStream(
       AuxStream* stream) = 0;
-  virtual void OnEventsFullyExtracted() = 0;
 };
 
 // Dummy tokenizer that just discard data.
@@ -80,9 +79,8 @@ class DummyAuxDataTokenizer : public AuxDataTokenizer {
  public:
   explicit DummyAuxDataTokenizer(TraceProcessorContext* context);
   ~DummyAuxDataTokenizer() override;
-  base::StatusOr<AuxDataStream*> InitializeAuxDataStream(
+  virtual base::StatusOr<AuxDataStream*> InitializeAuxDataStream(
       AuxStream* stream) override;
-  void OnEventsFullyExtracted() override;
 
  private:
   DummyAuxDataStream stream_;

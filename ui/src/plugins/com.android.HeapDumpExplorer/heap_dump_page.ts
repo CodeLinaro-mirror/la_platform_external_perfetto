@@ -31,52 +31,22 @@ import OverviewView from './views/overview_view';
 import DominatorsView from './views/dominators_view';
 import ObjectView from './views/object_view';
 import AllObjectsView from './views/all_objects_view';
+import InstancesView from './views/instances_view';
 import BitmapGalleryView from './views/bitmap_gallery_view';
 import ClassesView from './views/classes_view';
 import StringsView from './views/strings_view';
 import ArraysView from './views/arrays_view';
-import FlamegraphObjectsView, {
-  flamegraphQuery,
-} from './views/flamegraph_objects_view';
-import {SQL_PREAMBLE} from './components';
-import {NUM} from '../../trace_processor/query_result';
+import FlamegraphObjectsView from './views/flamegraph_objects_view';
 
-// Each "Open in Heapdump Explorer" creates a closable flamegraph tab.
-let nextFgId = 0;
-const flamegraphTabs: Array<
-  {id: number; count: number | null} & HeapdumpSelection
-> = [];
-let activeFgId = -1;
+// Selection set by HeapProfile's "Open in Heapdump Explorer" action.
+let flamegraphSelection: HeapdumpSelection | null = null;
 
-export function setFlamegraphSelection(
-  sel: HeapdumpSelection,
-  engine: Engine,
-): void {
-  const existing = flamegraphTabs.find(
-    (t) => t.pathHashes === sel.pathHashes && t.isDominator === sel.isDominator,
-  );
-  if (existing) {
-    activeFgId = existing.id;
-    navigate('flamegraph-objects');
-    return;
-  }
-  const id = nextFgId++;
-  const tab = {id, count: null as number | null, ...sel};
-  flamegraphTabs.push(tab);
-  activeFgId = id;
-  const q = flamegraphQuery(sel.pathHashes, sel.isDominator);
-  engine
-    .query(`${SQL_PREAMBLE}; SELECT COUNT(*) AS c FROM (${q})`)
-    .then((r) => {
-      tab.count = Number(r.firstRow({c: NUM}).c);
-      m.redraw();
-    });
+export function setFlamegraphSelection(sel: HeapdumpSelection): void {
+  flamegraphSelection = sel;
 }
 
 export function resetFlamegraphSelection(): void {
-  flamegraphTabs.length = 0;
-  nextFgId = 0;
-  activeFgId = -1;
+  flamegraphSelection = null;
 }
 
 // Module-level overview cache. Survives component remounts (e.g. theme toggle).
@@ -89,137 +59,36 @@ export function resetCachedOverview(): void {
   overviewLoading = false;
 }
 
-// Closable object tabs — clicking an object anywhere opens a new tab.
-interface InstanceTab {
-  id: number;
-  objId: number;
-  label: string;
-}
-
-let nextInstanceTabId = 0;
-const instanceTabs: InstanceTab[] = [];
-let activeInstanceTabId = -1;
-
-function instanceTabKey(id: number): string {
-  return `inst-${id}`;
-}
-
-export function resetInstanceTabs(): void {
-  instanceTabs.length = 0;
-  nextInstanceTabId = 0;
-  activeInstanceTabId = -1;
-}
-
-function openInstanceTab(objId: number, label?: string): void {
-  const existing = instanceTabs.find((t) => t.objId === objId);
-  if (existing) {
-    activeInstanceTabId = existing.id;
-    return;
-  }
-  const displayLabel = label ?? 'Instance';
-  const tab: InstanceTab = {
-    id: nextInstanceTabId++,
-    objId,
-    label:
-      displayLabel.length > 30
-        ? displayLabel.slice(0, 30) + '\u2026'
-        : displayLabel,
-  };
-  instanceTabs.push(tab);
-  activeInstanceTabId = tab.id;
-}
-
-// Navigate wrapper: intercepts 'object' to open closable instance tabs.
-function navigateWithTabs(
-  view: NavState['view'],
-  params?: Record<string, unknown>,
-): void {
-  if (view === 'object') {
-    openInstanceTab(params?.id as number, params?.label as string | undefined);
-    navigate(view, params);
-    return;
-  }
-  activeInstanceTabId = -1;
-  navigate(view, params);
-}
-
-// When nav state points to 'object' (e.g. after browser back), ensure
-// the matching instance tab exists and is active. When nav moves away
-// from 'object', clear the active instance tab so fixed tabs are shown.
-function syncInstanceTabFromNav(): void {
-  if (nav.view !== 'object') {
-    activeInstanceTabId = -1;
-    return;
-  }
-  const objId = nav.params.id;
-  const existing = instanceTabs.find((t) => t.objId === objId);
-  if (existing) {
-    activeInstanceTabId = existing.id;
-  } else {
-    openInstanceTab(objId, nav.params.label);
+// Maps drill-down views to their parent tab.
+function activeTabKey(view: string): string {
+  switch (view) {
+    case 'object':
+    case 'instances':
+      return 'classes';
+    default:
+      return view;
   }
 }
 
-function fgTabKey(id: number): string {
-  return `fg-${id}`;
-}
-
-function parseFgTabKey(key: string): number | undefined {
-  if (!key.startsWith('fg-')) return undefined;
-  return parseInt(key.slice(3), 10);
-}
-
-function getActiveTabKey(): string {
-  if (nav.view === 'flamegraph-objects' && flamegraphTabs.length > 0) {
-    const tab = flamegraphTabs.find((t) => t.id === activeFgId);
-    return fgTabKey(
-      tab ? tab.id : flamegraphTabs[flamegraphTabs.length - 1].id,
-    );
-  }
-  if (activeInstanceTabId >= 0) {
-    return instanceTabKey(activeInstanceTabId);
-  }
-  return nav.view;
-}
-
-function handleTabChange(key: string): void {
-  const fgId = parseFgTabKey(key);
-  if (fgId !== undefined) {
-    activeFgId = fgId;
-    navigate('flamegraph-objects');
-  } else if (key.startsWith('inst-')) {
-    activeInstanceTabId = parseInt(key.slice(5), 10);
-    const tab = instanceTabs.find((t) => t.id === activeInstanceTabId);
-    if (tab) {
-      navigate('object', {id: tab.objId});
-    }
-  } else {
-    activeFgId = -1;
-    activeInstanceTabId = -1;
-    navigate(key as NavState['view']);
-  }
-}
-
-function handleTabClose(key: string): void {
-  const fgId = parseFgTabKey(key);
-  if (fgId !== undefined) {
-    const idx = flamegraphTabs.findIndex((t) => t.id === fgId);
-    if (idx === -1) return;
-    flamegraphTabs.splice(idx, 1);
-    if (activeFgId === fgId) {
-      activeFgId = -1;
-      navigate('overview');
-    }
-    return;
-  }
-  if (!key.startsWith('inst-')) return;
-  const id = parseInt(key.slice(5), 10);
-  const idx = instanceTabs.findIndex((t) => t.id === id);
-  if (idx === -1) return;
-  instanceTabs.splice(idx, 1);
-  if (activeInstanceTabId === id) {
-    activeInstanceTabId = -1;
-    navigate('overview');
+// Renders the content for the "classes" tab, which also hosts drill-down
+// views (instances, object detail) based on the current nav state.
+function classesTabContent(
+  state: NavState,
+  engine: Engine,
+  overview: OverviewData,
+): m.Children {
+  switch (state.view) {
+    case 'object':
+      return m(ObjectView, {
+        engine,
+        heaps: overview.heaps,
+        navigate,
+        params: state.params,
+      });
+    case 'instances':
+      return m(InstancesView, {engine, navigate, params: state.params});
+    default:
+      return m(ClassesView, {engine, navigate});
   }
 }
 
@@ -228,38 +97,36 @@ function buildTabs(
   engine: Engine,
   overview: OverviewData,
 ): TabsTab[] {
-  const trace = HeapDumpPage.trace;
-  const tabs: TabsTab[] = [
+  return [
     {
       key: 'overview',
       title: 'Overview',
-      content: m(OverviewView, {overview, navigate: navigateWithTabs}),
+      content: m(OverviewView, {overview, navigate}),
     },
     {
       key: 'classes',
       title: 'Classes',
-      content: m(ClassesView, {engine, navigate: navigateWithTabs}),
+      content: classesTabContent(state, engine, overview),
     },
     {
       key: 'objects',
       title: 'Objects',
-      content: m(AllObjectsView, {
-        engine,
-        navigate: navigateWithTabs,
-        initialClass: state.view === 'objects' ? state.params.cls : undefined,
-      }),
+      content: m(AllObjectsView, {engine, navigate}),
     },
     {
       key: 'dominators',
       title: 'Dominators',
-      content: m(DominatorsView, {engine, navigate: navigateWithTabs}),
+      content: m(DominatorsView, {engine, navigate}),
     },
     {
       key: 'bitmaps',
       title: 'Bitmaps',
       content: m(BitmapGalleryView, {
+        // Key on filterKey so the component remounts when the filter changes,
+        // ensuring initialFilters on the inner DataGrid takes effect.
+        key: state.view === 'bitmaps' ? state.params.filterKey ?? '' : '',
         engine,
-        navigate: navigateWithTabs,
+        navigate,
         hasFieldValues: overview.hasFieldValues,
         filterKey:
           state.view === 'bitmaps' ? state.params.filterKey : undefined,
@@ -269,8 +136,9 @@ function buildTabs(
       key: 'strings',
       title: 'Strings',
       content: m(StringsView, {
+        key: state.view === 'strings' ? state.params.q ?? '' : '',
         engine,
-        navigate: navigateWithTabs,
+        navigate,
         initialQuery: state.view === 'strings' ? state.params.q : undefined,
         hasFieldValues: overview.hasFieldValues,
       }),
@@ -279,52 +147,34 @@ function buildTabs(
       key: 'arrays',
       title: 'Arrays',
       content: m(ArraysView, {
+        key: state.view === 'arrays' ? state.params.arrayHash ?? '' : '',
         engine,
-        navigate: navigateWithTabs,
+        navigate,
         initialArrayHash:
           state.view === 'arrays' ? state.params.arrayHash : undefined,
         hasFieldValues: overview.hasFieldValues,
       }),
     },
   ];
+}
 
-  // Append closable flamegraph tabs.
-  for (const fg of flamegraphTabs) {
-    tabs.push({
-      key: fgTabKey(fg.id),
-      title:
-        fg.count !== null
-          ? `Flamegraph (${fg.count.toLocaleString()})`
-          : 'Flamegraph',
-      closeButton: true,
-      content: m(FlamegraphObjectsView, {
-        engine,
-        navigate: navigateWithTabs,
-        pathHashes: fg.pathHashes,
-        isDominator: fg.isDominator,
-        onBackToTimeline: () => {
-          if (trace) trace.navigate('#!/viewer');
-        },
-      }),
-    });
-  }
-
-  // Append closable object instance tabs.
-  for (const obj of instanceTabs) {
-    tabs.push({
-      key: instanceTabKey(obj.id),
-      title: obj.label,
-      closeButton: true,
-      content: m(ObjectView, {
-        engine,
-        heaps: overview.heaps,
-        navigate: navigateWithTabs,
-        params: {id: obj.objId},
-      }),
-    });
-  }
-
-  return tabs;
+// Flamegraph-objects is a special entry point from the timeline, not a tab.
+// Rendered in place of the Tabs widget when active.
+function renderFlamegraphObjectsView(
+  state: NavState & {view: 'flamegraph-objects'},
+  engine: Engine,
+): m.Children {
+  const trace = HeapDumpPage.trace;
+  return m(FlamegraphObjectsView, {
+    engine,
+    navigate,
+    nodeName: state.params.name,
+    pathHashes: flamegraphSelection?.pathHashes,
+    isDominator: flamegraphSelection?.isDominator,
+    onBackToTimeline: () => {
+      if (trace) trace.navigate('#!/viewer');
+    },
+  });
 }
 
 interface HeapDumpPageAttrs {
@@ -364,7 +214,6 @@ export class HeapDumpPage implements m.ClassComponent<HeapDumpPageAttrs> {
 
   view(vnode: m.Vnode<HeapDumpPageAttrs>) {
     syncFromSubpage(vnode.attrs.subpage);
-    syncInstanceTabFromNav();
 
     if (!HeapDumpPage.engine || !HeapDumpPage.hasHeapData) {
       return m(
@@ -386,6 +235,22 @@ export class HeapDumpPage implements m.ClassComponent<HeapDumpPageAttrs> {
       );
     }
 
+    // Flamegraph-objects is a special entry point from the timeline, not a tab.
+    if (nav.view === 'flamegraph-objects') {
+      return m(
+        'div',
+        {class: 'ah-page'},
+        m(
+          'main',
+          {class: 'ah-main'},
+          renderFlamegraphObjectsView(
+            nav as NavState & {view: 'flamegraph-objects'},
+            HeapDumpPage.engine,
+          ),
+        ),
+      );
+    }
+
     return m(
       'div',
       {class: 'ah-page'},
@@ -394,9 +259,8 @@ export class HeapDumpPage implements m.ClassComponent<HeapDumpPageAttrs> {
         {class: 'ah-main'},
         m(Tabs, {
           tabs: buildTabs(nav, HeapDumpPage.engine, cachedOverview),
-          activeTabKey: getActiveTabKey(),
-          onTabChange: handleTabChange,
-          onTabClose: handleTabClose,
+          activeTabKey: activeTabKey(nav.view),
+          onTabChange: (key) => navigate(key as NavState['view']),
         }),
       ),
     );

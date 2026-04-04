@@ -58,7 +58,11 @@ function makeUiSchema(navigate: NavFn): SchemaRegistry {
             'button',
             {
               class: 'ah-link',
-              onclick: () => navigate('objects', {cls: String(value)}),
+              onclick: () =>
+                navigate('instances', {
+                  className: String(value),
+                  heap: null,
+                }),
             },
             String(value),
           ),
@@ -125,13 +129,13 @@ function ClassesView(): m.Component<ClassesViewAttrs> {
           data: dataSource,
           fillHeight: true,
           initialColumns: [
-            {id: 'cls', field: 'cls'},
-            {id: 'cnt', field: 'cnt'},
             {id: 'shallow', field: 'shallow'},
             {id: 'native_shallow', field: 'native_shallow'},
             {id: 'retained', field: 'retained', sort: 'DESC' as const},
             {id: 'retained_native', field: 'retained_native'},
             {id: 'retained_count', field: 'retained_count'},
+            {id: 'cnt', field: 'cnt'},
+            {id: 'cls', field: 'cls'},
           ],
           showExportButton: true,
           onFiltersChanged: counter.onFiltersChanged,

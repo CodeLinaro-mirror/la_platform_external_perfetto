@@ -32,7 +32,6 @@ import {
   renderPath,
 } from '../components';
 import type {PathEntry} from '../types';
-import {clearNavParam} from '../nav_state';
 import * as queries from '../queries';
 
 const SUMMARY_SCHEMA: SchemaRegistry = {
@@ -297,7 +296,6 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
   let showPaths = false;
   let pathsFetched = false;
   const pathMap = new Map<number, PathEntry[]>();
-  let filters: Filter[] = [];
 
   function fetchAllPaths(engine: Engine, bitmaps: BitmapListRow[]) {
     const ids = bitmaps.map((b) => b.row.id);
@@ -315,15 +313,8 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
       .catch(console.error);
   }
 
-  function applyNavFilter(fk: string | undefined) {
-    if (!fk) return;
-    filters = [{field: 'buffer_hash', op: '=' as const, value: fk}];
-    clearNavParam('filterKey');
-  }
-
   return {
     oninit(vnode) {
-      applyNavFilter(vnode.attrs.filterKey);
       queries
         .getBitmapList(vnode.attrs.engine)
         .then((r) => {
@@ -342,9 +333,6 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
             .catch(console.error);
         })
         .catch(console.error);
-    },
-    onupdate(vnode) {
-      applyNavFilter(vnode.attrs.filterKey);
     },
     onremove() {
       alive = false;
@@ -374,10 +362,17 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
         });
       }
 
+      const hashFilter: Filter[] = vnode.attrs.filterKey
+        ? [
+            {
+              field: 'buffer_hash',
+              op: '=' as const,
+              value: vnode.attrs.filterKey,
+            },
+          ]
+        : [];
       const bitmapSchema = makeBitmapListSchema(navigate);
       const bitmapColumns = [
-        {id: 'id', field: 'id'},
-        {id: 'cls', field: 'cls'},
         {id: 'dimensions', field: 'dimensions'},
         {id: 'self_size', field: 'self_size'},
         {id: 'native_size', field: 'native_size'},
@@ -387,11 +382,10 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
         {id: 'reachable_size', field: 'reachable_size'},
         {id: 'reachable_native', field: 'reachable_native'},
         {id: 'reachable_count', field: 'reachable_count'},
+        {id: 'id', field: 'id'},
+        {id: 'cls', field: 'cls'},
         {id: 'buffer_hash', field: 'buffer_hash'},
       ];
-      const onFiltersChanged = (f: readonly Filter[]) => {
-        filters = [...f];
-      };
 
       return m('div', {class: 'ah-view-scroll'}, [
         m('div', {class: 'ah-heading-row'}, [
@@ -463,8 +457,7 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
                 rootSchema: 'query',
                 data: withPixels.map(bitmapRowToRow),
                 initialColumns: bitmapColumns,
-                filters,
-                onFiltersChanged,
+                ...(hashFilter.length > 0 ? {initialFilters: hashFilter} : {}),
                 showExportButton: true,
               }),
             ])
@@ -481,8 +474,7 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
                 rootSchema: 'query',
                 data: withoutPixels.map(bitmapRowToRow),
                 initialColumns: bitmapColumns,
-                filters,
-                onFiltersChanged,
+                ...(hashFilter.length > 0 ? {initialFilters: hashFilter} : {}),
                 showExportButton: true,
               }),
             ])

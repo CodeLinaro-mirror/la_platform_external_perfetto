@@ -795,9 +795,6 @@ function ObjectView(): m.Component<ObjectViewAttrs> {
                 rootSchema: 'query',
                 data: detail.reverseRefs.map(instanceRowToRow),
                 initialColumns: [
-                  {id: 'id', field: 'id'},
-                  {id: 'cls', field: 'cls'},
-                  {id: 'str', field: 'str'},
                   {id: 'self_size', field: 'self_size'},
                   {id: 'native_size', field: 'native_size'},
                   {id: 'retained', field: 'retained'},
@@ -806,6 +803,9 @@ function ObjectView(): m.Component<ObjectViewAttrs> {
                   {id: 'reachable_size', field: 'reachable_size'},
                   {id: 'reachable_native', field: 'reachable_native'},
                   {id: 'reachable_count', field: 'reachable_count'},
+                  {id: 'cls', field: 'cls'},
+                  {id: 'id', field: 'id'},
+                  {id: 'str', field: 'str'},
                 ],
                 showExportButton: true,
               })
@@ -828,9 +828,6 @@ function ObjectView(): m.Component<ObjectViewAttrs> {
                 rootSchema: 'query',
                 data: detail.dominated.map(instanceRowToRow),
                 initialColumns: [
-                  {id: 'id', field: 'id'},
-                  {id: 'cls', field: 'cls'},
-                  {id: 'str', field: 'str'},
                   {id: 'self_size', field: 'self_size'},
                   {id: 'native_size', field: 'native_size'},
                   {id: 'retained', field: 'retained'},
@@ -840,6 +837,9 @@ function ObjectView(): m.Component<ObjectViewAttrs> {
                   {id: 'reachable_native', field: 'reachable_native'},
                   {id: 'reachable_count', field: 'reachable_count'},
                   {id: 'heap', field: 'heap'},
+                  {id: 'cls', field: 'cls'},
+                  {id: 'id', field: 'id'},
+                  {id: 'str', field: 'str'},
                 ],
                 showExportButton: true,
               })

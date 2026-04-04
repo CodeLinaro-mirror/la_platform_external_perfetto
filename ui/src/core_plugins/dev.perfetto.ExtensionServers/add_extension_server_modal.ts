@@ -58,11 +58,11 @@ class AddExtensionServerModal {
   );
   private userInput: UserInput;
   private loadedState?: LoadedState;
-  private readonly isEmbedderManaged: boolean;
+  private readonly locked: boolean;
 
   constructor(server?: ExtensionServer, prefill?: ExtensionServer) {
     this.userInput = createInitial(server ?? prefill);
-    this.isEmbedderManaged = server?.origin === 'embedder_managed';
+    this.locked = server?.locked ?? false;
     this.scheduleManifestFetch(
       server?.enabledModules ?? prefill?.enabledModules,
     );
@@ -97,7 +97,7 @@ class AddExtensionServerModal {
         enabledModules,
         enabled: true,
         auth: this.userInput.auth,
-        origin: this.isEmbedderManaged ? 'embedder_managed' : 'user_added',
+        locked: this.locked,
       };
     }
     return {
@@ -106,7 +106,7 @@ class AddExtensionServerModal {
       enabledModules,
       enabled: true,
       auth: this.userInput.auth,
-      origin: this.isEmbedderManaged ? 'embedder_managed' : 'user_added',
+      locked: this.locked,
     };
   }
 
@@ -128,7 +128,7 @@ class AddExtensionServerModal {
         {label: 'HTTPS', icon: 'public'},
       ],
       selectedOption: this.userInput.type === 'github' ? 0 : 1,
-      disabled: this.isEmbedderManaged,
+      disabled: this.locked,
       onOptionSelected: (idx: number) => {
         if (idx === 0 && this.userInput.type !== 'github') {
           this.userInput = {
@@ -153,7 +153,7 @@ class AddExtensionServerModal {
       m(TextInput, {
         placeholder: 'owner/repo (e.g., perfetto-dev/extension-server-test)',
         value: input.repo,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.repo = value;
           this.debouncedFetch();
@@ -163,7 +163,7 @@ class AddExtensionServerModal {
       m(TextInput, {
         placeholder: 'e.g., main',
         value: input.ref,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.ref = value;
           this.debouncedFetch();
@@ -173,7 +173,7 @@ class AddExtensionServerModal {
       m(TextInput, {
         placeholder: '(default: /)',
         value: input.path,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.path = value;
           this.debouncedFetch();
@@ -209,7 +209,7 @@ class AddExtensionServerModal {
         Select,
         {
           value: input.auth.type,
-          disabled: this.isEmbedderManaged,
+          disabled: this.locked,
           onchange: (e: Event) => {
             const value = (e.target as HTMLSelectElement).value;
             input.auth =
@@ -227,7 +227,7 @@ class AddExtensionServerModal {
           placeholder: 'github_pat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
           type: 'password',
           value: input.auth.pat,
-          disabled: this.isEmbedderManaged,
+          disabled: this.locked,
           onInput: (value: string) => {
             input.auth = {type: 'github_pat', pat: value};
             this.debouncedFetch();
@@ -242,7 +242,7 @@ class AddExtensionServerModal {
       m(TextInput, {
         placeholder: 'https://example.com/path/to/extensions',
         value: input.url,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.url = value;
           this.debouncedFetch();
@@ -284,7 +284,7 @@ class AddExtensionServerModal {
         Select,
         {
           value: input.auth.type,
-          disabled: this.isEmbedderManaged,
+          disabled: this.locked,
           onchange: (e: Event) => {
             const value = (e.target as HTMLSelectElement).value;
             if (value === 'https_basic') {
@@ -321,7 +321,7 @@ class AddExtensionServerModal {
       m(TextInput, {
         placeholder: 'Username',
         value: auth.username,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.auth = {...auth, username: value};
           this.debouncedFetch();
@@ -331,7 +331,7 @@ class AddExtensionServerModal {
         placeholder: 'Password',
         type: 'password',
         value: auth.password,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.auth = {...auth, password: value};
           this.debouncedFetch();
@@ -373,7 +373,7 @@ class AddExtensionServerModal {
         Select,
         {
           value: auth.keyType,
-          disabled: this.isEmbedderManaged,
+          disabled: this.locked,
           onchange: (e: Event) => {
             const keyType = (e.target as HTMLSelectElement).value as
               | 'bearer'
@@ -395,7 +395,7 @@ class AddExtensionServerModal {
         m(TextInput, {
           placeholder: 'Header name',
           value: auth.customHeaderName,
-          disabled: this.isEmbedderManaged,
+          disabled: this.locked,
           onInput: (value: string) => {
             input.auth = {...auth, customHeaderName: value};
             this.debouncedFetch();
@@ -405,7 +405,7 @@ class AddExtensionServerModal {
         placeholder: 'API key',
         type: 'password',
         value: auth.key,
-        disabled: this.isEmbedderManaged,
+        disabled: this.locked,
         onInput: (value: string) => {
           input.auth = {...auth, key: value};
           this.debouncedFetch();

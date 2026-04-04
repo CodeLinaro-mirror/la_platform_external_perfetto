@@ -326,9 +326,6 @@ class SharedMemoryArbiterImpl : public SharedMemoryArbiter {
   // true iff all occurrences were replaced.
   bool ReplaceCommitPlaceholderBufferIdsLocked();
 
-  void CommitDataWithSplitting(std::unique_ptr<CommitDataRequest> req,
-                               std::function<void()> callback);
-
   // Update and return |fully_bound_| based on the arbiter's |pending_writers_|
   // state.
   bool UpdateFullyBoundLocked();

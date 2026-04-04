@@ -14,11 +14,7 @@
 
 import m from 'mithril';
 import {FuzzyFinder, FuzzySegment} from '../../../base/fuzzy';
-import {
-  SqlModules,
-  SqlTable,
-  isTableEffectivelyDisabled,
-} from '../../dev.perfetto.SqlModules/sql_modules';
+import {SqlModules, SqlTable} from '../../dev.perfetto.SqlModules/sql_modules';
 import {Card, CardStack} from '../../../widgets/card';
 import {EmptyState} from '../../../widgets/empty_state';
 import {Chip} from '../../../widgets/chip';
@@ -165,7 +161,7 @@ class TableCard
 
     const packageName = moduleName.split('.')[0];
     const matchTypeLabel = getMatchTypeLabel(matchType);
-    const isDisabled = isTableEffectivelyDisabled(sqlModules, table.name);
+    const isDisabled = sqlModules.isModuleDisabled(moduleName);
     const isSelected = selectedTables?.has(table.name) ?? false;
 
     const hasTimestamp = isTimestampedTable(table);
@@ -266,17 +262,11 @@ export class TableList implements m.ClassComponent<TableListAttrs> {
       );
     }
 
-    // Filter out disabled tables if hideDisabledModules is true
+    // Filter out disabled modules if hideDisabledModules is true
     if (this.hideDisabledModules) {
-      filteredModules = filteredModules
-        .map((module) => ({
-          ...module,
-          tables: module.tables.filter(
-            (table) =>
-              !isTableEffectivelyDisabled(attrs.sqlModules, table.name),
-          ),
-        }))
-        .filter((module) => module.tables.length > 0);
+      filteredModules = filteredModules.filter(
+        (module) => !attrs.sqlModules.isModuleDisabled(module.includeKey),
+      );
     }
 
     // Filter to only timestamped tables if onlyShowTimestampedTables is true
